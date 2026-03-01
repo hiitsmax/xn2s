@@ -5,9 +5,9 @@ import subprocess
 import pytest
 from twikit.errors import Forbidden
 
-from xs2n.profile.auth import (
+from xs2n.profile.auth import is_cloudflare_block_error
+from xs2n.profile.playwright import (
     install_playwright_chromium,
-    is_cloudflare_block_error,
     is_missing_playwright_browser_error,
 )
 
@@ -46,7 +46,7 @@ def test_install_playwright_chromium_raises_with_details_on_failure(
             stderr="permission denied",
         )
 
-    monkeypatch.setattr("xs2n.profile.auth.subprocess.run", fake_run)
+    monkeypatch.setattr("xs2n.profile.playwright.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError) as error:
         install_playwright_chromium()

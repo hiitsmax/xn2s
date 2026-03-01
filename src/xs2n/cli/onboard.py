@@ -4,13 +4,71 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from twikit.errors import Forbidden
 
 from xs2n.cli.helpers import sanitize_cli_parameters
 from xs2n.cli.parameters import process_paste_parameters
-from xs2n.profile.auth import prompt_login
+from xs2n.profile.auth import (
+    is_cloudflare_block_error,
+    prompt_login,
+)
 from xs2n.profile.following import run_import_following_handles
 from xs2n.profile.helpers import build_entries_from_handles
+from xs2n.profile.playwright import bootstrap_cookies_via_browser
 from xs2n.storage import DEFAULT_SOURCES_PATH, merge_profiles
+
+
+def import_following_with_recovery(
+    account: str,
+    cookies_file: Path,
+    limit: int,
+) -> list[str]:
+    try:
+        return run_import_following_handles(
+            account_screen_name=account,
+            cookies_file=cookies_file,
+            limit=limit,
+            prompt_login=prompt_login,
+        )
+    except Forbidden as error:
+        if not is_cloudflare_block_error(error):
+            raise
+
+        typer.echo(
+            "X blocked this automated login request (Cloudflare 403).",
+            err=True,
+        )
+        typer.echo(
+            "We can open a real browser to refresh session cookies, then retry automatically.",
+            err=True,
+        )
+        recover_now = typer.confirm("Open browser login and retry now?", default=True)
+        if not recover_now:
+            raise typer.Exit(code=1)
+
+        try:
+            saved_path = bootstrap_cookies_via_browser(cookies_file)
+        except RuntimeError as bootstrap_error:
+            typer.echo(f"Could not bootstrap cookies: {bootstrap_error}", err=True)
+            raise typer.Exit(code=1) from bootstrap_error
+
+        typer.echo(f"Saved browser cookies to {saved_path}. Retrying...")
+        try:
+            return run_import_following_handles(
+                account_screen_name=account,
+                cookies_file=cookies_file,
+                limit=limit,
+                prompt_login=prompt_login,
+            )
+        except Forbidden as retry_error:
+            if is_cloudflare_block_error(retry_error):
+                typer.echo(
+                    "Still blocked by Cloudflare after browser login. "
+                    "Try again from a normal residential/mobile network.",
+                    err=True,
+                )
+                raise typer.Exit(code=1) from retry_error
+            raise
 
 
 def onboard(
@@ -68,11 +126,10 @@ def onboard(
 
     if parameters["from_following"]:
         account = str(parameters["from_following"])
-        handles = run_import_following_handles(
-            account_screen_name=account,
+        handles = import_following_with_recovery(
+            account=account,
             cookies_file=Path(parameters["cookies_file"]),
             limit=int(parameters["limit"]),
-            prompt_login=prompt_login,
         )
         if not handles:
             typer.echo("No handles imported from following list.")
