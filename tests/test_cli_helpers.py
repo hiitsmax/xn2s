@@ -6,15 +6,17 @@ import typer
 from xs2n.cli.helpers import normalize_following_account, sanitize_cli_parameters
 
 
-def test_sanitize_cli_parameters_rejects_missing_mode_without_wizard() -> None:
+def test_sanitize_cli_parameters_defaults_to_interactive_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "1")
     parameters = {
         "paste": False,
         "from_following": None,
         "wizard": False,
     }
 
-    with pytest.raises(typer.BadParameter):
-        sanitize_cli_parameters(parameters)
+    sanitize_cli_parameters(parameters)
+
+    assert parameters["paste"] is True
 
 
 def test_sanitize_cli_parameters_normalizes_following_handle_with_at_prefix() -> None:

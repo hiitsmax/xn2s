@@ -53,4 +53,4 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added a dedicated CLI helper to normalize `--from-following` input through shared handle parsing rules.
 - Interactive wizard now accepts `mx`, `@mx`, and `https://x.com/mx` with identical behavior.
 - Added tests to verify consistent normalization and invalid-input rejection for following account selection.
-- Updated onboarding UX: `xs2n onboard` without mode now returns explicit usage examples, and interactive mode is opt-in via `--wizard`.
+- Updated onboarding UX: `xs2n onboard` without mode now starts interactive wizard mode by default.

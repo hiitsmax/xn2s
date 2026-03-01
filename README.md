@@ -39,9 +39,10 @@ Import from who you follow (requires authenticated Twikit session):
 uv run xs2n onboard --from-following your_screen_name --cookies-file cookies.json --limit 200
 ```
 
-Interactive wizard:
+Interactive wizard (default if no mode is provided):
 
 ```bash
+uv run xs2n onboard
 uv run xs2n onboard --wizard
 ```
 

@@ -24,14 +24,6 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
     if parameters["paste"] or parameters["from_following"]:
         return
 
-    if not parameters.get("wizard", False):
-        raise typer.BadParameter(
-            "Choose a mode:\n"
-            "  xs2n onboard --paste\n"
-            "  xs2n onboard --from-following <screen_name>\n"
-            "Tip: use --wizard for interactive mode."
-        )
-
     choice = typer.prompt(
         "Onboarding mode [1: paste, 2: following]",
         default="1",
