@@ -74,3 +74,10 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added automatic Chromium install/retry when browser-cookie bootstrap detects missing Playwright browser binaries.
 - Updated setup flow (`make setup`) to provision Chromium ahead of first interactive recovery attempt.
 - Added auth recovery tests covering missing-browser error detection and installer failure surfacing.
+
+## Onboard Prompt Memory Defaults (2026-03-01)
+
+- Added persistent onboarding state in `data/onboard_state.yaml`.
+- Interactive `xs2n onboard` now defaults to the last used mode (`paste` or `following`).
+- When `following` mode is selected interactively, the previous handle is pre-filled as the prompt default.
+- Added tests for default-mode recall, default-handle recall, and state persistence from explicit `--from-following` input.
