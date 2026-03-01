@@ -165,6 +165,42 @@ def test_import_following_with_recovery_falls_back_to_browser_bootstrap(
     assert calls["count"] == 2
 
 
+def test_import_following_with_recovery_retries_browser_after_local_retry_cloudflare(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls = {"count": 0}
+
+    def fake_run_import_following_handles(**kwargs):
+        calls["count"] += 1
+        if calls["count"] < 3:
+            raise _cloudflare_error()
+        return ["alpha", "beta"]
+
+    monkeypatch.setattr(
+        "xs2n.cli.onboard.run_import_following_handles",
+        fake_run_import_following_handles,
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.onboard.bootstrap_cookies_from_local_browser_with_choice",
+        lambda cookies_file: cookies_file,
+    )
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        "xs2n.cli.onboard.bootstrap_cookies_via_browser",
+        lambda cookies_file: cookies_file,
+    )
+
+    handles = import_following_with_recovery(
+        account="mx",
+        cookies_file=tmp_path / "cookies.json",
+        limit=50,
+    )
+
+    assert handles == ["alpha", "beta"]
+    assert calls["count"] == 3
+
+
 def test_import_following_with_recovery_exits_if_user_declines_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

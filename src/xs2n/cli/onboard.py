@@ -109,6 +109,13 @@ def import_following_with_recovery(
                 f"Could not import cookies from local browser: {local_cookie_error}",
                 err=True,
             )
+        except Forbidden as local_retry_error:
+            if not is_cloudflare_block_error(local_retry_error):
+                raise
+            typer.echo(
+                "Still blocked by Cloudflare after importing local browser cookies.",
+                err=True,
+            )
 
         typer.echo(
             "We can open a real browser to refresh session cookies, then retry automatically.",
