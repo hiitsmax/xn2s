@@ -5,10 +5,14 @@ import typer
 import yaml
 
 from xs2n.profile.browser_cookies import (
+    BrowserCookieCandidate,
     describe_cookie_candidate,
     discover_x_cookie_candidates,
     maybe_warn_keychain_prompt,
+    resolve_screen_name_from_cookies,
+    write_cookie_candidate,
 )
+from xs2n.profile.following import AUTHENTICATED_ACCOUNT_SENTINEL
 from xs2n.profile.helpers import normalize_handle
 
 DEFAULT_ONBOARD_STATE_PATH = Path("data/onboard_state.yaml")
@@ -44,28 +48,24 @@ def normalize_following_account(raw: str) -> str:
     return normalized
 
 
-def _choose_following_from_logged_in_profile() -> str | None:
+def _choose_following_from_logged_in_profile() -> BrowserCookieCandidate | None:
     maybe_warn_keychain_prompt(echo=typer.echo)
     try:
-        candidates = discover_x_cookie_candidates(resolve_profiles=True)
+        candidates = discover_x_cookie_candidates(resolve_profiles=False)
     except RuntimeError:
         return None
 
-    named_candidates = [candidate for candidate in candidates if candidate.screen_name]
-    if not named_candidates:
-        return None
-
-    if len(named_candidates) == 1:
-        selected = named_candidates[0]
+    if len(candidates) == 1:
+        selected = candidates[0]
         typer.echo(
-            "Found logged-in browser profile: "
+            "Found logged-in browser session: "
             f"{describe_cookie_candidate(selected)}. Using it."
         )
-        return selected.screen_name
+        return selected
 
-    typer.echo("Found logged-in browser profiles:")
-    manual_choice = len(named_candidates) + 1
-    for index, candidate in enumerate(named_candidates, start=1):
+    typer.echo("Found logged-in browser sessions:")
+    manual_choice = len(candidates) + 1
+    for index, candidate in enumerate(candidates, start=1):
         typer.echo(f"{index}. {describe_cookie_candidate(candidate)}")
     typer.echo(f"{manual_choice}. Enter a different handle manually")
 
@@ -77,8 +77,8 @@ def _choose_following_from_logged_in_profile() -> str | None:
             typer.echo("Please enter a valid number.", err=True)
             continue
 
-        if 1 <= choice <= len(named_candidates):
-            return named_candidates[choice - 1].screen_name
+        if 1 <= choice <= len(candidates):
+            return candidates[choice - 1]
         if choice == manual_choice:
             return None
 
@@ -120,9 +120,25 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
         return
 
     if choice in {"following", "f", "2"}:
-        selected_profile = _choose_following_from_logged_in_profile()
-        if selected_profile:
-            parameters["from_following"] = selected_profile
+        selected_candidate = _choose_following_from_logged_in_profile()
+        if selected_candidate:
+            cookies_file = parameters.get("cookies_file")
+            if isinstance(cookies_file, Path):
+                saved_path = write_cookie_candidate(selected_candidate, cookies_file)
+                typer.echo(f"Saved browser cookies to {saved_path}.")
+
+            resolved_screen_name = selected_candidate.screen_name or resolve_screen_name_from_cookies(
+                selected_candidate.cookies
+            )
+            if resolved_screen_name:
+                parameters["from_following"] = resolved_screen_name
+                typer.echo(f"Using logged-in profile @{resolved_screen_name}.")
+            else:
+                parameters["from_following"] = AUTHENTICATED_ACCOUNT_SENTINEL
+                typer.echo(
+                    "Could not auto-detect the profile handle from cookies. "
+                    "Using the selected authenticated session directly."
+                )
         else:
             prompt_default = state.get("last_following")
             if prompt_default:
@@ -135,14 +151,18 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
                     "X screen name (@, plain, or x.com URL)",
                 )
 
-        parameters["from_following"] = normalize_following_account(str(parameters["from_following"]))
-        _save_onboard_state(
-            {
-                "last_following": str(parameters["from_following"]),
-                "last_mode": "following",
-            },
-            path=state_path,
-        )
+        from_following = str(parameters["from_following"])
+        if from_following != AUTHENTICATED_ACCOUNT_SENTINEL:
+            parameters["from_following"] = normalize_following_account(from_following)
+            _save_onboard_state(
+                {
+                    "last_following": str(parameters["from_following"]),
+                    "last_mode": "following",
+                },
+                path=state_path,
+            )
+        else:
+            _save_onboard_state({**state, "last_mode": "following"}, path=state_path)
         return
 
     raise typer.BadParameter("Mode must be one of: 1, 2, paste, following.")

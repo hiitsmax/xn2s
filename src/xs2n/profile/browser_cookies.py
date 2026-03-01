@@ -25,8 +25,7 @@ _CANDIDATE_BROWSERS = (
 )
 _KEYCHAIN_HINT_SHOWN = False
 _KEYCHAIN_HINT_MESSAGE = (
-    "Hint: your browser may ask macOS Keychain permission to read saved login data. "
-    "Please click 'Consenti' to continue."
+    "Hint: macOS may ask Keychain permission to access browser login data."
 )
 
 
@@ -76,6 +75,10 @@ def _resolve_screen_name_from_cookies(cookies: dict[str, str]) -> str | None:
     if isinstance(screen_name, str) and screen_name:
         return screen_name
     return None
+
+
+def resolve_screen_name_from_cookies(cookies: dict[str, str]) -> str | None:
+    return _resolve_screen_name_from_cookies(cookies)
 
 
 def discover_x_cookie_candidates(resolve_profiles: bool = True) -> list[BrowserCookieCandidate]:

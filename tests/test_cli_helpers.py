@@ -8,6 +8,7 @@ import yaml
 
 from xs2n.cli.helpers import normalize_following_account, sanitize_cli_parameters
 from xs2n.profile.browser_cookies import BrowserCookieCandidate
+from xs2n.profile.following import AUTHENTICATED_ACCOUNT_SENTINEL
 
 
 def test_sanitize_cli_parameters_defaults_to_interactive_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -258,3 +259,47 @@ def test_sanitize_cli_parameters_falls_back_to_manual_when_requested(
     sanitize_cli_parameters(parameters)
 
     assert parameters["from_following"] == "manual_user"
+
+
+def test_sanitize_cli_parameters_uses_authenticated_session_when_handle_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    prompts: list[str] = []
+
+    def fake_prompt(message: str, **kwargs: object) -> str:
+        prompts.append(message)
+        return "2"
+
+    monkeypatch.setattr(
+        "typer.prompt",
+        fake_prompt,
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.discover_x_cookie_candidates",
+        lambda resolve_profiles=True: [
+            BrowserCookieCandidate(
+                browser_name="chrome",
+                domain="x.com",
+                cookies={"auth_token": "a", "ct0": "b"},
+                screen_name=None,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.resolve_screen_name_from_cookies",
+        lambda cookies: None,
+    )
+    cookies_file = tmp_path / "cookies.json"
+    parameters = {
+        "paste": False,
+        "from_following": None,
+        "wizard": False,
+        "cookies_file": cookies_file,
+    }
+
+    sanitize_cli_parameters(parameters)
+
+    assert parameters["from_following"] == AUTHENTICATED_ACCOUNT_SENTINEL
+    assert cookies_file.exists()
+    assert prompts == ["Onboarding mode [1: paste, 2: following]"]
