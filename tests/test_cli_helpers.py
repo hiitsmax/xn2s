@@ -7,6 +7,7 @@ import typer
 import yaml
 
 from xs2n.cli.helpers import normalize_following_account, sanitize_cli_parameters
+from xs2n.profile.browser_cookies import BrowserCookieCandidate
 
 
 def test_sanitize_cli_parameters_defaults_to_interactive_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,6 +63,10 @@ def test_sanitize_cli_parameters_wizard_allows_paste(monkeypatch: pytest.MonkeyP
 def test_sanitize_cli_parameters_wizard_requests_handle(monkeypatch: pytest.MonkeyPatch) -> None:
     answers = iter(["2", "https://x.com/mx"])
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.discover_x_cookie_candidates",
+        lambda resolve_profiles=True: (_ for _ in ()).throw(RuntimeError("no cookies")),
+    )
     parameters = {
         "paste": False,
         "from_following": None,
@@ -119,6 +124,10 @@ def test_sanitize_cli_parameters_uses_last_following_as_prompt_default(
         return next(answers)
 
     monkeypatch.setattr("typer.prompt", fake_prompt)
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.discover_x_cookie_candidates",
+        lambda resolve_profiles=True: (_ for _ in ()).throw(RuntimeError("no cookies")),
+    )
     parameters = {
         "paste": False,
         "from_following": None,
@@ -147,3 +156,105 @@ def test_sanitize_cli_parameters_persists_following_input(tmp_path: Path) -> Non
     saved_state = yaml.safe_load(state_file.read_text(encoding="utf-8"))
     assert parameters["from_following"] == "neo"
     assert saved_state == {"last_following": "neo", "last_mode": "following"}
+
+
+def test_sanitize_cli_parameters_prefers_single_logged_in_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "2")
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.discover_x_cookie_candidates",
+        lambda resolve_profiles=True: [
+            BrowserCookieCandidate(
+                browser_name="chrome",
+                domain="x.com",
+                cookies={"auth_token": "a", "ct0": "b"},
+                screen_name="mx",
+            )
+        ],
+    )
+    parameters = {
+        "paste": False,
+        "from_following": None,
+        "wizard": False,
+    }
+
+    sanitize_cli_parameters(parameters)
+
+    assert parameters["from_following"] == "mx"
+
+
+def test_sanitize_cli_parameters_allows_choosing_among_logged_in_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompts: list[str] = []
+    answers = iter(["2", "2"])
+
+    def fake_prompt(message: str, **kwargs: object) -> str:
+        prompts.append(message)
+        return next(answers)
+
+    monkeypatch.setattr("typer.prompt", fake_prompt)
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.discover_x_cookie_candidates",
+        lambda resolve_profiles=True: [
+            BrowserCookieCandidate(
+                browser_name="chrome",
+                domain="x.com",
+                cookies={"auth_token": "a", "ct0": "b"},
+                screen_name="first",
+            ),
+            BrowserCookieCandidate(
+                browser_name="firefox",
+                domain="x.com",
+                cookies={"auth_token": "c", "ct0": "d"},
+                screen_name="second",
+            ),
+        ],
+    )
+    parameters = {
+        "paste": False,
+        "from_following": None,
+        "wizard": False,
+    }
+
+    sanitize_cli_parameters(parameters)
+
+    assert parameters["from_following"] == "second"
+    assert prompts == [
+        "Onboarding mode [1: paste, 2: following]",
+        "Select profile number",
+    ]
+
+
+def test_sanitize_cli_parameters_falls_back_to_manual_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter(["2", "3", "https://x.com/manual_user"])
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.discover_x_cookie_candidates",
+        lambda resolve_profiles=True: [
+            BrowserCookieCandidate(
+                browser_name="chrome",
+                domain="x.com",
+                cookies={"auth_token": "a", "ct0": "b"},
+                screen_name="auto",
+            ),
+            BrowserCookieCandidate(
+                browser_name="firefox",
+                domain="x.com",
+                cookies={"auth_token": "c", "ct0": "d"},
+                screen_name="backup",
+            )
+        ],
+    )
+    parameters = {
+        "paste": False,
+        "from_following": None,
+        "wizard": False,
+    }
+
+    sanitize_cli_parameters(parameters)
+
+    assert parameters["from_following"] == "manual_user"

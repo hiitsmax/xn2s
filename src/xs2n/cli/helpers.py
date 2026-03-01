@@ -4,6 +4,10 @@ from typing import Any
 import typer
 import yaml
 
+from xs2n.profile.browser_cookies import (
+    describe_cookie_candidate,
+    discover_x_cookie_candidates,
+)
 from xs2n.profile.helpers import normalize_handle
 
 DEFAULT_ONBOARD_STATE_PATH = Path("data/onboard_state.yaml")
@@ -37,6 +41,46 @@ def normalize_following_account(raw: str) -> str:
             "Provide a valid X handle (with or without @) or profile URL (x.com/<handle>)."
         )
     return normalized
+
+
+def _choose_following_from_logged_in_profile() -> str | None:
+    try:
+        candidates = discover_x_cookie_candidates(resolve_profiles=True)
+    except RuntimeError:
+        return None
+
+    named_candidates = [candidate for candidate in candidates if candidate.screen_name]
+    if not named_candidates:
+        return None
+
+    if len(named_candidates) == 1:
+        selected = named_candidates[0]
+        typer.echo(
+            "Found logged-in browser profile: "
+            f"{describe_cookie_candidate(selected)}. Using it."
+        )
+        return selected.screen_name
+
+    typer.echo("Found logged-in browser profiles:")
+    manual_choice = len(named_candidates) + 1
+    for index, candidate in enumerate(named_candidates, start=1):
+        typer.echo(f"{index}. {describe_cookie_candidate(candidate)}")
+    typer.echo(f"{manual_choice}. Enter a different handle manually")
+
+    while True:
+        raw_choice = typer.prompt("Select profile number", default="1")
+        try:
+            choice = int(raw_choice)
+        except ValueError:
+            typer.echo("Please enter a valid number.", err=True)
+            continue
+
+        if 1 <= choice <= len(named_candidates):
+            return named_candidates[choice - 1].screen_name
+        if choice == manual_choice:
+            return None
+
+        typer.echo("Choice out of range. Try again.", err=True)
 
 
 def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
@@ -74,16 +118,21 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
         return
 
     if choice in {"following", "f", "2"}:
-        prompt_default = state.get("last_following")
-        if prompt_default:
-            parameters["from_following"] = typer.prompt(
-                "X screen name (@, plain, or x.com URL)",
-                default=prompt_default,
-            )
+        selected_profile = _choose_following_from_logged_in_profile()
+        if selected_profile:
+            parameters["from_following"] = selected_profile
         else:
-            parameters["from_following"] = typer.prompt(
-                "X screen name (@, plain, or x.com URL)",
-            )
+            prompt_default = state.get("last_following")
+            if prompt_default:
+                parameters["from_following"] = typer.prompt(
+                    "X screen name (@, plain, or x.com URL)",
+                    default=prompt_default,
+                )
+            else:
+                parameters["from_following"] = typer.prompt(
+                    "X screen name (@, plain, or x.com URL)",
+                )
+
         parameters["from_following"] = normalize_following_account(str(parameters["from_following"]))
         _save_onboard_state(
             {
