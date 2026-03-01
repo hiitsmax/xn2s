@@ -12,11 +12,50 @@ from xs2n.profile.auth import (
     is_cloudflare_block_error,
     prompt_login,
 )
-from xs2n.profile.browser_cookies import bootstrap_cookies_from_local_browser
+from xs2n.profile.browser_cookies import (
+    BrowserCookieCandidate,
+    describe_cookie_candidate,
+    discover_x_cookie_candidates,
+    write_cookie_candidate,
+)
 from xs2n.profile.following import run_import_following_handles
 from xs2n.profile.helpers import build_entries_from_handles
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
 from xs2n.storage import DEFAULT_SOURCES_PATH, merge_profiles
+from xs2n.profile.following import IMPORT_FOLLOWING_HANDLES_LIMIT
+
+
+def choose_cookie_candidate(candidates: list[BrowserCookieCandidate]) -> BrowserCookieCandidate:
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        typer.echo(
+            "Found logged-in browser session: "
+            f"{describe_cookie_candidate(candidate)}. Using it."
+        )
+        return candidate
+
+    typer.echo("Found multiple logged-in browser sessions:")
+    for index, candidate in enumerate(candidates, start=1):
+        typer.echo(f"{index}. {describe_cookie_candidate(candidate)}")
+
+    while True:
+        raw_choice = typer.prompt("Select session number", default="1")
+        try:
+            choice = int(raw_choice)
+        except ValueError:
+            typer.echo("Please enter a valid number.", err=True)
+            continue
+
+        if 1 <= choice <= len(candidates):
+            return candidates[choice - 1]
+
+        typer.echo("Choice out of range. Try again.", err=True)
+
+
+def bootstrap_cookies_from_local_browser_with_choice(cookies_file: Path) -> Path:
+    candidates = discover_x_cookie_candidates(resolve_profiles=True)
+    selected = choose_cookie_candidate(candidates)
+    return write_cookie_candidate(selected, cookies_file)
 
 
 def import_following_with_recovery(
@@ -32,6 +71,18 @@ def import_following_with_recovery(
             prompt_login=prompt_login,
         )
 
+    if not cookies_file.exists():
+        typer.echo("Checking local browser cookies for logged-in X sessions...")
+        try:
+            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
+            typer.echo(f"Saved browser cookies to {saved_path}.")
+        except RuntimeError as local_cookie_error:
+            typer.echo(
+                "No usable local browser cookies were found. "
+                f"Details: {local_cookie_error}",
+                err=True,
+            )
+
     try:
         return retry_import()
     except Forbidden as error:
@@ -43,11 +94,11 @@ def import_following_with_recovery(
             err=True,
         )
         typer.echo(
-            "Trying to import existing X cookies from your local browser first.",
+            "Trying to refresh cookies from your local browser first.",
             err=True,
         )
         try:
-            saved_path = bootstrap_cookies_from_local_browser(cookies_file)
+            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
             typer.echo(f"Imported local browser cookies to {saved_path}. Retrying...")
             return retry_import()
         except RuntimeError as local_cookie_error:
@@ -106,7 +157,7 @@ def onboard(
         help="Twikit cookies file for authenticated scraping.",
     ),
     limit: int = typer.Option(
-        200,
+        IMPORT_FOLLOWING_HANDLES_LIMIT,
         "--limit",
         min=1,
         max=1000,

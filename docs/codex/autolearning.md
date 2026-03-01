@@ -88,3 +88,11 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Recovery flow now tries local browser cookie import before asking users to log in in a Playwright window.
 - Kept Playwright interactive login as fallback when no usable local browser cookies are available.
 - Added deterministic tests for browser-cookie extraction logic and updated onboarding recovery tests for local-first fallback behavior.
+
+## Browser Profile Selection Preflight (2026-03-01)
+
+- Added local-cookie preflight before first Twikit import attempt when `cookies.json` is missing.
+- Introduced browser-cookie candidate discovery with dedupe by session token pair (`auth_token`, `ct0`).
+- Added interactive session selection when multiple logged-in browser sessions are discovered.
+- Added profile labels (`@screen_name` when resolvable) to make selection explicit and reduce wrong-account imports.
+- Added tests for candidate selection UI and preflight-before-first-attempt behavior.
