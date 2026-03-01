@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+.venv/
+venv/
+
+cookies.json
+accounts.db
+
+.DS_Store

@@ -1,0 +1,61 @@
+Metadata-Version: 2.4
+Name: xs2n
+Version: 0.1.0
+Summary: CLI pipeline tools for timeline summarization
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.12.3
+Requires-Dist: PyYAML>=6.0.2
+Requires-Dist: twikit>=2.3.3
+Requires-Dist: tenacity>=9.1.4
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+
+# xs2n
+
+`xs2n` is a baby-step CLI project to build a free-first timeline summarization pipeline.
+
+Current milestone: onboarding profile sources via CLI.
+
+## Modern Quickstart (`uv`)
+
+```bash
+uv sync --extra dev
+```
+
+Run the CLI:
+
+```bash
+uv run xs2n --help
+```
+
+Or use task aliases:
+
+```bash
+make setup
+make run
+make test
+```
+
+## Onboard Profiles
+
+Paste handles:
+
+```bash
+uv run xs2n onboard --paste
+```
+
+Import from who you follow (requires authenticated Twikit session):
+
+```bash
+uv run xs2n onboard --from-following your_screen_name --cookies-file cookies.json --limit 200
+```
+
+Profiles are stored in `data/sources.yaml`.
+
+## Legacy Install (pip)
+
+```bash
+python -m pip install -e .[dev]
+xs2n --help
+```
