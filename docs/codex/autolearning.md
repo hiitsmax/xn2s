@@ -53,4 +53,24 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added a dedicated CLI helper to normalize `--from-following` input through shared handle parsing rules.
 - Interactive wizard now accepts `mx`, `@mx`, and `https://x.com/mx` with identical behavior.
 - Added tests to verify consistent normalization and invalid-input rejection for following account selection.
-- Updated onboarding UX: `xs2n onboard` without mode now starts interactive wizard mode by default.
+- Updated onboarding UX: `xs2n onboard` without mode now prints explicit mode examples; interactive behavior is opt-in via `--wizard`.
+
+## Cloudflare Recovery UX (2026-03-01 23:40Z)
+
+- Added targeted handling for Twikit `403` Cloudflare blocks during `--from-following` onboarding.
+- When a Cloudflare block is detected, CLI now explains the issue and asks to open browser login for cookie bootstrap.
+- Implemented Playwright-based browser cookie bootstrap (`cookies.json`) and automatic retry after successful login.
+- Added tests for Cloudflare detection plus retry/decline recovery paths.
+
+## Username Inference UX (2026-03-01 23:59Z)
+
+- Reused the onboarding X screen name as default for the Twikit `Username (without @)` login prompt.
+- Kept the prompt editable so users can override when login username differs from public handle.
+- Added auth-focused tests to lock inferred-username wiring between onboarding flow and authentication prompt.
+
+## Playwright Dependency Hardening (2026-03-01)
+
+- Promoted `playwright` to core project dependency in `pyproject.toml`.
+- Added automatic Chromium install/retry when browser-cookie bootstrap detects missing Playwright browser binaries.
+- Updated setup flow (`make setup`) to provision Chromium ahead of first interactive recovery attempt.
+- Added auth recovery tests covering missing-browser error detection and installer failure surfacing.

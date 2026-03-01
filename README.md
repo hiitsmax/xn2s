@@ -42,6 +42,12 @@ uv sync --extra dev
 uv run xs2n --help
 ```
 
+If you prefer one command bootstrap (including Playwright Chromium used for browser cookie recovery):
+
+```bash
+make setup
+```
+
 Convenience commands:
 
 ```bash

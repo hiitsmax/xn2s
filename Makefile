@@ -1,5 +1,6 @@
 setup:
 	uv sync --extra dev
+	uv run playwright install chromium
 
 run:
 	uv run xs2n --help
