@@ -9,6 +9,7 @@ from xs2n.profile.browser_cookies import (
     bootstrap_cookies_from_local_browser,
     discover_x_cookie_candidates,
     load_x_cookies_from_installed_browser,
+    maybe_warn_keychain_prompt,
 )
 
 
@@ -106,3 +107,15 @@ def test_bootstrap_cookies_from_local_browser_writes_file(
 
     assert saved == path.resolve()
     assert '"auth_token": "token-value"' in path.read_text(encoding="utf-8")
+
+
+def test_maybe_warn_keychain_prompt_emits_only_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("xs2n.profile.browser_cookies._KEYCHAIN_HINT_SHOWN", False)
+    messages: list[str] = []
+
+    maybe_warn_keychain_prompt(echo=messages.append)
+    maybe_warn_keychain_prompt(echo=messages.append)
+
+    assert len(messages) == 1

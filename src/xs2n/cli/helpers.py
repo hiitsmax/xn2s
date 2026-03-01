@@ -7,6 +7,7 @@ import yaml
 from xs2n.profile.browser_cookies import (
     describe_cookie_candidate,
     discover_x_cookie_candidates,
+    maybe_warn_keychain_prompt,
 )
 from xs2n.profile.helpers import normalize_handle
 
@@ -44,6 +45,7 @@ def normalize_following_account(raw: str) -> str:
 
 
 def _choose_following_from_logged_in_profile() -> str | None:
+    maybe_warn_keychain_prompt(echo=typer.echo)
     try:
         candidates = discover_x_cookie_candidates(resolve_profiles=True)
     except RuntimeError:

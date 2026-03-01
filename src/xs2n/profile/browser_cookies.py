@@ -23,6 +23,11 @@ _CANDIDATE_BROWSERS = (
     "opera_gx",
     "vivaldi",
 )
+_KEYCHAIN_HINT_SHOWN = False
+_KEYCHAIN_HINT_MESSAGE = (
+    "Hint: your browser may ask macOS Keychain permission to read saved login data. "
+    "Please click 'Consenti' to continue."
+)
 
 
 @dataclass
@@ -31,6 +36,17 @@ class BrowserCookieCandidate:
     domain: str
     cookies: dict[str, str]
     screen_name: str | None = None
+
+
+def maybe_warn_keychain_prompt(echo: Callable[[str], None] | None = None) -> None:
+    global _KEYCHAIN_HINT_SHOWN
+    if _KEYCHAIN_HINT_SHOWN:
+        return
+    _KEYCHAIN_HINT_SHOWN = True
+    if echo is None:
+        print(_KEYCHAIN_HINT_MESSAGE)
+        return
+    echo(_KEYCHAIN_HINT_MESSAGE)
 
 
 def _extract_cookie_values(cookie_jar: CookieJar) -> dict[str, str]:

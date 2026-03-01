@@ -16,13 +16,15 @@ from xs2n.profile.browser_cookies import (
     BrowserCookieCandidate,
     describe_cookie_candidate,
     discover_x_cookie_candidates,
+    maybe_warn_keychain_prompt,
     write_cookie_candidate,
 )
 from xs2n.profile.following import run_import_following_handles
 from xs2n.profile.helpers import build_entries_from_handles
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
 from xs2n.storage import DEFAULT_SOURCES_PATH, merge_profiles
-from xs2n.profile.following import IMPORT_FOLLOWING_HANDLES_LIMIT
+from xs2n.profile.following import IMPORT_FOLLOWING_HANDLES_LIMIT, DEFAULT_IMPORT_FOLLOWING_HANDLES
+
 
 
 def choose_cookie_candidate(candidates: list[BrowserCookieCandidate]) -> BrowserCookieCandidate:
@@ -53,6 +55,7 @@ def choose_cookie_candidate(candidates: list[BrowserCookieCandidate]) -> Browser
 
 
 def bootstrap_cookies_from_local_browser_with_choice(cookies_file: Path) -> Path:
+    maybe_warn_keychain_prompt(echo=typer.echo)
     candidates = discover_x_cookie_candidates(resolve_profiles=True)
     selected = choose_cookie_candidate(candidates)
     return write_cookie_candidate(selected, cookies_file)
@@ -157,10 +160,10 @@ def onboard(
         help="Twikit cookies file for authenticated scraping.",
     ),
     limit: int = typer.Option(
-        IMPORT_FOLLOWING_HANDLES_LIMIT,
+        DEFAULT_IMPORT_FOLLOWING_HANDLES,
         "--limit",
         min=1,
-        max=1000,
+        max=IMPORT_FOLLOWING_HANDLES_LIMIT,
         help="Maximum number of profiles to import from following list.",
     ),
     sources_file: Path = typer.Option(
