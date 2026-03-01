@@ -81,3 +81,10 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Interactive `xs2n onboard` now defaults to the last used mode (`paste` or `following`).
 - When `following` mode is selected interactively, the previous handle is pre-filled as the prompt default.
 - Added tests for default-mode recall, default-handle recall, and state persistence from explicit `--from-following` input.
+
+## Browser Cookie Bootstrap (2026-03-01)
+
+- Added `browser-cookie3` dependency to read authenticated cookies from installed user browsers.
+- Recovery flow now tries local browser cookie import before asking users to log in in a Playwright window.
+- Kept Playwright interactive login as fallback when no usable local browser cookies are available.
+- Added deterministic tests for browser-cookie extraction logic and updated onboarding recovery tests for local-first fallback behavior.

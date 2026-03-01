@@ -12,6 +12,7 @@ from xs2n.profile.auth import (
     is_cloudflare_block_error,
     prompt_login,
 )
+from xs2n.profile.browser_cookies import bootstrap_cookies_from_local_browser
 from xs2n.profile.following import run_import_following_handles
 from xs2n.profile.helpers import build_entries_from_handles
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
@@ -23,13 +24,16 @@ def import_following_with_recovery(
     cookies_file: Path,
     limit: int,
 ) -> list[str]:
-    try:
+    def retry_import() -> list[str]:
         return run_import_following_handles(
             account_screen_name=account,
             cookies_file=cookies_file,
             limit=limit,
             prompt_login=prompt_login,
         )
+
+    try:
+        return retry_import()
     except Forbidden as error:
         if not is_cloudflare_block_error(error):
             raise
@@ -38,6 +42,20 @@ def import_following_with_recovery(
             "X blocked this automated login request (Cloudflare 403).",
             err=True,
         )
+        typer.echo(
+            "Trying to import existing X cookies from your local browser first.",
+            err=True,
+        )
+        try:
+            saved_path = bootstrap_cookies_from_local_browser(cookies_file)
+            typer.echo(f"Imported local browser cookies to {saved_path}. Retrying...")
+            return retry_import()
+        except RuntimeError as local_cookie_error:
+            typer.echo(
+                f"Could not import cookies from local browser: {local_cookie_error}",
+                err=True,
+            )
+
         typer.echo(
             "We can open a real browser to refresh session cookies, then retry automatically.",
             err=True,
@@ -48,18 +66,11 @@ def import_following_with_recovery(
 
         try:
             saved_path = bootstrap_cookies_via_browser(cookies_file)
+            typer.echo(f"Saved browser cookies to {saved_path}. Retrying...")
+            return retry_import()
         except RuntimeError as bootstrap_error:
             typer.echo(f"Could not bootstrap cookies: {bootstrap_error}", err=True)
             raise typer.Exit(code=1) from bootstrap_error
-
-        typer.echo(f"Saved browser cookies to {saved_path}. Retrying...")
-        try:
-            return run_import_following_handles(
-                account_screen_name=account,
-                cookies_file=cookies_file,
-                limit=limit,
-                prompt_login=prompt_login,
-            )
         except Forbidden as retry_error:
             if is_cloudflare_block_error(retry_error):
                 typer.echo(

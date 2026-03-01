@@ -26,7 +26,7 @@ Working now:
 - `xs2n onboard --paste`
 - `xs2n onboard --from-following <handle>`
 - Interactive mode selection when no onboarding mode is provided
-- Cloudflare block detection + browser-cookie recovery + retry
+- Cloudflare block detection + local-browser cookie import + Playwright fallback + retry
 - Unit tests for parsing, merge behavior, and recovery flow
 
 Known gaps / WIP:
