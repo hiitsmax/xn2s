@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from twikit.errors import Forbidden
+import typer
+from twikit.errors import Forbidden, TooManyRequests
 
-from xs2n.cli.timeline import import_timeline_with_recovery, parse_since_datetime
-from xs2n.profile.types import TimelineEntry, TimelineFetchResult
+from xs2n.cli.timeline import import_timeline_with_recovery, parse_since_datetime, timeline
+from xs2n.profile.types import TimelineEntry, TimelineFetchResult, TimelineMergeResult
 
 
 def _cloudflare_error() -> Forbidden:
@@ -113,3 +115,222 @@ def test_import_timeline_with_recovery_retries_after_local_cookie_import(
 
     assert len(result.entries) == 1
     assert calls["count"] == 2
+
+
+def test_timeline_requires_account_or_from_sources(tmp_path: Path) -> None:
+    with pytest.raises(typer.BadParameter):
+        timeline(
+            account=None,
+            from_sources=False,
+            since="2026-03-01T00:00:00Z",
+            cookies_file=tmp_path / "cookies.json",
+            limit=50,
+            timeline_file=tmp_path / "timeline.json",
+            sources_file=tmp_path / "sources.json",
+        )
+
+
+def test_timeline_rejects_account_with_from_sources(tmp_path: Path) -> None:
+    with pytest.raises(typer.BadParameter):
+        timeline(
+            account="mx",
+            from_sources=True,
+            since="2026-03-01T00:00:00Z",
+            cookies_file=tmp_path / "cookies.json",
+            limit=50,
+            timeline_file=tmp_path / "timeline.json",
+            sources_file=tmp_path / "sources.json",
+        )
+
+
+def test_timeline_from_sources_ingests_unique_valid_handles(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sources_file = tmp_path / "sources.json"
+    sources_file.write_text(
+        json.dumps(
+            {
+                "profiles": [
+                    {"handle": "alpha"},
+                    {"handle": "beta"},
+                    {"handle": "alpha"},
+                    {"handle": ""},
+                    {"name": "missing_handle"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    imported_accounts: list[str] = []
+
+    def fake_import(**kwargs):
+        account = kwargs["account"]
+        imported_accounts.append(account)
+        return TimelineFetchResult(
+            entries=[
+                TimelineEntry(
+                    tweet_id=f"{account}-1",
+                    account_handle=account,
+                    author_handle=account,
+                    kind="post",
+                    created_at="2026-03-01T00:00:00+00:00",
+                    text="hello",
+                    retweeted_tweet_id=None,
+                    retweeted_author_handle=None,
+                    retweeted_created_at=None,
+                )
+            ],
+            scanned=1,
+            skipped_old=0,
+        )
+
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.import_timeline_with_recovery",
+        fake_import,
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.merge_timeline_entries",
+        lambda entries, path: TimelineMergeResult(added=len(entries), skipped_duplicates=0),
+    )
+
+    timeline(
+        account=None,
+        from_sources=True,
+        since="2026-03-01T00:00:00Z",
+        cookies_file=tmp_path / "cookies.json",
+        limit=50,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=sources_file,
+    )
+
+    output = capsys.readouterr().out
+    assert imported_accounts == ["alpha", "beta"]
+    assert "Processed 2 of 2 accounts" in output
+
+
+def test_timeline_from_sources_migrates_legacy_yaml_when_json_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sources_json = tmp_path / "sources.json"
+    legacy_yaml = tmp_path / "sources.yaml"
+    legacy_yaml.write_text(
+        "\n".join(
+            [
+                "profiles:",
+                "- handle: alpha",
+                "  added_via: following_import",
+                "  added_at: '2026-03-01T00:00:00+00:00'",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    imported_accounts: list[str] = []
+
+    def record_import(**kwargs):
+        imported_accounts.append(kwargs["account"])
+        return TimelineFetchResult(entries=[], scanned=0, skipped_old=0)
+
+    monkeypatch.setattr("xs2n.cli.timeline.import_timeline_with_recovery", record_import)
+
+    timeline(
+        account=None,
+        from_sources=True,
+        since="2026-03-01T00:00:00Z",
+        cookies_file=tmp_path / "cookies.json",
+        limit=50,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=sources_json,
+    )
+
+    assert sources_json.exists()
+    assert imported_accounts == ["alpha"]
+
+
+def test_timeline_single_account_handles_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def raise_rate_limit(**kwargs):
+        raise TooManyRequests('status: 429, message: "Rate limit exceeded"')
+
+    monkeypatch.setattr("xs2n.cli.timeline.import_timeline_with_recovery", raise_rate_limit)
+
+    with pytest.raises(typer.Exit) as exc:
+        timeline(
+            account="mx",
+            from_sources=False,
+            since="2026-03-01T00:00:00Z",
+            cookies_file=tmp_path / "cookies.json",
+            limit=50,
+            timeline_file=tmp_path / "timeline.json",
+            sources_file=tmp_path / "sources.json",
+        )
+
+    assert exc.value.exit_code == 1
+    captured = capsys.readouterr()
+    assert "rate limit" in captured.err.lower()
+
+
+def test_timeline_from_sources_stops_cleanly_on_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sources_file = tmp_path / "sources.json"
+    sources_file.write_text(
+        json.dumps({"profiles": [{"handle": "alpha"}, {"handle": "beta"}]}),
+        encoding="utf-8",
+    )
+
+    calls = {"count": 0}
+
+    def flaky_import(**kwargs):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise TooManyRequests('status: 429, message: "Rate limit exceeded"')
+        return TimelineFetchResult(
+            entries=[
+                TimelineEntry(
+                    tweet_id="alpha-1",
+                    account_handle="alpha",
+                    author_handle="alpha",
+                    kind="post",
+                    created_at="2026-03-01T00:00:00+00:00",
+                    text="hello",
+                    retweeted_tweet_id=None,
+                    retweeted_author_handle=None,
+                    retweeted_created_at=None,
+                )
+            ],
+            scanned=1,
+            skipped_old=0,
+        )
+
+    monkeypatch.setattr("xs2n.cli.timeline.import_timeline_with_recovery", flaky_import)
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.merge_timeline_entries",
+        lambda entries, path: TimelineMergeResult(added=len(entries), skipped_duplicates=0),
+    )
+
+    with pytest.raises(typer.Exit) as exc:
+        timeline(
+            account=None,
+            from_sources=True,
+            since="2026-03-01T00:00:00Z",
+            cookies_file=tmp_path / "cookies.json",
+            limit=50,
+            timeline_file=tmp_path / "timeline.json",
+            sources_file=sources_file,
+        )
+
+    assert exc.value.exit_code == 1
+    captured = capsys.readouterr()
+    assert "processed 1 of 2 accounts" in captured.out.lower()
+    assert "rate limit" in captured.err.lower()

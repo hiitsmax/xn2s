@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import typer
-from twikit.errors import Forbidden, UserNotFound
+from twikit.errors import Forbidden, TooManyRequests, UserNotFound
 
 from xs2n.cli.helpers import normalize_following_account
 from xs2n.cli.onboard import bootstrap_cookies_from_local_browser_with_choice
@@ -16,6 +17,7 @@ from xs2n.profile.timeline import (
     TimelineFetchResult,
     run_import_timeline_entries,
 )
+from xs2n.storage import DEFAULT_SOURCES_PATH, migrate_legacy_sources_yaml, load_sources
 from xs2n.timeline_storage import DEFAULT_TIMELINE_PATH, merge_timeline_entries
 
 
@@ -136,12 +138,63 @@ def import_timeline_with_recovery(
             raise
 
 
+def _legacy_sources_path_for(path: Path) -> Path:
+    return path.with_suffix(".yaml")
+
+
+def _load_handles_from_sources(path: Path) -> list[str]:
+    doc = load_sources(path)
+    profiles = doc.get("profiles")
+    if not isinstance(profiles, list):
+        return []
+
+    handles: list[str] = []
+    seen: set[str] = set()
+    for profile in profiles:
+        if not isinstance(profile, dict):
+            continue
+        raw_handle = profile.get("handle")
+        if not isinstance(raw_handle, str):
+            continue
+        try:
+            normalized = normalize_following_account(raw_handle)
+        except typer.BadParameter:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        handles.append(normalized)
+    return handles
+
+
+def _single_account_summary(
+    account: str,
+    since_datetime: datetime,
+    fetch_result: TimelineFetchResult,
+    merge_result_added: int,
+    merge_result_duplicates: int,
+    timeline_file: Path,
+) -> None:
+    typer.echo(
+        f"Scanned {fetch_result.scanned} timeline items for @{account}. "
+        f"Matched {len(fetch_result.entries)} items since {since_datetime.isoformat()} "
+        f"(skipped {fetch_result.skipped_old} older items). "
+        f"Added {merge_result_added}, skipped {merge_result_duplicates} duplicates. "
+        f"Saved to {timeline_file}."
+    )
+
+
 def timeline(
-    account: str = typer.Option(
-        ...,
+    account: str | None = typer.Option(
+        None,
         "-a",
         "--account",
-        help="X account handle (or x.com URL) to scrape.",
+        help="X account handle (or x.com URL) to scrape. Required unless --from-sources is used.",
+    ),
+    from_sources: bool = typer.Option(
+        False,
+        "--from-sources",
+        help="Ingest timelines for every handle in sources file.",
     ),
     since: str = typer.Option(
         ...,
@@ -165,18 +218,121 @@ def timeline(
         "--timeline-file",
         help="Where timeline entries are stored.",
     ),
+    sources_file: Path = typer.Option(
+        DEFAULT_SOURCES_PATH,
+        "--sources-file",
+        help="Where source handles are stored (used with --from-sources).",
+    ),
 ) -> None:
-    """Ingest posts and retweets from an account since a datetime."""
+    """Ingest posts and retweets since a datetime."""
 
-    normalized_account = normalize_following_account(account)
+    if from_sources and account:
+        raise typer.BadParameter("Use either --account or --from-sources, not both.")
+    if not from_sources and not account:
+        raise typer.BadParameter("Provide --account or use --from-sources.")
+
     since_datetime = parse_since_datetime(since)
 
-    fetch_result = import_timeline_with_recovery(
-        account=normalized_account,
-        cookies_file=cookies_file,
-        since_datetime=since_datetime,
-        limit=limit,
-    )
+    if from_sources:
+        if not sources_file.exists():
+            legacy_sources_file = _legacy_sources_path_for(sources_file)
+            migrated = migrate_legacy_sources_yaml(
+                yaml_path=legacy_sources_file,
+                json_path=sources_file,
+            )
+            if migrated:
+                typer.echo(
+                    f"Migrated {migrated} source profiles from "
+                    f"{legacy_sources_file} to {sources_file}."
+                )
+
+        handles = _load_handles_from_sources(sources_file)
+        if not handles:
+            typer.echo(
+                f"No source handles found in {sources_file}. "
+                "Run `xs2n onboard` first or pass a populated sources file.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        totals: dict[str, Any] = {
+            "scanned": 0,
+            "matched": 0,
+            "skipped_old": 0,
+            "added": 0,
+            "duplicates": 0,
+        }
+        processed_accounts = 0
+        stopped_due_to_rate_limit = False
+
+        for handle in handles:
+            try:
+                fetch_result = import_timeline_with_recovery(
+                    account=handle,
+                    cookies_file=cookies_file,
+                    since_datetime=since_datetime,
+                    limit=limit,
+                )
+            except TooManyRequests:
+                typer.echo(
+                    "Hit X rate limit (429) while ingesting "
+                    f"@{handle}. Stopping batch run to avoid repeated failures.",
+                    err=True,
+                )
+                stopped_due_to_rate_limit = True
+                break
+
+            processed_accounts += 1
+            totals["scanned"] += fetch_result.scanned
+            totals["matched"] += len(fetch_result.entries)
+            totals["skipped_old"] += fetch_result.skipped_old
+
+            if not fetch_result.entries:
+                typer.echo(
+                    "No posts/retweets found at or after "
+                    f"{since_datetime.isoformat()} for @{handle}."
+                )
+                continue
+
+            merge_result = merge_timeline_entries(fetch_result.entries, path=timeline_file)
+            totals["added"] += merge_result.added
+            totals["duplicates"] += merge_result.skipped_duplicates
+            _single_account_summary(
+                account=handle,
+                since_datetime=since_datetime,
+                fetch_result=fetch_result,
+                merge_result_added=merge_result.added,
+                merge_result_duplicates=merge_result.skipped_duplicates,
+                timeline_file=timeline_file,
+            )
+
+        typer.echo(
+            f"Processed {processed_accounts} of {len(handles)} accounts from {sources_file}. "
+            f"Scanned {totals['scanned']} timeline items. "
+            f"Matched {totals['matched']} items since {since_datetime.isoformat()} "
+            f"(skipped {totals['skipped_old']} older items). "
+            f"Added {totals['added']}, skipped {totals['duplicates']} duplicates. "
+            f"Saved to {timeline_file}."
+        )
+        if stopped_due_to_rate_limit:
+            raise typer.Exit(code=1)
+        return
+
+    normalized_account = normalize_following_account(str(account))
+    try:
+        fetch_result = import_timeline_with_recovery(
+            account=normalized_account,
+            cookies_file=cookies_file,
+            since_datetime=since_datetime,
+            limit=limit,
+        )
+    except TooManyRequests as error:
+        typer.echo(
+            "Hit X rate limit (429) while fetching "
+            f"@{normalized_account}. Wait and retry.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from error
 
     if not fetch_result.entries:
         typer.echo(
@@ -186,10 +342,11 @@ def timeline(
         return
 
     merge_result = merge_timeline_entries(fetch_result.entries, path=timeline_file)
-    typer.echo(
-        f"Scanned {fetch_result.scanned} timeline items for @{normalized_account}. "
-        f"Matched {len(fetch_result.entries)} items since {since_datetime.isoformat()} "
-        f"(skipped {fetch_result.skipped_old} older items). "
-        f"Added {merge_result.added}, skipped {merge_result.skipped_duplicates} duplicates. "
-        f"Saved to {timeline_file}."
+    _single_account_summary(
+        account=normalized_account,
+        since_datetime=since_datetime,
+        fetch_result=fetch_result,
+        merge_result_added=merge_result.added,
+        merge_result_duplicates=merge_result.skipped_duplicates,
+        timeline_file=timeline_file,
     )
