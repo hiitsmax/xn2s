@@ -12,7 +12,6 @@ from xs2n.profile.browser_cookies import (
     resolve_screen_name_from_cookies,
     write_cookie_candidate,
 )
-from xs2n.profile.following import AUTHENTICATED_ACCOUNT_SENTINEL
 from xs2n.profile.helpers import normalize_handle
 
 DEFAULT_ONBOARD_STATE_PATH = Path("data/onboard_state.yaml")
@@ -134,11 +133,17 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
                 parameters["from_following"] = resolved_screen_name
                 typer.echo(f"Using logged-in profile @{resolved_screen_name}.")
             else:
-                parameters["from_following"] = AUTHENTICATED_ACCOUNT_SENTINEL
-                typer.echo(
-                    "Could not auto-detect the profile handle from cookies. "
-                    "Using the selected authenticated session directly."
-                )
+                remembered_profile = state.get("last_following")
+                if remembered_profile:
+                    parameters["from_following"] = remembered_profile
+                    typer.echo(
+                        "Could not auto-detect the profile handle from cookies. "
+                        f"Using last saved profile @{remembered_profile}."
+                    )
+                else:
+                    parameters["from_following"] = typer.prompt(
+                        "X screen name (@, plain, or x.com URL)",
+                    )
         else:
             prompt_default = state.get("last_following")
             if prompt_default:
@@ -151,18 +156,14 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
                     "X screen name (@, plain, or x.com URL)",
                 )
 
-        from_following = str(parameters["from_following"])
-        if from_following != AUTHENTICATED_ACCOUNT_SENTINEL:
-            parameters["from_following"] = normalize_following_account(from_following)
-            _save_onboard_state(
-                {
-                    "last_following": str(parameters["from_following"]),
-                    "last_mode": "following",
-                },
-                path=state_path,
-            )
-        else:
-            _save_onboard_state({**state, "last_mode": "following"}, path=state_path)
+        parameters["from_following"] = normalize_following_account(str(parameters["from_following"]))
+        _save_onboard_state(
+            {
+                "last_following": str(parameters["from_following"]),
+                "last_mode": "following",
+            },
+            path=state_path,
+        )
         return
 
     raise typer.BadParameter("Mode must be one of: 1, 2, paste, following.")

@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from twikit.errors import Forbidden
+from twikit.errors import Forbidden, UserNotFound
 
-from xs2n.cli.helpers import sanitize_cli_parameters
+from xs2n.cli.helpers import normalize_following_account, sanitize_cli_parameters
 from xs2n.cli.parameters import process_paste_parameters
 from xs2n.profile.auth import (
     is_cloudflare_block_error,
@@ -66,9 +66,11 @@ def import_following_with_recovery(
     cookies_file: Path,
     limit: int,
 ) -> list[str]:
+    account_screen_name = account
+
     def retry_import() -> list[str]:
         return run_import_following_handles(
-            account_screen_name=account,
+            account_screen_name=account_screen_name,
             cookies_file=cookies_file,
             limit=limit,
             prompt_login=prompt_login,
@@ -87,6 +89,16 @@ def import_following_with_recovery(
             )
 
     try:
+        return retry_import()
+    except UserNotFound:
+        typer.echo(
+            f"X profile '{account_screen_name}' was not found.",
+            err=True,
+        )
+        account_screen_name = normalize_following_account(
+            typer.prompt("X screen name (@, plain, or x.com URL)")
+        )
+        typer.echo(f"Retrying with @{account_screen_name}...")
         return retry_import()
     except Forbidden as error:
         if not is_cloudflare_block_error(error):

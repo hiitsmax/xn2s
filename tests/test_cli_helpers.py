@@ -8,7 +8,14 @@ import yaml
 
 from xs2n.cli.helpers import normalize_following_account, sanitize_cli_parameters
 from xs2n.profile.browser_cookies import BrowserCookieCandidate
-from xs2n.profile.following import AUTHENTICATED_ACCOUNT_SENTINEL
+
+
+@pytest.fixture(autouse=True)
+def isolate_onboard_state_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("xs2n.cli.helpers.DEFAULT_ONBOARD_STATE_PATH", tmp_path / "onboard_state.yaml")
 
 
 def test_sanitize_cli_parameters_defaults_to_interactive_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -266,10 +273,11 @@ def test_sanitize_cli_parameters_uses_authenticated_session_when_handle_is_unkno
     tmp_path: Path,
 ) -> None:
     prompts: list[str] = []
+    answers = iter(["2", "https://x.com/manual_user"])
 
     def fake_prompt(message: str, **kwargs: object) -> str:
         prompts.append(message)
-        return "2"
+        return next(answers)
 
     monkeypatch.setattr(
         "typer.prompt",
@@ -291,15 +299,64 @@ def test_sanitize_cli_parameters_uses_authenticated_session_when_handle_is_unkno
         lambda cookies: None,
     )
     cookies_file = tmp_path / "cookies.json"
+    state_file = tmp_path / "onboard_state.yaml"
     parameters = {
         "paste": False,
         "from_following": None,
         "wizard": False,
         "cookies_file": cookies_file,
+        "onboard_state_file": state_file,
     }
 
     sanitize_cli_parameters(parameters)
 
-    assert parameters["from_following"] == AUTHENTICATED_ACCOUNT_SENTINEL
+    assert parameters["from_following"] == "manual_user"
+    assert cookies_file.exists()
+    assert prompts == [
+        "Onboarding mode [1: paste, 2: following]",
+        "X screen name (@, plain, or x.com URL)",
+    ]
+
+
+def test_sanitize_cli_parameters_uses_last_saved_handle_when_cookie_profile_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_file = tmp_path / "onboard_state.yaml"
+    state_file.write_text("last_mode: following\nlast_following: VineyardSunset_\n", encoding="utf-8")
+    prompts: list[str] = []
+
+    def fake_prompt(message: str, **kwargs: object) -> str:
+        prompts.append(message)
+        return "2"
+
+    monkeypatch.setattr("typer.prompt", fake_prompt)
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.discover_x_cookie_candidates",
+        lambda resolve_profiles=True: [
+            BrowserCookieCandidate(
+                browser_name="chrome",
+                domain="x.com",
+                cookies={"auth_token": "a", "ct0": "b"},
+                screen_name=None,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.resolve_screen_name_from_cookies",
+        lambda cookies: None,
+    )
+    cookies_file = tmp_path / "cookies.json"
+    parameters = {
+        "paste": False,
+        "from_following": None,
+        "wizard": False,
+        "cookies_file": cookies_file,
+        "onboard_state_file": state_file,
+    }
+
+    sanitize_cli_parameters(parameters)
+
+    assert parameters["from_following"] == "vineyardsunset_"
     assert cookies_file.exists()
     assert prompts == ["Onboarding mode [1: paste, 2: following]"]

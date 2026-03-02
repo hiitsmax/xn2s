@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 import typer
-from twikit.errors import Forbidden
+from twikit.errors import Forbidden, UserNotFound
 
 from xs2n.cli.onboard import choose_cookie_candidate, import_following_with_recovery
 from xs2n.profile.browser_cookies import BrowserCookieCandidate
@@ -223,3 +223,34 @@ def test_import_following_with_recovery_exits_if_user_declines_bootstrap(
         )
 
     assert exit_error.value.exit_code == 1
+
+
+def test_import_following_with_recovery_recovers_from_missing_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    def fake_run_import_following_handles(**kwargs):
+        calls.append(kwargs["account_screen_name"])
+        if len(calls) == 1:
+            raise UserNotFound("The user does not exist.")
+        return ["alpha", "beta"]
+
+    monkeypatch.setattr(
+        "xs2n.cli.onboard.run_import_following_handles",
+        fake_run_import_following_handles,
+    )
+    monkeypatch.setattr(
+        "typer.prompt",
+        lambda message, **kwargs: "https://x.com/VineyardSunset_",
+    )
+
+    handles = import_following_with_recovery(
+        account="manual_user",
+        cookies_file=tmp_path / "cookies.json",
+        limit=50,
+    )
+
+    assert handles == ["alpha", "beta"]
+    assert calls == ["manual_user", "vineyardsunset_"]
