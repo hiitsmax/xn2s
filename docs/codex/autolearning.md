@@ -96,3 +96,12 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added interactive session selection when multiple logged-in browser sessions are discovered.
 - Added profile labels (`@screen_name` when resolvable) to make selection explicit and reduce wrong-account imports.
 - Added tests for candidate selection UI and preflight-before-first-attempt behavior.
+
+## Timeline Scraping Pipeline (2026-03-02)
+
+- Added `xs2n timeline --account <handle> --since <iso-datetime>` to ingest posts and retweets for a target account.
+- Implemented Twikit timeline pagination with cutoff filtering and dedupe guards in `src/xs2n/profile/timeline.py`.
+- Classified retweets using `tweet.retweeted_tweet` and skipped replies for a strict posts+retweets ingestion set.
+- Added dedicated timeline persistence in `data/timeline.yaml` via `src/xs2n/timeline_storage.py`.
+- Reused the existing Cloudflare/browser-cookie recovery strategy in the new timeline CLI path for operational consistency.
+- Added deterministic tests for timeline fetcher behavior, storage merge idempotence, and timeline CLI recovery flow.

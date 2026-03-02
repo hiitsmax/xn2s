@@ -1,40 +1,44 @@
 # xs2n
 
-`xs2n` is an early-stage CLI project for building a free-first X (Twitter) source onboarding layer for a future timeline summarization pipeline.
+`xs2n` is an early-stage CLI project for building a free-first X (Twitter) onboarding and timeline-ingestion layer for a future summarization pipeline.
 
 ## Scope
 
-This repository currently focuses on one thing: **collecting and storing profile sources** that will later feed ranking/scraping/summarization steps.
+This repository currently focuses on two foundations for downstream summarization:
+- source onboarding
+- timeline ingestion
 
 In scope today:
 - Normalize handles from pasted input (`@name`, `name`, `x.com/name`).
 - Import followed accounts from X via Twikit (`--from-following`).
 - Merge into a persistent deduplicated catalog (`data/sources.yaml`).
 - Provide a recovery flow for Cloudflare `403` blocks during following import.
+- Ingest posts and retweets from a specific account since a cutoff datetime.
+- Persist deduplicated timeline entries for downstream processing (`data/timeline.yaml`).
 
 Out of scope for now:
-- Timeline scraping and content extraction.
 - Ranking or signal scoring.
 - Summarization generation and delivery.
 - Scheduled/production orchestration.
 
 ## Current Status (WIP)
 
-Milestone: **CLI onboarding hardening**.
+Milestone: **Onboarding + timeline ingestion hardening**.
 
 Working now:
 - `xs2n onboard --paste`
 - `xs2n onboard --from-following <handle>`
+- `xs2n timeline --account <handle> --since <iso-datetime>`
 - Interactive mode selection when no onboarding mode is provided
 - Local-browser cookie preflight (with profile selection) before Twikit login prompts
 - Cloudflare block detection + local-browser cookie refresh + Playwright fallback + retry
-- Unit tests for parsing, merge behavior, and recovery flow
+- Unit tests for parsing, merge behavior, timeline fetching/storage, and recovery flow
 
 Known gaps / WIP:
 - No dedicated `auth` command set yet (`auth login/check` still pending)
-- Following import still depends on Twikit behavior and can break if X internals change
+- Following and timeline imports still depend on Twikit behavior and can break if X internals change
 - No full integration/e2e test for real X account flow in CI
-- No summarization pipeline yet (this repo is onboarding-only at the moment)
+- No summarization pipeline yet (ingestion is in place, processing is next)
 
 ## Quickstart (`uv`)
 
@@ -79,10 +83,17 @@ uv run xs2n onboard
 uv run xs2n onboard --wizard
 ```
 
-Output catalog:
+Ingest posts + retweets from an account since a cutoff datetime:
+
+```bash
+uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
+```
+
+Output files:
 
 ```text
 data/sources.yaml
+data/timeline.yaml
 ```
 
 ## Tests
