@@ -104,7 +104,7 @@ Rate-limit hardening and slower fetch options:
 uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --slow-fetch-seconds 1.0 --page-delay-seconds 0.4 --wait-on-rate-limit
 ```
 
-By default, timeline ingestion waits and retries on X `429` responses. Use `--no-wait-on-rate-limit` to fail fast instead.
+By default, timeline ingestion now waits/retries on X `429` and uses conservative pacing (`--slow-fetch-seconds 1.0`, `--page-delay-seconds 0.4`). Use `--no-wait-on-rate-limit` or set delays to `0` for a faster/fail-fast run.
 
 Output files:
 
