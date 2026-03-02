@@ -14,6 +14,9 @@ from xs2n.profile.types import TimelineEntry, TimelineFetchResult, TimelineMerge
 DEFAULT_TIMELINE_OPTIONS = {
     "slow_fetch_seconds": 0.0,
     "page_delay_seconds": 0.0,
+    "thread_parent_limit": 0,
+    "thread_replies_limit": 0,
+    "thread_other_replies_limit": 0,
     "wait_on_rate_limit": True,
     "rate_limit_wait_seconds": 900,
     "rate_limit_poll_seconds": 30,
@@ -151,6 +154,36 @@ def test_import_timeline_with_recovery_passes_page_delay(
     )
 
     assert captured["page_delay_seconds"] == 1.5
+
+
+def test_import_timeline_with_recovery_passes_thread_limits(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_import_timeline_entries(**kwargs):
+        captured.update(kwargs)
+        return _fetch_result()
+
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.run_import_timeline_entries",
+        fake_run_import_timeline_entries,
+    )
+
+    import_timeline_with_recovery(
+        account="mx",
+        cookies_file=tmp_path / "cookies.json",
+        since_datetime=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        limit=50,
+        thread_parent_limit=5,
+        thread_replies_limit=7,
+        thread_other_replies_limit=3,
+    )
+
+    assert captured["thread_parent_limit"] == 5
+    assert captured["thread_replies_limit"] == 7
+    assert captured["thread_other_replies_limit"] == 3
 
 
 def test_timeline_requires_account_or_from_sources(tmp_path: Path) -> None:

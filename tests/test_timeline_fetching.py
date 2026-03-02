@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from twikit.errors import NotFound
 
 from xs2n.profile.timeline import (
     AUTHENTICATED_ACCOUNT_SENTINEL,
@@ -30,6 +31,7 @@ class _DummyTweet:
         in_reply_to: str | None = None,
         conversation_id: str | None = None,
         legacy_conversation_id: str | None = None,
+        replies: "_DummyBatch | None" = None,
     ) -> None:
         self.id = tweet_id
         self.created_at_datetime = created_at_datetime
@@ -43,6 +45,7 @@ class _DummyTweet:
         self._legacy: dict[str, str] = {}
         if legacy_conversation_id is not None:
             self._legacy["conversation_id_str"] = legacy_conversation_id
+        self.replies = replies
 
 
 class _DummyBatch(list):
@@ -73,11 +76,18 @@ class _DummyUser:
 
 
 class _DummyClient:
-    def __init__(self, locale: str, user: _DummyUser) -> None:
+    def __init__(
+        self,
+        locale: str,
+        user: _DummyUser,
+        tweet_details: dict[str, _DummyTweet] | None = None,
+    ) -> None:
         self.locale = locale
         self._user = user
+        self._tweet_details = tweet_details or {}
         self.user_called = False
         self.by_name_calls: list[str] = []
+        self.detail_calls: list[str] = []
 
     async def user(self) -> _DummyUser:
         self.user_called = True
@@ -86,6 +96,12 @@ class _DummyClient:
     async def get_user_by_screen_name(self, screen_name: str) -> _DummyUser:
         self.by_name_calls.append(screen_name)
         return self._user
+
+    async def get_tweet_by_id(self, tweet_id: str) -> _DummyTweet:
+        self.detail_calls.append(tweet_id)
+        if tweet_id not in self._tweet_details:
+            raise NotFound(f"tweet {tweet_id} not found")
+        return self._tweet_details[tweet_id]
 
 
 def _tweet(
@@ -98,6 +114,7 @@ def _tweet(
     in_reply_to: str | None = None,
     conversation_id: str | None = None,
     legacy_conversation_id: str | None = None,
+    replies: _DummyBatch | None = None,
 ) -> _DummyTweet:
     fallback_created_at = (
         created_at_datetime or datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -112,6 +129,7 @@ def _tweet(
         in_reply_to=in_reply_to,
         conversation_id=conversation_id,
         legacy_conversation_id=legacy_conversation_id,
+        replies=replies,
     )
 
 
@@ -184,6 +202,9 @@ def test_import_timeline_entries_includes_replies_and_classifies_kinds(
             since_datetime=since,
             limit=10,
             prompt_login=lambda *_: ("u", "e", "p"),
+            thread_parent_limit=0,
+            thread_replies_limit=0,
+            thread_other_replies_limit=0,
         )
     )
 
@@ -240,6 +261,9 @@ def test_import_timeline_entries_uses_self_account_and_created_at_fallback(
             since_datetime=since,
             limit=5,
             prompt_login=lambda *_: ("u", "e", "p"),
+            thread_parent_limit=0,
+            thread_replies_limit=0,
+            thread_other_replies_limit=0,
         )
     )
 
@@ -294,8 +318,163 @@ def test_import_timeline_entries_applies_page_delay_between_pages(
             limit=10,
             prompt_login=lambda *_: ("u", "e", "p"),
             page_delay_seconds=0.5,
+            thread_parent_limit=0,
+            thread_replies_limit=0,
+            thread_other_replies_limit=0,
         )
     )
 
     assert sleep_calls
     assert all(call == 0.5 for call in sleep_calls)
+
+
+def test_import_timeline_entries_hydrates_parent_chain_with_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    child_reply = _tweet(
+        "child",
+        datetime(2026, 1, 3, tzinfo=timezone.utc),
+        in_reply_to="parent-1",
+        conversation_id="parent-1",
+    )
+    dummy_user = _DummyUser(
+        screen_name="mx",
+        tweets_batch=_DummyBatch([]),
+        replies_batch=_DummyBatch([child_reply]),
+    )
+
+    tweet_details = {
+        "parent-1": _tweet(
+            "parent-1",
+            datetime(2026, 1, 2, tzinfo=timezone.utc),
+            author="other",
+            in_reply_to="parent-2",
+        ),
+        "parent-2": _tweet(
+            "parent-2",
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+            author="other",
+        ),
+    }
+    holder: dict[str, _DummyClient] = {}
+
+    def fake_client(locale: str) -> _DummyClient:
+        client = _DummyClient(locale=locale, user=dummy_user, tweet_details=tweet_details)
+        holder["client"] = client
+        return client
+
+    async def fake_ensure_authenticated_client(**kwargs):  # noqa: ANN202
+        return None
+
+    monkeypatch.setattr("xs2n.profile.timeline.Client", fake_client)
+    monkeypatch.setattr(
+        "xs2n.profile.timeline.ensure_authenticated_client",
+        fake_ensure_authenticated_client,
+    )
+
+    result = asyncio.run(
+        import_timeline_entries(
+            account_screen_name="mx",
+            cookies_file=Path("cookies.json"),
+            since_datetime=since,
+            limit=10,
+            prompt_login=lambda *_: ("u", "e", "p"),
+            thread_parent_limit=1,
+            thread_replies_limit=0,
+            thread_other_replies_limit=0,
+        )
+    )
+
+    assert [entry.tweet_id for entry in result.entries] == ["child", "parent-1"]
+    parent_entry = next(entry for entry in result.entries if entry.tweet_id == "parent-1")
+    assert parent_entry.timeline_source == "thread_parent"
+    assert holder["client"].detail_calls == ["parent-1"]
+
+
+def test_import_timeline_entries_limits_other_author_recursive_replies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    root_tweet = _tweet("root", datetime(2026, 1, 3, tzinfo=timezone.utc), conversation_id="root")
+    dummy_user = _DummyUser(screen_name="mx", tweets_batch=_DummyBatch([root_tweet]))
+
+    reply_self = _tweet(
+        "reply-self",
+        datetime(2026, 1, 2, 3, tzinfo=timezone.utc),
+        author="mx",
+        in_reply_to="root",
+        conversation_id="root",
+    )
+    reply_other = _tweet(
+        "reply-other",
+        datetime(2026, 1, 2, 2, tzinfo=timezone.utc),
+        author="other",
+        in_reply_to="root",
+        conversation_id="root",
+    )
+    nested_other = _tweet(
+        "nested-other",
+        datetime(2026, 1, 2, 1, tzinfo=timezone.utc),
+        author="other2",
+        in_reply_to="reply-self",
+        conversation_id="root",
+    )
+
+    tweet_details = {
+        "root": _tweet(
+            "root",
+            datetime(2026, 1, 3, tzinfo=timezone.utc),
+            author="mx",
+            replies=_DummyBatch([reply_self, reply_other]),
+        ),
+        "reply-self": _tweet(
+            "reply-self",
+            datetime(2026, 1, 2, 3, tzinfo=timezone.utc),
+            author="mx",
+            in_reply_to="root",
+            replies=_DummyBatch([nested_other]),
+        ),
+        "reply-other": _tweet(
+            "reply-other",
+            datetime(2026, 1, 2, 2, tzinfo=timezone.utc),
+            author="other",
+            in_reply_to="root",
+            replies=_DummyBatch([]),
+        ),
+    }
+    holder: dict[str, _DummyClient] = {}
+
+    def fake_client(locale: str) -> _DummyClient:
+        client = _DummyClient(locale=locale, user=dummy_user, tweet_details=tweet_details)
+        holder["client"] = client
+        return client
+
+    async def fake_ensure_authenticated_client(**kwargs):  # noqa: ANN202
+        return None
+
+    monkeypatch.setattr("xs2n.profile.timeline.Client", fake_client)
+    monkeypatch.setattr(
+        "xs2n.profile.timeline.ensure_authenticated_client",
+        fake_ensure_authenticated_client,
+    )
+
+    result = asyncio.run(
+        import_timeline_entries(
+            account_screen_name="mx",
+            cookies_file=Path("cookies.json"),
+            since_datetime=since,
+            limit=10,
+            prompt_login=lambda *_: ("u", "e", "p"),
+            thread_parent_limit=0,
+            thread_replies_limit=3,
+            thread_other_replies_limit=1,
+        )
+    )
+
+    thread_replies = [entry for entry in result.entries if entry.timeline_source == "thread_reply"]
+    other_thread_replies = [entry for entry in thread_replies if entry.author_handle != "mx"]
+    assert [entry.tweet_id for entry in thread_replies] == ["reply-self", "reply-other"]
+    assert len(other_thread_replies) == 1
+    assert "root" in holder["client"].detail_calls
+    assert "reply-self" in holder["client"].detail_calls

@@ -14,6 +14,9 @@ from xs2n.profile.auth import is_cloudflare_block_error, prompt_login
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
 from xs2n.profile.timeline import (
     DEFAULT_IMPORT_TIMELINE,
+    DEFAULT_THREAD_OTHER_REPLIES_LIMIT,
+    DEFAULT_THREAD_PARENT_LIMIT,
+    DEFAULT_THREAD_REPLIES_LIMIT,
     IMPORT_TIMELINE_LIMIT,
     TimelineFetchResult,
     run_import_timeline_entries,
@@ -49,6 +52,9 @@ def import_timeline_with_recovery(
     since_datetime: datetime,
     limit: int,
     page_delay_seconds: float = 0.0,
+    thread_parent_limit: int = DEFAULT_THREAD_PARENT_LIMIT,
+    thread_replies_limit: int = DEFAULT_THREAD_REPLIES_LIMIT,
+    thread_other_replies_limit: int = DEFAULT_THREAD_OTHER_REPLIES_LIMIT,
 ) -> TimelineFetchResult:
     account_screen_name = account
 
@@ -60,6 +66,9 @@ def import_timeline_with_recovery(
             limit=limit,
             prompt_login=prompt_login,
             page_delay_seconds=page_delay_seconds,
+            thread_parent_limit=thread_parent_limit,
+            thread_replies_limit=thread_replies_limit,
+            thread_other_replies_limit=thread_other_replies_limit,
         )
 
     if not cookies_file.exists():
@@ -228,6 +237,9 @@ def _fetch_with_rate_limit_retries(
     since_datetime: datetime,
     limit: int,
     page_delay_seconds: float,
+    thread_parent_limit: int,
+    thread_replies_limit: int,
+    thread_other_replies_limit: int,
     wait_on_rate_limit: bool,
     rate_limit_wait_seconds: int,
     rate_limit_poll_seconds: int,
@@ -244,6 +256,9 @@ def _fetch_with_rate_limit_retries(
                 since_datetime=since_datetime,
                 limit=limit,
                 page_delay_seconds=page_delay_seconds,
+                thread_parent_limit=thread_parent_limit,
+                thread_replies_limit=thread_replies_limit,
+                thread_other_replies_limit=thread_other_replies_limit,
             )
         except TooManyRequests as error:
             if not wait_on_rate_limit:
@@ -322,6 +337,24 @@ def timeline(
         "--page-delay-seconds",
         min=0.0,
         help="Delay in seconds between timeline pagination requests.",
+    ),
+    thread_parent_limit: int = typer.Option(
+        DEFAULT_THREAD_PARENT_LIMIT,
+        "--thread-parent-limit",
+        min=0,
+        help="Max parent-chain context tweets hydrated for reply threads (0 disables).",
+    ),
+    thread_replies_limit: int = typer.Option(
+        DEFAULT_THREAD_REPLIES_LIMIT,
+        "--thread-replies-limit",
+        min=0,
+        help="Max recursive thread replies to add across conversations (0 disables).",
+    ),
+    thread_other_replies_limit: int = typer.Option(
+        DEFAULT_THREAD_OTHER_REPLIES_LIMIT,
+        "--thread-other-replies-limit",
+        min=0,
+        help="Max replies authored by non-target accounts to include (0 excludes them).",
     ),
     wait_on_rate_limit: bool = typer.Option(
         True,
@@ -402,6 +435,9 @@ def timeline(
                     since_datetime=since_datetime,
                     limit=limit,
                     page_delay_seconds=page_delay_seconds,
+                    thread_parent_limit=thread_parent_limit,
+                    thread_replies_limit=thread_replies_limit,
+                    thread_other_replies_limit=thread_other_replies_limit,
                     wait_on_rate_limit=wait_on_rate_limit,
                     rate_limit_wait_seconds=rate_limit_wait_seconds,
                     rate_limit_poll_seconds=rate_limit_poll_seconds,
@@ -466,6 +502,9 @@ def timeline(
             since_datetime=since_datetime,
             limit=limit,
             page_delay_seconds=page_delay_seconds,
+            thread_parent_limit=thread_parent_limit,
+            thread_replies_limit=thread_replies_limit,
+            thread_other_replies_limit=thread_other_replies_limit,
             wait_on_rate_limit=wait_on_rate_limit,
             rate_limit_wait_seconds=rate_limit_wait_seconds,
             rate_limit_poll_seconds=rate_limit_poll_seconds,

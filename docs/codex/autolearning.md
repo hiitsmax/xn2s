@@ -133,3 +133,15 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added reply/thread linkage metadata to timeline records: `in_reply_to_tweet_id`, `conversation_id`, and `timeline_source`.
 - Kept the storage shape flat and deduplicated by `tweet_id` to preserve existing downstream merge behavior.
 - Added tests covering reply inclusion, kind classification (`post`/`reply`/`retweet`), and persistence of thread metadata fields.
+
+## Thread Context Expansion Limits (2026-03-03)
+
+- Added bounded thread-context hydration during timeline import:
+  - parent-chain hydration for replies (`thread_parent` source),
+  - recursive conversation reply expansion (`thread_reply` source),
+  - dedicated cap for non-target-account replies.
+- Exposed controls via CLI:
+  - `--thread-parent-limit`
+  - `--thread-replies-limit`
+  - `--thread-other-replies-limit`
+- Added tests locking limit behavior for parent-chain hydration and cross-author reply caps.

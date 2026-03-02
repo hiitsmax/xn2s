@@ -106,6 +106,17 @@ uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --slow-fetch-se
 
 By default, timeline ingestion now waits/retries on X `429` and uses conservative pacing (`--slow-fetch-seconds 1.0`, `--page-delay-seconds 0.4`). Use `--no-wait-on-rate-limit` or set delays to `0` for a faster/fail-fast run.
 
+Thread expansion options (bounded):
+
+```bash
+uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --thread-parent-limit 120 --thread-replies-limit 240 --thread-other-replies-limit 120
+```
+
+- `--thread-parent-limit`: hydrate replied-to parent chain tweets (recursive upward).
+- `--thread-replies-limit`: recursively include conversation replies.
+- `--thread-other-replies-limit`: cap replies authored by non-target accounts.
+- Set any of these to `0` to disable that expansion path.
+
 Output files:
 
 ```text
