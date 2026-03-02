@@ -69,6 +69,9 @@ def merge_timeline_entries(
                 "retweeted_tweet_id": entry.retweeted_tweet_id,
                 "retweeted_author_handle": entry.retweeted_author_handle,
                 "retweeted_created_at": entry.retweeted_created_at,
+                "in_reply_to_tweet_id": entry.in_reply_to_tweet_id,
+                "conversation_id": entry.conversation_id,
+                "timeline_source": entry.timeline_source,
             }
         )
         existing.add(entry.tweet_id)

@@ -34,3 +34,29 @@ def test_merge_timeline_entries_adds_and_skips_duplicates(tmp_path: Path) -> Non
     doc = load_timeline(timeline_file)
     stored_ids = [item["tweet_id"] for item in doc["entries"]]
     assert stored_ids == ["1", "2", "3"]
+
+
+def test_merge_timeline_entries_persists_thread_metadata(tmp_path: Path) -> None:
+    timeline_file = tmp_path / "timeline.json"
+    entry = TimelineEntry(
+        tweet_id="reply-1",
+        account_handle="mx",
+        author_handle="mx",
+        kind="reply",
+        created_at="2026-03-01T01:00:00+00:00",
+        text="reply",
+        retweeted_tweet_id=None,
+        retweeted_author_handle=None,
+        retweeted_created_at=None,
+        in_reply_to_tweet_id="tweet-1",
+        conversation_id="conv-1",
+        timeline_source="replies",
+    )
+
+    merge_timeline_entries([entry], path=timeline_file)
+
+    doc = load_timeline(timeline_file)
+    stored = doc["entries"][0]
+    assert stored["in_reply_to_tweet_id"] == "tweet-1"
+    assert stored["conversation_id"] == "conv-1"
+    assert stored["timeline_source"] == "replies"

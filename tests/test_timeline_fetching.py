@@ -28,6 +28,8 @@ class _DummyTweet:
         author_handle: str,
         retweeted_tweet: "_DummyTweet | None" = None,
         in_reply_to: str | None = None,
+        conversation_id: str | None = None,
+        legacy_conversation_id: str | None = None,
     ) -> None:
         self.id = tweet_id
         self.created_at_datetime = created_at_datetime
@@ -37,6 +39,10 @@ class _DummyTweet:
         self.user = _DummyUserRef(author_handle)
         self.retweeted_tweet = retweeted_tweet
         self.in_reply_to = in_reply_to
+        self.conversation_id = conversation_id
+        self._legacy: dict[str, str] = {}
+        if legacy_conversation_id is not None:
+            self._legacy["conversation_id_str"] = legacy_conversation_id
 
 
 class _DummyBatch(list):
@@ -51,14 +57,19 @@ class _DummyBatch(list):
 
 
 class _DummyUser:
-    def __init__(self, screen_name: str, first_batch: _DummyBatch) -> None:
+    def __init__(
+        self,
+        screen_name: str,
+        tweets_batch: _DummyBatch,
+        replies_batch: _DummyBatch | None = None,
+    ) -> None:
         self.screen_name = screen_name
-        self.first_batch = first_batch
+        self._batches = {"Tweets": tweets_batch, "Replies": replies_batch or _DummyBatch([])}
         self.get_tweets_calls: list[tuple[str, int]] = []
 
     async def get_tweets(self, tweet_type: str, count: int):  # noqa: ANN201
         self.get_tweets_calls.append((tweet_type, count))
-        return self.first_batch
+        return self._batches.get(tweet_type, _DummyBatch([]))
 
 
 class _DummyClient:
@@ -85,6 +96,8 @@ def _tweet(
     text: str = "hello",
     retweeted_tweet: _DummyTweet | None = None,
     in_reply_to: str | None = None,
+    conversation_id: str | None = None,
+    legacy_conversation_id: str | None = None,
 ) -> _DummyTweet:
     fallback_created_at = (
         created_at_datetime or datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -97,10 +110,12 @@ def _tweet(
         author_handle=author,
         retweeted_tweet=retweeted_tweet,
         in_reply_to=in_reply_to,
+        conversation_id=conversation_id,
+        legacy_conversation_id=legacy_conversation_id,
     )
 
 
-def test_import_timeline_entries_filters_since_and_classifies_retweets(
+def test_import_timeline_entries_includes_replies_and_classifies_kinds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     since = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -110,14 +125,9 @@ def test_import_timeline_entries_filters_since_and_classifies_retweets(
         author="other",
         text="original",
     )
-    page_2 = _DummyBatch(
+    tweets_batch = _DummyBatch(
         [
             _tweet("old", datetime(2025, 12, 30, tzinfo=timezone.utc), text="too old"),
-            _tweet("reply", datetime(2026, 1, 2, tzinfo=timezone.utc), in_reply_to="1"),
-        ]
-    )
-    page_1 = _DummyBatch(
-        [
             _tweet("1", datetime(2026, 1, 3, tzinfo=timezone.utc), text="post"),
             _tweet(
                 "2",
@@ -125,10 +135,31 @@ def test_import_timeline_entries_filters_since_and_classifies_retweets(
                 text="retweet event",
                 retweeted_tweet=original,
             ),
-        ],
-        next_batch=page_2,
+        ]
     )
-    dummy_user = _DummyUser(screen_name="mx", first_batch=page_1)
+    replies_batch = _DummyBatch(
+        [
+            _tweet(
+                "3",
+                datetime(2026, 1, 2, 1, tzinfo=timezone.utc),
+                text="thread reply",
+                in_reply_to="1",
+                conversation_id="conv-1",
+            ),
+            _tweet(
+                "4",
+                datetime(2026, 1, 2, 2, tzinfo=timezone.utc),
+                text="legacy conversation id",
+                in_reply_to="3",
+                legacy_conversation_id="conv-1",
+            ),
+        ],
+    )
+    dummy_user = _DummyUser(
+        screen_name="mx",
+        tweets_batch=tweets_batch,
+        replies_batch=replies_batch,
+    )
 
     holder: dict[str, _DummyClient] = {}
 
@@ -156,15 +187,21 @@ def test_import_timeline_entries_filters_since_and_classifies_retweets(
         )
     )
 
-    assert [entry.tweet_id for entry in result.entries] == ["1", "2"]
-    assert [entry.kind for entry in result.entries] == ["post", "retweet"]
+    assert [entry.tweet_id for entry in result.entries] == ["1", "4", "3", "2"]
+    assert [entry.kind for entry in result.entries] == ["post", "reply", "reply", "retweet"]
+    reply = next(entry for entry in result.entries if entry.tweet_id == "3")
+    legacy_reply = next(entry for entry in result.entries if entry.tweet_id == "4")
+    assert reply.in_reply_to_tweet_id == "1"
+    assert reply.conversation_id == "conv-1"
+    assert reply.timeline_source == "replies"
+    assert legacy_reply.conversation_id == "conv-1"
     assert result.skipped_old == 1
-    assert result.scanned == 4
+    assert result.scanned == 5
 
     client = holder["client"]
     assert client.by_name_calls == ["mx"]
     assert client.user_called is False
-    assert dummy_user.get_tweets_calls == [("Tweets", 10)]
+    assert dummy_user.get_tweets_calls == [("Tweets", 10), ("Replies", 10)]
 
 
 def test_import_timeline_entries_uses_self_account_and_created_at_fallback(
@@ -179,7 +216,7 @@ def test_import_timeline_entries_uses_self_account_and_created_at_fallback(
         author_handle="self_handle",
     )
     batch = _DummyBatch([tweet])
-    dummy_user = _DummyUser(screen_name="self_handle", first_batch=batch)
+    dummy_user = _DummyUser(screen_name="self_handle", tweets_batch=batch)
     holder: dict[str, _DummyClient] = {}
 
     def fake_client(locale: str) -> _DummyClient:
@@ -229,7 +266,7 @@ def test_import_timeline_entries_applies_page_delay_between_pages(
         ],
         next_batch=page_2,
     )
-    dummy_user = _DummyUser(screen_name="mx", first_batch=page_1)
+    dummy_user = _DummyUser(screen_name="mx", tweets_batch=page_1)
 
     def fake_client(locale: str) -> _DummyClient:
         return _DummyClient(locale=locale, user=dummy_user)

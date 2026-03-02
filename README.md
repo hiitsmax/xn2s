@@ -13,7 +13,7 @@ In scope today:
 - Import followed accounts from X via Twikit (`--from-following`).
 - Merge into a persistent deduplicated catalog (`data/sources.json`).
 - Provide a recovery flow for Cloudflare `403` blocks during following import.
-- Ingest posts and retweets from a specific account since a cutoff datetime.
+- Ingest posts, replies (thread-aware), and retweets from a specific account since a cutoff datetime.
 - Persist deduplicated timeline entries for downstream processing (`data/timeline.json`).
 
 Out of scope for now:
@@ -84,13 +84,13 @@ uv run xs2n onboard
 uv run xs2n onboard --wizard
 ```
 
-Ingest posts + retweets from an account since a cutoff datetime:
+Ingest posts + replies + retweets from an account since a cutoff datetime:
 
 ```bash
 uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
 ```
 
-Ingest posts + retweets for all onboarded sources in `data/sources.json`:
+Ingest posts + replies + retweets for all onboarded sources in `data/sources.json`:
 
 ```bash
 uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500

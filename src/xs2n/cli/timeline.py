@@ -287,7 +287,7 @@ def timeline(
     since: str = typer.Option(
         ...,
         "--since",
-        help="Include posts and retweets since this ISO datetime (UTC if timezone omitted).",
+        help="Include posts, replies, and retweets since this ISO datetime (UTC if timezone omitted).",
     ),
     cookies_file: Path = typer.Option(
         Path("cookies.json"),
@@ -353,7 +353,7 @@ def timeline(
         help="Maximum 429 retries per account before the run stops.",
     ),
 ) -> None:
-    """Ingest posts and retweets since a datetime."""
+    """Ingest posts, replies, and retweets since a datetime."""
 
     if from_sources and account:
         raise typer.BadParameter("Use either --account or --from-sources, not both.")
@@ -424,7 +424,7 @@ def timeline(
 
             if not fetch_result.entries:
                 typer.echo(
-                    "No posts/retweets found at or after "
+                    "No posts/replies/retweets found at or after "
                     f"{since_datetime.isoformat()} for @{handle}."
                 )
             else:
@@ -482,7 +482,7 @@ def timeline(
 
     if not fetch_result.entries:
         typer.echo(
-            "No posts/retweets found at or after "
+            "No posts/replies/retweets found at or after "
             f"{since_datetime.isoformat()} for @{normalized_account}."
         )
         return

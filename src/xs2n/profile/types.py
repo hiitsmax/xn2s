@@ -18,7 +18,8 @@ class ProfileEntry:
     added_at: str
 
 
-TimelineEntryKind = Literal["post", "retweet"]
+TimelineEntryKind = Literal["post", "reply", "retweet"]
+TimelineEntrySource = Literal["tweets", "replies"]
 
 
 @dataclass(slots=True)
@@ -32,6 +33,9 @@ class TimelineEntry:
     retweeted_tweet_id: str | None
     retweeted_author_handle: str | None
     retweeted_created_at: str | None
+    in_reply_to_tweet_id: str | None = None
+    conversation_id: str | None = None
+    timeline_source: TimelineEntrySource | None = None
 
 
 @dataclass(slots=True)
@@ -45,7 +49,6 @@ class TimelineFetchResult:
 class TimelineMergeResult:
     added: int
     skipped_duplicates: int
-
 
 
 

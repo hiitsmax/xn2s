@@ -126,3 +126,10 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added configurable fetch throttling via `--slow-fetch-seconds` (between accounts) and `--page-delay-seconds` (between timeline page requests).
 - Added rate-limit controls (`--wait-on-rate-limit`, wait/poll/max options) so runs can be either resilient or fail-fast.
 - Added tests for wait-and-retry behavior, slower batch pacing, and pagination delay wiring.
+
+## Timeline Thread-Aware Capture (2026-03-03)
+
+- Updated timeline fetch to merge both `Tweets` and `Replies` feeds, so account thread continuations are no longer dropped.
+- Added reply/thread linkage metadata to timeline records: `in_reply_to_tweet_id`, `conversation_id`, and `timeline_source`.
+- Kept the storage shape flat and deduplicated by `tweet_id` to preserve existing downstream merge behavior.
+- Added tests covering reply inclusion, kind classification (`post`/`reply`/`retweet`), and persistence of thread metadata fields.
