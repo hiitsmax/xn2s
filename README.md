@@ -29,6 +29,7 @@ Working now:
 - `xs2n onboard --paste`
 - `xs2n onboard --from-following <handle>`
 - `xs2n timeline --account <handle> --since <iso-datetime>`
+- `xs2n timeline --from-sources --since <iso-datetime>`
 - Interactive mode selection when no onboarding mode is provided
 - Local-browser cookie preflight (with profile selection) before Twikit login prompts
 - Cloudflare block detection + local-browser cookie refresh + Playwright fallback + retry
@@ -88,6 +89,15 @@ Ingest posts + retweets from an account since a cutoff datetime:
 ```bash
 uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
 ```
+
+Ingest posts + retweets for all onboarded sources in `data/sources.json`:
+
+```bash
+uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
+```
+
+If `data/sources.json` is missing but legacy `data/sources.yaml` exists, `--from-sources` auto-migrates it to JSON before ingestion.
+If X rate limits the batch run (`429`), the command exits cleanly with a partial summary.
 
 Output files:
 

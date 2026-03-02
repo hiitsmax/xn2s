@@ -112,3 +112,11 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Updated default paths to `data/sources.json`, `data/timeline.json`, and `data/onboard_state.json`.
 - Replaced YAML serialization with stdlib `json` across storage helpers and corresponding tests.
 - Updated docs and examples so command outputs match JSON defaults end-to-end.
+
+## Batch Timeline Ingestion From Sources (2026-03-02)
+
+- Added `xs2n timeline --from-sources --sources-file <path>` to ingest all handles from the source catalog in one run.
+- Added command validation to enforce either `--account` or `--from-sources`.
+- Added legacy migration support: if `sources.json` is missing and matching `sources.yaml` exists, it is converted automatically.
+- Added graceful `429` handling so batch runs stop with a partial summary instead of crashing with a traceback.
+- Added tests covering batch-mode handle loading, option validation, and YAML-to-JSON migration on first run.
