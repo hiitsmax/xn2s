@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 import typer
-import yaml
 
 from xs2n.cli.helpers import normalize_following_account, sanitize_cli_parameters
 from xs2n.profile.browser_cookies import BrowserCookieCandidate
@@ -15,7 +15,7 @@ def isolate_onboard_state_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("xs2n.cli.helpers.DEFAULT_ONBOARD_STATE_PATH", tmp_path / "onboard_state.yaml")
+    monkeypatch.setattr("xs2n.cli.helpers.DEFAULT_ONBOARD_STATE_PATH", tmp_path / "onboard_state.json")
 
 
 def test_sanitize_cli_parameters_defaults_to_interactive_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,8 +95,8 @@ def test_sanitize_cli_parameters_uses_last_mode_as_prompt_default(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    state_file = tmp_path / "onboard_state.yaml"
-    state_file.write_text("last_mode: following\nlast_following: mx\n", encoding="utf-8")
+    state_file = tmp_path / "onboard_state.json"
+    state_file.write_text('{"last_mode": "following", "last_following": "mx"}', encoding="utf-8")
     prompts: list[tuple[str, dict[str, object]]] = []
 
     def fake_prompt(message: str, **kwargs: object) -> str:
@@ -122,8 +122,8 @@ def test_sanitize_cli_parameters_uses_last_following_as_prompt_default(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    state_file = tmp_path / "onboard_state.yaml"
-    state_file.write_text("last_mode: following\nlast_following: mx\n", encoding="utf-8")
+    state_file = tmp_path / "onboard_state.json"
+    state_file.write_text('{"last_mode": "following", "last_following": "mx"}', encoding="utf-8")
     prompts: list[tuple[str, dict[str, object]]] = []
     answers = iter(["2", "mx"])
 
@@ -151,7 +151,7 @@ def test_sanitize_cli_parameters_uses_last_following_as_prompt_default(
 
 
 def test_sanitize_cli_parameters_persists_following_input(tmp_path: Path) -> None:
-    state_file = tmp_path / "onboard_state.yaml"
+    state_file = tmp_path / "onboard_state.json"
     parameters = {
         "paste": False,
         "from_following": "@Neo",
@@ -161,7 +161,7 @@ def test_sanitize_cli_parameters_persists_following_input(tmp_path: Path) -> Non
 
     sanitize_cli_parameters(parameters)
 
-    saved_state = yaml.safe_load(state_file.read_text(encoding="utf-8"))
+    saved_state = json.loads(state_file.read_text(encoding="utf-8"))
     assert parameters["from_following"] == "neo"
     assert saved_state == {"last_following": "neo", "last_mode": "following"}
 
@@ -299,7 +299,7 @@ def test_sanitize_cli_parameters_uses_authenticated_session_when_handle_is_unkno
         lambda cookies: None,
     )
     cookies_file = tmp_path / "cookies.json"
-    state_file = tmp_path / "onboard_state.yaml"
+    state_file = tmp_path / "onboard_state.json"
     parameters = {
         "paste": False,
         "from_following": None,
@@ -322,8 +322,11 @@ def test_sanitize_cli_parameters_uses_last_saved_handle_when_cookie_profile_is_u
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    state_file = tmp_path / "onboard_state.yaml"
-    state_file.write_text("last_mode: following\nlast_following: VineyardSunset_\n", encoding="utf-8")
+    state_file = tmp_path / "onboard_state.json"
+    state_file.write_text(
+        '{"last_mode": "following", "last_following": "VineyardSunset_"}',
+        encoding="utf-8",
+    )
     prompts: list[str] = []
 
     def fake_prompt(message: str, **kwargs: object) -> str:

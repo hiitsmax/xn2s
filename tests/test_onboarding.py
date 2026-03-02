@@ -23,7 +23,7 @@ def test_parse_handles_deduplicates_case_insensitive() -> None:
 
 
 def test_merge_profiles_adds_and_skips_duplicates(tmp_path: Path) -> None:
-    sources_file = tmp_path / "sources.yaml"
+    sources_file = tmp_path / "sources.json"
 
     first_result = merge_profiles(
         build_entries(["alpha", "beta"], source="paste"),

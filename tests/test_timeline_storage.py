@@ -21,7 +21,7 @@ def _entry(tweet_id: str, account: str = "mx") -> TimelineEntry:
 
 
 def test_merge_timeline_entries_adds_and_skips_duplicates(tmp_path: Path) -> None:
-    timeline_file = tmp_path / "timeline.yaml"
+    timeline_file = tmp_path / "timeline.json"
 
     first_result = merge_timeline_entries([_entry("1"), _entry("2")], path=timeline_file)
     assert first_result.added == 2

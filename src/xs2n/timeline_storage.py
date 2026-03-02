@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from xs2n.profile.types import TimelineEntry, TimelineMergeResult
 
 
-DEFAULT_TIMELINE_PATH = Path("data/timeline.yaml")
+DEFAULT_TIMELINE_PATH = Path("data/timeline.json")
 
 
 def _empty_doc() -> dict[str, Any]:
@@ -18,7 +17,12 @@ def _empty_doc() -> dict[str, Any]:
 def load_timeline(path: Path = DEFAULT_TIMELINE_PATH) -> dict[str, Any]:
     if not path.exists():
         return _empty_doc()
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return _empty_doc()
+
     if not isinstance(data, dict):
         return _empty_doc()
     entries = data.get("entries")
@@ -29,7 +33,10 @@ def load_timeline(path: Path = DEFAULT_TIMELINE_PATH) -> dict[str, Any]:
 
 def save_timeline(doc: dict[str, Any], path: Path = DEFAULT_TIMELINE_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    path.write_text(
+        f"{json.dumps(doc, ensure_ascii=False, indent=2)}\n",
+        encoding="utf-8",
+    )
 
 
 def merge_timeline_entries(

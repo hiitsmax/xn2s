@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from xs2n.profile.types import OnboardResult, ProfileEntry
 
 
-DEFAULT_SOURCES_PATH = Path("data/sources.yaml")
+DEFAULT_SOURCES_PATH = Path("data/sources.json")
 
 
 def _empty_doc() -> dict[str, Any]:
@@ -18,7 +17,12 @@ def _empty_doc() -> dict[str, Any]:
 def load_sources(path: Path = DEFAULT_SOURCES_PATH) -> dict[str, Any]:
     if not path.exists():
         return _empty_doc()
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return _empty_doc()
+
     if not isinstance(data, dict):
         return _empty_doc()
     profiles = data.get("profiles")
@@ -29,7 +33,10 @@ def load_sources(path: Path = DEFAULT_SOURCES_PATH) -> dict[str, Any]:
 
 def save_sources(doc: dict[str, Any], path: Path = DEFAULT_SOURCES_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    path.write_text(
+        f"{json.dumps(doc, ensure_ascii=False, indent=2)}\n",
+        encoding="utf-8",
+    )
 
 
 def merge_profiles(

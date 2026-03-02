@@ -1,8 +1,8 @@
+import json
 from pathlib import Path
 from typing import Any
 
 import typer
-import yaml
 
 from xs2n.profile.browser_cookies import (
     BrowserCookieCandidate,
@@ -14,13 +14,18 @@ from xs2n.profile.browser_cookies import (
 )
 from xs2n.profile.helpers import normalize_handle
 
-DEFAULT_ONBOARD_STATE_PATH = Path("data/onboard_state.yaml")
+DEFAULT_ONBOARD_STATE_PATH = Path("data/onboard_state.json")
 
 
 def _load_onboard_state(path: Path = DEFAULT_ONBOARD_STATE_PATH) -> dict[str, str]:
     if not path.exists():
         return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
     if not isinstance(data, dict):
         return {}
     return {str(k): str(v) for k, v in data.items() if isinstance(v, (str, int, float))}
@@ -28,7 +33,10 @@ def _load_onboard_state(path: Path = DEFAULT_ONBOARD_STATE_PATH) -> dict[str, st
 
 def _save_onboard_state(state: dict[str, str], path: Path = DEFAULT_ONBOARD_STATE_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(state, sort_keys=True), encoding="utf-8")
+    path.write_text(
+        f"{json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True)}\n",
+        encoding="utf-8",
+    )
 
 
 def _onboard_state_path(parameters: dict[str, Any]) -> Path:
