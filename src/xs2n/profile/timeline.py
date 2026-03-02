@@ -107,6 +107,7 @@ async def import_timeline_entries(
     since_datetime: datetime,
     limit: int,
     prompt_login: LoginPrompt,
+    page_delay_seconds: float = 0.0,
 ) -> TimelineFetchResult:
     client = Client("en-US")
     inferred_username = (
@@ -182,6 +183,9 @@ async def import_timeline_entries(
             if no_progress_pages >= 2:
                 break
 
+        if page_delay_seconds > 0:
+            await asyncio.sleep(page_delay_seconds)
+
         next_batch = await batch.next()
         if len(next_batch) == 0:
             break
@@ -196,6 +200,7 @@ def run_import_timeline_entries(
     since_datetime: datetime,
     limit: int,
     prompt_login: LoginPrompt,
+    page_delay_seconds: float = 0.0,
 ) -> TimelineFetchResult:
     return asyncio.run(
         import_timeline_entries(
@@ -204,5 +209,6 @@ def run_import_timeline_entries(
             since_datetime=since_datetime,
             limit=limit,
             prompt_login=prompt_login,
+            page_delay_seconds=page_delay_seconds,
         )
     )

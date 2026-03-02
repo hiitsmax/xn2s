@@ -212,3 +212,53 @@ def test_import_timeline_entries_uses_self_account_and_created_at_fallback(
     assert len(result.entries) == 1
     assert result.entries[0].account_handle == "self_handle"
     assert result.entries[0].tweet_id == "fallback"
+
+
+def test_import_timeline_entries_applies_page_delay_between_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    page_2 = _DummyBatch(
+        [
+            _tweet("2", datetime(2026, 1, 2, tzinfo=timezone.utc), text="second page"),
+        ]
+    )
+    page_1 = _DummyBatch(
+        [
+            _tweet("1", datetime(2026, 1, 3, tzinfo=timezone.utc), text="first page"),
+        ],
+        next_batch=page_2,
+    )
+    dummy_user = _DummyUser(screen_name="mx", first_batch=page_1)
+
+    def fake_client(locale: str) -> _DummyClient:
+        return _DummyClient(locale=locale, user=dummy_user)
+
+    async def fake_ensure_authenticated_client(**kwargs):  # noqa: ANN202
+        return None
+
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr("xs2n.profile.timeline.Client", fake_client)
+    monkeypatch.setattr(
+        "xs2n.profile.timeline.ensure_authenticated_client",
+        fake_ensure_authenticated_client,
+    )
+    monkeypatch.setattr("xs2n.profile.timeline.asyncio.sleep", fake_sleep)
+
+    asyncio.run(
+        import_timeline_entries(
+            account_screen_name="mx",
+            cookies_file=Path("cookies.json"),
+            since_datetime=since,
+            limit=10,
+            prompt_login=lambda *_: ("u", "e", "p"),
+            page_delay_seconds=0.5,
+        )
+    )
+
+    assert sleep_calls
+    assert all(call == 0.5 for call in sleep_calls)

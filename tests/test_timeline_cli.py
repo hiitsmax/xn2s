@@ -11,6 +11,16 @@ from twikit.errors import Forbidden, TooManyRequests
 from xs2n.cli.timeline import import_timeline_with_recovery, parse_since_datetime, timeline
 from xs2n.profile.types import TimelineEntry, TimelineFetchResult, TimelineMergeResult
 
+DEFAULT_TIMELINE_OPTIONS = {
+    "slow_fetch_seconds": 0.0,
+    "page_delay_seconds": 0.0,
+    "wait_on_rate_limit": True,
+    "rate_limit_wait_seconds": 900,
+    "rate_limit_poll_seconds": 30,
+    "max_rate_limit_wait_seconds": 1800,
+    "max_rate_limit_retries": 30,
+}
+
 
 def _cloudflare_error() -> Forbidden:
     return Forbidden('status: 403, message: "Attention Required! | Cloudflare"')
@@ -117,6 +127,32 @@ def test_import_timeline_with_recovery_retries_after_local_cookie_import(
     assert calls["count"] == 2
 
 
+def test_import_timeline_with_recovery_passes_page_delay(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_import_timeline_entries(**kwargs):
+        captured.update(kwargs)
+        return _fetch_result()
+
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.run_import_timeline_entries",
+        fake_run_import_timeline_entries,
+    )
+
+    import_timeline_with_recovery(
+        account="mx",
+        cookies_file=tmp_path / "cookies.json",
+        since_datetime=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        limit=50,
+        page_delay_seconds=1.5,
+    )
+
+    assert captured["page_delay_seconds"] == 1.5
+
+
 def test_timeline_requires_account_or_from_sources(tmp_path: Path) -> None:
     with pytest.raises(typer.BadParameter):
         timeline(
@@ -127,6 +163,7 @@ def test_timeline_requires_account_or_from_sources(tmp_path: Path) -> None:
             limit=50,
             timeline_file=tmp_path / "timeline.json",
             sources_file=tmp_path / "sources.json",
+            **DEFAULT_TIMELINE_OPTIONS,
         )
 
 
@@ -140,6 +177,7 @@ def test_timeline_rejects_account_with_from_sources(tmp_path: Path) -> None:
             limit=50,
             timeline_file=tmp_path / "timeline.json",
             sources_file=tmp_path / "sources.json",
+            **DEFAULT_TIMELINE_OPTIONS,
         )
 
 
@@ -204,6 +242,7 @@ def test_timeline_from_sources_ingests_unique_valid_handles(
         limit=50,
         timeline_file=tmp_path / "timeline.json",
         sources_file=sources_file,
+        **DEFAULT_TIMELINE_OPTIONS,
     )
 
     output = capsys.readouterr().out
@@ -246,6 +285,7 @@ def test_timeline_from_sources_migrates_legacy_yaml_when_json_missing(
         limit=50,
         timeline_file=tmp_path / "timeline.json",
         sources_file=sources_json,
+        **DEFAULT_TIMELINE_OPTIONS,
     )
 
     assert sources_json.exists()
@@ -271,6 +311,13 @@ def test_timeline_single_account_handles_rate_limit(
             limit=50,
             timeline_file=tmp_path / "timeline.json",
             sources_file=tmp_path / "sources.json",
+            wait_on_rate_limit=False,
+            slow_fetch_seconds=0.0,
+            page_delay_seconds=0.0,
+            rate_limit_wait_seconds=900,
+            rate_limit_poll_seconds=30,
+            max_rate_limit_wait_seconds=1800,
+            max_rate_limit_retries=30,
         )
 
     assert exc.value.exit_code == 1
@@ -328,9 +375,102 @@ def test_timeline_from_sources_stops_cleanly_on_rate_limit(
             limit=50,
             timeline_file=tmp_path / "timeline.json",
             sources_file=sources_file,
+            wait_on_rate_limit=False,
+            slow_fetch_seconds=0.0,
+            page_delay_seconds=0.0,
+            rate_limit_wait_seconds=900,
+            rate_limit_poll_seconds=30,
+            max_rate_limit_wait_seconds=1800,
+            max_rate_limit_retries=30,
         )
 
     assert exc.value.exit_code == 1
     captured = capsys.readouterr()
     assert "processed 1 of 2 accounts" in captured.out.lower()
     assert "rate limit" in captured.err.lower()
+
+
+def test_timeline_single_account_waits_and_retries_on_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls = {"count": 0}
+    sleep_calls: list[float] = []
+
+    def flaky_import(**kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            reset_epoch = int(datetime.now(timezone.utc).timestamp()) + 1
+            raise TooManyRequests(
+                'status: 429, message: "Rate limit exceeded"',
+                headers={"x-rate-limit-reset": str(reset_epoch)},
+            )
+        return _fetch_result()
+
+    monkeypatch.setattr("xs2n.cli.timeline.import_timeline_with_recovery", flaky_import)
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.merge_timeline_entries",
+        lambda entries, path: TimelineMergeResult(added=len(entries), skipped_duplicates=0),
+    )
+    monkeypatch.setattr("xs2n.cli.timeline.time.sleep", lambda seconds: sleep_calls.append(seconds))
+
+    timeline(
+        account="mx",
+        from_sources=False,
+        since="2026-03-01T00:00:00Z",
+        cookies_file=tmp_path / "cookies.json",
+        limit=50,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+        slow_fetch_seconds=0.0,
+        page_delay_seconds=0.0,
+        wait_on_rate_limit=True,
+        rate_limit_wait_seconds=900,
+        rate_limit_poll_seconds=1,
+        max_rate_limit_wait_seconds=1800,
+        max_rate_limit_retries=2,
+    )
+
+    captured = capsys.readouterr()
+    assert calls["count"] == 2
+    assert sleep_calls
+    assert "retry 1/2" in captured.err.lower()
+
+
+def test_timeline_from_sources_applies_slow_fetch_delay(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sources_file = tmp_path / "sources.json"
+    sources_file.write_text(
+        json.dumps({"profiles": [{"handle": "alpha"}, {"handle": "beta"}]}),
+        encoding="utf-8",
+    )
+
+    sleep_calls: list[float] = []
+
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.import_timeline_with_recovery",
+        lambda **kwargs: TimelineFetchResult(entries=[], scanned=0, skipped_old=0),
+    )
+    monkeypatch.setattr("xs2n.cli.timeline.time.sleep", lambda seconds: sleep_calls.append(seconds))
+
+    timeline(
+        account=None,
+        from_sources=True,
+        since="2026-03-01T00:00:00Z",
+        cookies_file=tmp_path / "cookies.json",
+        limit=50,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=sources_file,
+        slow_fetch_seconds=0.25,
+        page_delay_seconds=0.0,
+        wait_on_rate_limit=True,
+        rate_limit_wait_seconds=900,
+        rate_limit_poll_seconds=30,
+        max_rate_limit_wait_seconds=1800,
+        max_rate_limit_retries=30,
+    )
+
+    assert 0.25 in sleep_calls

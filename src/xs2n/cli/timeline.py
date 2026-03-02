@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import time
 from typing import Any
 
 import typer
@@ -47,6 +48,7 @@ def import_timeline_with_recovery(
     cookies_file: Path,
     since_datetime: datetime,
     limit: int,
+    page_delay_seconds: float = 0.0,
 ) -> TimelineFetchResult:
     account_screen_name = account
 
@@ -57,6 +59,7 @@ def import_timeline_with_recovery(
             since_datetime=since_datetime,
             limit=limit,
             prompt_login=prompt_login,
+            page_delay_seconds=page_delay_seconds,
         )
 
     if not cookies_file.exists():
@@ -184,6 +187,91 @@ def _single_account_summary(
     )
 
 
+def _rate_limit_wait_seconds(
+    error: TooManyRequests,
+    fallback_wait_seconds: int,
+    max_wait_seconds: int,
+) -> int:
+    reset_epoch = getattr(error, "rate_limit_reset", None)
+    if isinstance(reset_epoch, int):
+        now_epoch = int(datetime.now(timezone.utc).timestamp())
+        computed_wait = max(1, reset_epoch - now_epoch + 1)
+    else:
+        computed_wait = fallback_wait_seconds
+    return max(1, min(computed_wait, max_wait_seconds))
+
+
+def _active_wait_for_rate_limit(
+    *,
+    account: str,
+    wait_seconds: int,
+    poll_seconds: int,
+    retry_index: int,
+    max_retries: int,
+) -> None:
+    remaining = wait_seconds
+    while remaining > 0:
+        typer.echo(
+            "Hit X rate limit (429) for "
+            f"@{account}. Retry {retry_index}/{max_retries} in {remaining}s...",
+            err=True,
+        )
+        sleep_for = min(poll_seconds, remaining)
+        time.sleep(sleep_for)
+        remaining -= sleep_for
+
+
+def _fetch_with_rate_limit_retries(
+    *,
+    account: str,
+    cookies_file: Path,
+    since_datetime: datetime,
+    limit: int,
+    page_delay_seconds: float,
+    wait_on_rate_limit: bool,
+    rate_limit_wait_seconds: int,
+    rate_limit_poll_seconds: int,
+    max_rate_limit_wait_seconds: int,
+    max_rate_limit_retries: int,
+) -> TimelineFetchResult:
+    retries = 0
+
+    while True:
+        try:
+            return import_timeline_with_recovery(
+                account=account,
+                cookies_file=cookies_file,
+                since_datetime=since_datetime,
+                limit=limit,
+                page_delay_seconds=page_delay_seconds,
+            )
+        except TooManyRequests as error:
+            if not wait_on_rate_limit:
+                raise
+
+            retries += 1
+            if retries > max_rate_limit_retries:
+                typer.echo(
+                    "Rate limit persisted for "
+                    f"@{account} after {max_rate_limit_retries} retries.",
+                    err=True,
+                )
+                raise
+
+            wait_seconds = _rate_limit_wait_seconds(
+                error=error,
+                fallback_wait_seconds=rate_limit_wait_seconds,
+                max_wait_seconds=max_rate_limit_wait_seconds,
+            )
+            _active_wait_for_rate_limit(
+                account=account,
+                wait_seconds=wait_seconds,
+                poll_seconds=rate_limit_poll_seconds,
+                retry_index=retries,
+                max_retries=max_rate_limit_retries,
+            )
+
+
 def timeline(
     account: str | None = typer.Option(
         None,
@@ -222,6 +310,47 @@ def timeline(
         DEFAULT_SOURCES_PATH,
         "--sources-file",
         help="Where source handles are stored (used with --from-sources).",
+    ),
+    slow_fetch_seconds: float = typer.Option(
+        0.0,
+        "--slow-fetch-seconds",
+        min=0.0,
+        help="Delay in seconds between accounts when using --from-sources.",
+    ),
+    page_delay_seconds: float = typer.Option(
+        0.0,
+        "--page-delay-seconds",
+        min=0.0,
+        help="Delay in seconds between timeline pagination requests.",
+    ),
+    wait_on_rate_limit: bool = typer.Option(
+        True,
+        "--wait-on-rate-limit/--no-wait-on-rate-limit",
+        help="Automatically wait and retry when X returns rate limit (429).",
+    ),
+    rate_limit_wait_seconds: int = typer.Option(
+        900,
+        "--rate-limit-wait-seconds",
+        min=1,
+        help="Fallback wait in seconds for 429 when reset time is unavailable.",
+    ),
+    rate_limit_poll_seconds: int = typer.Option(
+        30,
+        "--rate-limit-poll-seconds",
+        min=1,
+        help="How often to print wait progress during a 429 sleep window.",
+    ),
+    max_rate_limit_wait_seconds: int = typer.Option(
+        1800,
+        "--max-rate-limit-wait-seconds",
+        min=1,
+        help="Maximum wait duration in seconds per 429 event.",
+    ),
+    max_rate_limit_retries: int = typer.Option(
+        30,
+        "--max-rate-limit-retries",
+        min=1,
+        help="Maximum 429 retries per account before the run stops.",
     ),
 ) -> None:
     """Ingest posts and retweets since a datetime."""
@@ -265,18 +394,24 @@ def timeline(
         processed_accounts = 0
         stopped_due_to_rate_limit = False
 
-        for handle in handles:
+        for index, handle in enumerate(handles, start=1):
             try:
-                fetch_result = import_timeline_with_recovery(
+                fetch_result = _fetch_with_rate_limit_retries(
                     account=handle,
                     cookies_file=cookies_file,
                     since_datetime=since_datetime,
                     limit=limit,
+                    page_delay_seconds=page_delay_seconds,
+                    wait_on_rate_limit=wait_on_rate_limit,
+                    rate_limit_wait_seconds=rate_limit_wait_seconds,
+                    rate_limit_poll_seconds=rate_limit_poll_seconds,
+                    max_rate_limit_wait_seconds=max_rate_limit_wait_seconds,
+                    max_rate_limit_retries=max_rate_limit_retries,
                 )
             except TooManyRequests:
                 typer.echo(
                     "Hit X rate limit (429) while ingesting "
-                    f"@{handle}. Stopping batch run to avoid repeated failures.",
+                    f"@{handle}. Stopping batch run.",
                     err=True,
                 )
                 stopped_due_to_rate_limit = True
@@ -292,19 +427,24 @@ def timeline(
                     "No posts/retweets found at or after "
                     f"{since_datetime.isoformat()} for @{handle}."
                 )
-                continue
+            else:
+                merge_result = merge_timeline_entries(fetch_result.entries, path=timeline_file)
+                totals["added"] += merge_result.added
+                totals["duplicates"] += merge_result.skipped_duplicates
+                _single_account_summary(
+                    account=handle,
+                    since_datetime=since_datetime,
+                    fetch_result=fetch_result,
+                    merge_result_added=merge_result.added,
+                    merge_result_duplicates=merge_result.skipped_duplicates,
+                    timeline_file=timeline_file,
+                )
 
-            merge_result = merge_timeline_entries(fetch_result.entries, path=timeline_file)
-            totals["added"] += merge_result.added
-            totals["duplicates"] += merge_result.skipped_duplicates
-            _single_account_summary(
-                account=handle,
-                since_datetime=since_datetime,
-                fetch_result=fetch_result,
-                merge_result_added=merge_result.added,
-                merge_result_duplicates=merge_result.skipped_duplicates,
-                timeline_file=timeline_file,
-            )
+            if slow_fetch_seconds > 0 and index < len(handles):
+                typer.echo(
+                    f"Throttling for {slow_fetch_seconds:.2f}s before next account..."
+                )
+                time.sleep(slow_fetch_seconds)
 
         typer.echo(
             f"Processed {processed_accounts} of {len(handles)} accounts from {sources_file}. "
@@ -320,16 +460,22 @@ def timeline(
 
     normalized_account = normalize_following_account(str(account))
     try:
-        fetch_result = import_timeline_with_recovery(
+        fetch_result = _fetch_with_rate_limit_retries(
             account=normalized_account,
             cookies_file=cookies_file,
             since_datetime=since_datetime,
             limit=limit,
+            page_delay_seconds=page_delay_seconds,
+            wait_on_rate_limit=wait_on_rate_limit,
+            rate_limit_wait_seconds=rate_limit_wait_seconds,
+            rate_limit_poll_seconds=rate_limit_poll_seconds,
+            max_rate_limit_wait_seconds=max_rate_limit_wait_seconds,
+            max_rate_limit_retries=max_rate_limit_retries,
         )
     except TooManyRequests as error:
         typer.echo(
             "Hit X rate limit (429) while fetching "
-            f"@{normalized_account}. Wait and retry.",
+            f"@{normalized_account}. Stopping run.",
             err=True,
         )
         raise typer.Exit(code=1) from error
