@@ -97,7 +97,14 @@ uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --cookies-file 
 ```
 
 If `data/sources.json` is missing but legacy `data/sources.yaml` exists, `--from-sources` auto-migrates it to JSON before ingestion.
-If X rate limits the batch run (`429`), the command exits cleanly with a partial summary.
+
+Rate-limit hardening and slower fetch options:
+
+```bash
+uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --slow-fetch-seconds 1.0 --page-delay-seconds 0.4 --wait-on-rate-limit
+```
+
+By default, timeline ingestion waits and retries on X `429` responses. Use `--no-wait-on-rate-limit` to fail fast instead.
 
 Output files:
 

@@ -118,5 +118,11 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added `xs2n timeline --from-sources --sources-file <path>` to ingest all handles from the source catalog in one run.
 - Added command validation to enforce either `--account` or `--from-sources`.
 - Added legacy migration support: if `sources.json` is missing and matching `sources.yaml` exists, it is converted automatically.
-- Added graceful `429` handling so batch runs stop with a partial summary instead of crashing with a traceback.
 - Added tests covering batch-mode handle loading, option validation, and YAML-to-JSON migration on first run.
+
+## Timeline Rate-Limit Waiting And Throttling (2026-03-02)
+
+- Added automatic active waiting on X `429` responses with retry progress logs and capped retry counts.
+- Added configurable fetch throttling via `--slow-fetch-seconds` (between accounts) and `--page-delay-seconds` (between timeline page requests).
+- Added rate-limit controls (`--wait-on-rate-limit`, wait/poll/max options) so runs can be either resilient or fail-fast.
+- Added tests for wait-and-retry behavior, slower batch pacing, and pagination delay wiring.
