@@ -3,6 +3,7 @@ from __future__ import annotations
 import typer
 
 from xs2n.cli.onboard import onboard
+from xs2n.cli.report import report_app
 from xs2n.cli.timeline import timeline
 
 app = typer.Typer(help="xs2n CLI", no_args_is_help=True)
@@ -15,6 +16,7 @@ def main() -> None:
 
 app.command("onboard")(onboard)
 app.command("timeline")(timeline)
+app.add_typer(report_app, name="report")
 
 
 if __name__ == "__main__":

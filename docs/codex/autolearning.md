@@ -145,3 +145,14 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - `--thread-replies-limit`
   - `--thread-other-replies-limit`
 - Added tests locking limit behavior for parent-chain hydration and cross-author reply caps.
+
+## Report Auth Bootstrap (2026-03-03)
+
+- Added a new `report` CLI group with `xs2n report auth` as the first report-pipeline primitive.
+- Wired `report auth` to delegate authentication to official Codex CLI flows:
+  - `codex login` (ChatGPT OAuth),
+  - `codex login --device-auth`,
+  - `codex login status`,
+  - `codex logout`.
+- Added process hardening for missing `codex` binary and non-zero exit propagation.
+- Added deterministic unit tests for login/status/logout routing and error handling.

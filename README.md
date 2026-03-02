@@ -30,13 +30,13 @@ Working now:
 - `xs2n onboard --from-following <handle>`
 - `xs2n timeline --account <handle> --since <iso-datetime>`
 - `xs2n timeline --from-sources --since <iso-datetime>`
+- `xs2n report auth` (delegates ChatGPT/Codex authentication)
 - Interactive mode selection when no onboarding mode is provided
 - Local-browser cookie preflight (with profile selection) before Twikit login prompts
 - Cloudflare block detection + local-browser cookie refresh + Playwright fallback + retry
 - Unit tests for parsing, merge behavior, timeline fetching/storage, and recovery flow
 
 Known gaps / WIP:
-- No dedicated `auth` command set yet (`auth login/check` still pending)
 - Following and timeline imports still depend on Twikit behavior and can break if X internals change
 - No full integration/e2e test for real X account flow in CI
 - No summarization pipeline yet (ingestion is in place, processing is next)
@@ -116,6 +116,21 @@ uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --t
 - `--thread-replies-limit`: recursively include conversation replies.
 - `--thread-other-replies-limit`: cap replies authored by non-target accounts.
 - Set any of these to `0` to disable that expansion path.
+
+Authenticate report-pipeline model access via Codex CLI (ChatGPT account flow):
+
+```bash
+uv run xs2n report auth
+uv run xs2n report auth --device-auth
+uv run xs2n report auth --status
+uv run xs2n report auth --logout
+```
+
+If `codex` is not installed yet, install it first:
+
+```bash
+npm install -g @openai/codex
+```
 
 Output files:
 
