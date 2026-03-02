@@ -312,13 +312,13 @@ def timeline(
         help="Where source handles are stored (used with --from-sources).",
     ),
     slow_fetch_seconds: float = typer.Option(
-        0.0,
+        1.0,
         "--slow-fetch-seconds",
         min=0.0,
         help="Delay in seconds between accounts when using --from-sources.",
     ),
     page_delay_seconds: float = typer.Option(
-        0.0,
+        0.4,
         "--page-delay-seconds",
         min=0.0,
         help="Delay in seconds between timeline pagination requests.",
