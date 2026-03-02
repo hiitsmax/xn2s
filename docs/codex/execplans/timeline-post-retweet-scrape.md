@@ -40,8 +40,8 @@ The user-visible outcome is a new `xs2n timeline` command that writes timeline e
   Rationale: Keeps source onboarding and content ingestion clearly separated while preserving existing command style.
   Date/Author: 2026-03-02 / Codex
 
-- Decision: Persist timeline entries in a separate file (`data/timeline.yaml`) with idempotent merge by tweet id.
-  Rationale: Safe incremental runs and easy downstream consumption without touching `data/sources.yaml`.
+- Decision: Persist timeline entries in a separate file (`data/timeline.json`) with idempotent merge by tweet id.
+  Rationale: Safe incremental runs and easy downstream consumption without touching `data/sources.json`.
   Date/Author: 2026-03-02 / Codex
 
 - Decision: Reuse existing Cloudflare/browser-cookie recovery pattern in the new timeline command.
@@ -50,7 +50,7 @@ The user-visible outcome is a new `xs2n timeline` command that writes timeline e
 
 ## Outcomes & Retrospective
 
-Feature implementation is complete and validated by tests. We now have a dedicated, recoverable timeline ingestion path that reads posts+retweets since a user-defined cutoff and persists deduplicated records for downstream processing. The main tradeoff is file growth in `data/timeline.yaml`; if volume increases, the next iteration should move to append-only per-account storage.
+Feature implementation is complete and validated by tests. We now have a dedicated, recoverable timeline ingestion path that reads posts+retweets since a user-defined cutoff and persists deduplicated records for downstream processing. The main tradeoff is file growth in `data/timeline.json`; if volume increases, the next iteration should move to append-only per-account storage.
 
 ## Context and Orientation
 
@@ -94,4 +94,4 @@ Acceptance criteria:
 
 - Twikit (timeline fetch): `Client.get_user_by_screen_name`, `User.get_tweets`, `Result.next`, `Tweet.retweeted_tweet`, `Tweet.created_at_datetime`.
 - Typer for CLI options and parameter validation.
-- YAML persistence for timeline records.
+- JSON persistence for timeline records.

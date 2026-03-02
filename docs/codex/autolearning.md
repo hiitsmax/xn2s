@@ -18,7 +18,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - Manual paste of handles or profile URLs.
   - Import from account followings via Twikit.
 - Added deterministic tests for parsing and dedupe merge behavior.
-- Stored source profiles in `data/sources.yaml` to keep downstream pipeline simple.
+- Stored source profiles in `data/sources.json` to keep downstream pipeline simple.
 
 ## Known Fragility
 
@@ -77,7 +77,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 
 ## Onboard Prompt Memory Defaults (2026-03-01)
 
-- Added persistent onboarding state in `data/onboard_state.yaml`.
+- Added persistent onboarding state in `data/onboard_state.json`.
 - Interactive `xs2n onboard` now defaults to the last used mode (`paste` or `following`).
 - When `following` mode is selected interactively, the previous handle is pre-filled as the prompt default.
 - Added tests for default-mode recall, default-handle recall, and state persistence from explicit `--from-following` input.
@@ -102,6 +102,13 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added `xs2n timeline --account <handle> --since <iso-datetime>` to ingest posts and retweets for a target account.
 - Implemented Twikit timeline pagination with cutoff filtering and dedupe guards in `src/xs2n/profile/timeline.py`.
 - Classified retweets using `tweet.retweeted_tweet` and skipped replies for a strict posts+retweets ingestion set.
-- Added dedicated timeline persistence in `data/timeline.yaml` via `src/xs2n/timeline_storage.py`.
+- Added dedicated timeline persistence in `data/timeline.json` via `src/xs2n/timeline_storage.py`.
 - Reused the existing Cloudflare/browser-cookie recovery strategy in the new timeline CLI path for operational consistency.
 - Added deterministic tests for timeline fetcher behavior, storage merge idempotence, and timeline CLI recovery flow.
+
+## Data Folder JSON Standardization (2026-03-02)
+
+- Standardized all CLI-managed `data/` persistence to JSON (`sources`, `timeline`, and onboarding state).
+- Updated default paths to `data/sources.json`, `data/timeline.json`, and `data/onboard_state.json`.
+- Replaced YAML serialization with stdlib `json` across storage helpers and corresponding tests.
+- Updated docs and examples so command outputs match JSON defaults end-to-end.

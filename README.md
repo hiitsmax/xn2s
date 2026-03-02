@@ -11,10 +11,10 @@ This repository currently focuses on two foundations for downstream summarizatio
 In scope today:
 - Normalize handles from pasted input (`@name`, `name`, `x.com/name`).
 - Import followed accounts from X via Twikit (`--from-following`).
-- Merge into a persistent deduplicated catalog (`data/sources.yaml`).
+- Merge into a persistent deduplicated catalog (`data/sources.json`).
 - Provide a recovery flow for Cloudflare `403` blocks during following import.
 - Ingest posts and retweets from a specific account since a cutoff datetime.
-- Persist deduplicated timeline entries for downstream processing (`data/timeline.yaml`).
+- Persist deduplicated timeline entries for downstream processing (`data/timeline.json`).
 
 Out of scope for now:
 - Ranking or signal scoring.
@@ -92,8 +92,8 @@ uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --c
 Output files:
 
 ```text
-data/sources.yaml
-data/timeline.yaml
+data/sources.json
+data/timeline.json
 ```
 
 ## Tests

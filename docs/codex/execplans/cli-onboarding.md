@@ -6,13 +6,13 @@ This repository does not yet include a local `PLANS.md`; implementation follows 
 
 ## Purpose / Big Picture
 
-After this change, a user can run one CLI command and onboard source profiles in two ways: paste a list of profile handles, or import handles from the account they follow. The result is a persisted source catalog in `data/sources.yaml` that can be used by later scrape and summary stages. The behavior is observable immediately by running `xs2n onboard`, selecting a mode, and inspecting the output file.
+After this change, a user can run one CLI command and onboard source profiles in two ways: paste a list of profile handles, or import handles from the account they follow. The result is a persisted source catalog in `data/sources.json` that can be used by later scrape and summary stages. The behavior is observable immediately by running `xs2n onboard`, selecting a mode, and inspecting the output file.
 
 ## Progress
 
 - [x] (2026-03-01 20:56Z) Created project scaffold (`pyproject.toml`, `src/xs2n`, `tests/`, `docs/codex/`).
 - [x] (2026-03-01 20:57Z) Implemented onboarding parsing and normalization logic in `src/xs2n/onboarding.py`.
-- [x] (2026-03-01 20:58Z) Implemented YAML persistence and dedupe merge in `src/xs2n/storage.py`.
+- [x] (2026-03-01 20:58Z) Implemented JSON persistence and dedupe merge in `src/xs2n/storage.py`.
 - [x] (2026-03-01 20:59Z) Implemented CLI command `xs2n onboard` with paste and following-import modes in `src/xs2n/cli.py`.
 - [x] (2026-03-01 21:00Z) Added tests for parse and merge behavior in `tests/test_onboarding.py`.
 - [x] (2026-03-01 20:58Z) Ran dependency install and test suite in this workspace (`python3 -m pip install -e '.[dev]'` and `pytest`).
@@ -39,7 +39,7 @@ After this change, a user can run one CLI command and onboard source profiles in
   Rationale: Keeps baby-step UX simple while still scriptable.
   Date/Author: 2026-03-01 / Codex
 
-- Decision: Normalize handles to lowercase and store canonical values in `data/sources.yaml`.
+- Decision: Normalize handles to lowercase and store canonical values in `data/sources.json`.
   Rationale: Prevent duplicate sources (`@Alice` vs `alice`) and simplify downstream joins.
   Date/Author: 2026-03-01 / Codex
 
@@ -57,7 +57,7 @@ Implementation is complete for the onboarding milestone itself: data parsing, pe
 
 ## Context and Orientation
 
-This repository starts from an empty directory and now contains a minimal Python package under `src/xs2n`. The CLI entry point is `src/xs2n/cli.py`. Onboarding logic and Twikit integration live in `src/xs2n/onboarding.py`. Source-file persistence logic lives in `src/xs2n/storage.py` and writes to `data/sources.yaml`. Tests for deterministic behavior are in `tests/test_onboarding.py`.
+This repository starts from an empty directory and now contains a minimal Python package under `src/xs2n`. The CLI entry point is `src/xs2n/cli.py`. Onboarding logic and Twikit integration live in `src/xs2n/onboarding.py`. Source-file persistence logic lives in `src/xs2n/storage.py` and writes to `data/sources.json`. Tests for deterministic behavior are in `tests/test_onboarding.py`.
 
 In this plan, "onboarding" means collecting profile handles that will later be scraped for timeline-like digest generation. "Following import" means retrieving the accounts followed by a specific authenticated X account using Twikit without official X API keys.
 
@@ -78,11 +78,11 @@ From `/Users/mx/Documents/Progetti/mine/active/xs2n` run:
 
 For paste onboarding run:
 
-    xs2n onboard --paste --sources-file data/sources.yaml
+    xs2n onboard --paste --sources-file data/sources.json
 
 Then paste handles, press Enter on an empty line, and inspect:
 
-    cat data/sources.yaml
+    cat data/sources.json
 
 For following import run:
 
@@ -94,7 +94,7 @@ If `cookies.json` is absent, the command prompts for login details once and writ
 
 Acceptance is met when:
 
-A user runs `xs2n onboard --paste`, pastes handles with duplicates/invalid tokens, and sees a result message reporting added and skipped counts while `data/sources.yaml` contains normalized unique handles.
+A user runs `xs2n onboard --paste`, pastes handles with duplicates/invalid tokens, and sees a result message reporting added and skipped counts while `data/sources.json` contains normalized unique handles.
 
 A user runs `xs2n onboard --from-following <screen_name>` with a valid authenticated session and sees imported-following counts with dedupe applied.
 
@@ -104,7 +104,7 @@ A user runs `xs2n onboard --from-following <screen_name>` with a valid authentic
 
 `merge_profiles` is idempotent for handle duplicates. Running onboarding repeatedly with overlapping handles only increases the duplicate count and preserves existing rows.
 
-If following import fails because authentication expires, delete `cookies.json` and rerun to regenerate credentials. If malformed YAML exists, delete `data/sources.yaml` and rerun onboarding to rebuild a clean file.
+If following import fails because authentication expires, delete `cookies.json` and rerun to regenerate credentials. If malformed JSON exists, delete `data/sources.json` and rerun onboarding to rebuild a clean file.
 
 ## Artifacts and Notes
 
@@ -123,7 +123,7 @@ Key output file shape:
 
 ## Interfaces and Dependencies
 
-The project depends on `typer` for CLI wiring, `PyYAML` for source persistence, and `twikit` for free, no-official-API account data collection.
+The project depends on `typer` for CLI wiring, stdlib `json` for source persistence, and `twikit` for free, no-official-API account data collection.
 
 `src/xs2n/onboarding.py` must expose:
 
