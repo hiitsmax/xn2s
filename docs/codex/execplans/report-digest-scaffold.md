@@ -16,9 +16,10 @@ The user-visible proof is a new report command that reads `data/timeline.json`, 
 - [x] (2026-03-07 13:33Z) Added engagement metrics to `TimelineEntry` extraction and persistence.
 - [x] (2026-03-07 13:41Z) Updated timeline merge behavior so repeated imports refresh stored metrics for existing tweet IDs instead of freezing virality at first sighting.
 - [x] (2026-03-07 13:52Z) Added `src/xs2n/storage/report_state.py` for heated-thread memory between digest runs.
-- [x] (2026-03-07 14:00Z) Implemented the first report digest scaffold in `src/xs2n/agents/digest.py` and wired `xs2n report digest`.
+- [x] (2026-03-07 14:00Z) Implemented the first report digest scaffold in the `src/xs2n/agents/digest/` package and wired `xs2n report digest`.
 - [x] (2026-03-07 14:06Z) Added digest tests, timeline metric tests, README usage docs, taxonomy starter config, and autolearning notes.
 - [x] (2026-03-07 14:08Z) Validated the focused suite with `uv run pytest tests/test_timeline_storage.py tests/test_timeline_fetching.py tests/test_report_cli.py tests/test_report_digest.py`.
+- [x] (2026-03-07 14:28Z) Split the original digest monolith into the `src/xs2n/agents/digest/` package, keeping behavior stable while separating models, backend, and per-step modules.
 
 ## Surprises & Discoveries
 
@@ -53,6 +54,10 @@ The user-visible proof is a new report command that reads `data/timeline.json`, 
   Rationale: This matches the design discussion and leaves room to refine editorial voice later without changing the artifact pipeline.
   Date/Author: 2026-03-07 / Codex
 
+- Decision: Replace the original single-file digest implementation with a package split by responsibility.
+  Rationale: The first scaffold proved the behavior, but the user explicitly asked to break the monolith apart so future changes can target models, backend code, or individual steps without editing one thousand-line file.
+  Date/Author: 2026-03-07 / Codex
+
 ## Outcomes & Retrospective
 
 The scaffold now exists end-to-end: ingestion persists the virality inputs the digest needs, the report command generates a traceable markdown issue, and every run writes intermediate artifacts that make the pipeline debuggable. The biggest remaining gaps are editorial sophistication, delivery automation, and richer observability, but the repo now has a concrete base for those next steps instead of only design notes.
@@ -69,7 +74,7 @@ First, extend the timeline model to preserve the engagement fields the digest ne
 
 Second, add a new report-state storage helper so the digest pipeline has a dedicated place to persist the previous run time and per-thread heat metadata. This keeps report memory consistent with the repository’s existing storage package layout.
 
-Third, implement the first digest agent scaffold in `src/xs2n/agents/digest.py`. The module should define the taxonomy loader, timeline-record parser, deterministic conversation candidate selection, the small LLM backend interface, the OpenAI/LangChain backend, step-by-step artifact writing, state updates, and markdown rendering. The CLI entrypoint in `src/xs2n/cli/report.py` should expose this through `xs2n report digest`.
+Third, implement the first digest agent scaffold in the `src/xs2n/agents/digest/` package. The package should split the work into models, backend integration, storage/serialization helpers, and per-step modules for selection, assembly, categorization, signal extraction, issue clustering, and rendering. The CLI entrypoint in `src/xs2n/cli/report.py` should expose this through `xs2n report digest`.
 
 Finally, add focused tests and user-facing docs. The tests should cover virality extraction, duplicate-refresh behavior, heated-thread carry-over, end-to-end digest artifact generation with a fake backend, and CLI failure/success behavior. The README should explain the new command and the need for `OPENAI_API_KEY`. The taxonomy starter file should be checked in so users have an editable default.
 
@@ -110,7 +115,7 @@ Re-run timeline ingestion on the same tweets after their public engagement count
 
 The digest command is additive and safe to rerun. Each run creates a new timestamped folder under `data/report_runs/` and overwrites only `data/report_state.json`. If a run fails before writing `digest.md`, the partial run folder can be deleted and the command rerun safely.
 
-The taxonomy file is editable. If `docs/codex/report_taxonomy.json` is missing, the scaffold falls back to the built-in starter taxonomy baked into `src/xs2n/agents/digest.py`.
+The taxonomy file is editable. If `docs/codex/report_taxonomy.json` is missing, the scaffold falls back to the built-in starter taxonomy baked into the `src/xs2n/agents/digest/` package.
 
 ## Artifacts and Notes
 
@@ -137,7 +142,7 @@ The most important runtime artifacts are:
     load_report_state(path: Path | None = None) -> dict[str, Any]
     save_report_state(doc: dict[str, Any], path: Path | None = None) -> None
 
-`src/xs2n/agents/digest.py` must expose:
+`src/xs2n/agents/digest/__init__.py` must expose:
 
     run_digest_report(...)
     class OpenAIDigestBackend
@@ -145,4 +150,4 @@ The most important runtime artifacts are:
 
 The Python model integration uses `langchain-openai` and expects `OPENAI_API_KEY` to be available in the environment. The scaffold uses LangChain structured output (`with_structured_output`) for semantic steps and deterministic Python code for numeric scoring and run-state management.
 
-Revision note (2026-03-07): Added the completed digest scaffold implementation details, validation commands, and the duplicate-refresh discovery so the plan stays restartable from the checked-in state.
+Revision note (2026-03-07): Updated the checked-in state to reflect the post-scaffold refactor from a single digest module to the `src/xs2n/agents/digest/` package while keeping the original implementation details and validation steps restartable.
