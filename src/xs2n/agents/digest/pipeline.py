@@ -424,56 +424,6 @@ def render_digest(
             lines.append("")
 
     return "\n".join(lines).strip() + "\n"
-
-
-def load_threads_step(*, timeline_file: Path) -> list[ThreadInput]:
-    from .load_threads import run as run_step
-
-    return run_step(timeline_file=timeline_file)
-
-
-def categorize_threads_step(
-    *,
-    agent: Any,
-    taxonomy: TaxonomyConfig,
-    threads: list[ThreadInput],
-) -> list[CategorizedThread]:
-    from .categorize_threads import run as run_step
-
-    return run_step(agent=agent, taxonomy=taxonomy, threads=threads)
-
-
-def filter_threads_step(
-    *,
-    agent: Any,
-    taxonomy: TaxonomyConfig,
-    threads: list[CategorizedThread],
-) -> list[FilteredThread]:
-    from .filter_threads import run as run_step
-
-    return run_step(agent=agent, taxonomy=taxonomy, threads=threads)
-
-
-def extract_signals_step(
-    *,
-    agent: Any,
-    threads: list[FilteredThread],
-) -> list[SignalThread]:
-    from .extract_signals import run as run_step
-
-    return run_step(agent=agent, threads=threads)
-
-
-def group_issues_step(
-    *,
-    agent: Any,
-    threads: list[SignalThread],
-) -> tuple[list[IssueThread], list[Issue]]:
-    from .group_issues import run as run_step
-
-    return run_step(agent=agent, threads=threads)
-
-
 def _render_source_links(urls: list[str]) -> str:
     if not urls:
         return "No direct source link captured."
@@ -490,6 +440,11 @@ def run_digest_report(
     backend: Any | None = None,
 ) -> DigestRunResult:
     from .agents import OpenAIDigestAgent
+    from .categorize_threads import run as categorize_threads
+    from .extract_signals import run as extract_signals
+    from .filter_threads import run as filter_threads
+    from .group_issues import run as group_issues
+    from .load_threads import run as load_threads
 
     resolved_agent = agent or backend or OpenAIDigestAgent(model=model)
     run_started_at = datetime.now(timezone.utc)
@@ -498,30 +453,30 @@ def run_digest_report(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     taxonomy = load_taxonomy(taxonomy_file)
-    threads = load_threads_step(timeline_file=timeline_file)
+    threads = load_threads(timeline_file=timeline_file)
     write_json(run_dir / "threads.json", threads)
 
-    categorized_threads = categorize_threads_step(
+    categorized_threads = categorize_threads(
         agent=resolved_agent,
         taxonomy=taxonomy,
         threads=threads,
     )
     write_json(run_dir / "categorized_threads.json", categorized_threads)
 
-    filtered_threads = filter_threads_step(
+    filtered_threads = filter_threads(
         agent=resolved_agent,
         taxonomy=taxonomy,
         threads=categorized_threads,
     )
     write_json(run_dir / "filtered_threads.json", filtered_threads)
 
-    signal_threads = extract_signals_step(
+    signal_threads = extract_signals(
         agent=resolved_agent,
         threads=filtered_threads,
     )
     write_json(run_dir / "signals.json", signal_threads)
 
-    issue_threads, issues = group_issues_step(
+    issue_threads, issues = group_issues(
         agent=resolved_agent,
         threads=signal_threads,
     )

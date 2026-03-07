@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .agents import OpenAIDigestAgent, OpenAIDigestBackend
+from .load_threads import run as _load_threads
 from .pipeline import (
     CategorizationResult,
     CategorySpec,
@@ -16,12 +17,10 @@ from .pipeline import (
     TaxonomyConfig,
     ThreadInput,
     TimelineRecord,
-    load_threads_step,
     run_digest_report,
     virality_score,
 )
 
-_load_threads = load_threads_step
 _virality_score = virality_score
 
 __all__ = [

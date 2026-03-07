@@ -139,7 +139,6 @@ The most important runtime artifacts are:
     run_digest_report(...)
     @dataclass class DigestRunResult
     def virality_score(record: TimelineRecord) -> float
-    def load_threads_step(*, timeline_file: Path) -> list[ThreadInput]
 
 The model integration uses `langchain-openai` and expects `OPENAI_API_KEY` to be available in the environment. The structured-output pattern should use `ChatOpenAI.with_structured_output(..., method="json_schema")`, which is the current supported LangChain integration for returning Pydantic objects from model calls.
 
