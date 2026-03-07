@@ -5,53 +5,121 @@ Summary: CLI pipeline tools for timeline summarization
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 Requires-Dist: typer>=0.12.3
-Requires-Dist: PyYAML>=6.0.2
 Requires-Dist: twikit>=2.3.3
 Requires-Dist: tenacity>=9.1.4
+Requires-Dist: playwright>=1.58.0
+Requires-Dist: browser-cookie3>=0.20.1
 Provides-Extra: dev
 Requires-Dist: pytest>=8.3.0; extra == "dev"
 
 # xs2n
 
-`xs2n` is a baby-step CLI project to build a free-first timeline summarization pipeline.
+`xs2n` is an early-stage CLI project for building a free-first X (Twitter) onboarding and timeline-ingestion layer for a future summarization pipeline.
 
-Current milestone: onboarding profile sources via CLI.
+## Scope
 
-## Modern Quickstart (`uv`)
+This repository currently focuses on two foundations for downstream summarization:
+- source onboarding
+- timeline ingestion
+
+In scope today:
+- Normalize handles from pasted input (`@name`, `name`, `x.com/name`).
+- Import followed accounts from X via Twikit (`--from-following`).
+- Merge into a persistent deduplicated catalog (`data/sources.json`).
+- Provide a recovery flow for Cloudflare `403` blocks during following import.
+- Ingest posts and retweets from a specific account since a cutoff datetime.
+- Persist deduplicated timeline entries for downstream processing (`data/timeline.json`).
+
+Out of scope for now:
+- Ranking or signal scoring.
+- Summarization generation and delivery.
+- Scheduled/production orchestration.
+
+## Current Status (WIP)
+
+Milestone: **Onboarding + timeline ingestion hardening**.
+
+Working now:
+- `xs2n onboard --paste`
+- `xs2n onboard --from-following <handle>`
+- `xs2n timeline --account <handle> --since <iso-datetime>`
+- Interactive mode selection when no onboarding mode is provided
+- Local-browser cookie preflight (with profile selection) before Twikit login prompts
+- Cloudflare block detection + local-browser cookie refresh + Playwright fallback + retry
+- Unit tests for parsing, merge behavior, timeline fetching/storage, and recovery flow
+
+Known gaps / WIP:
+- No dedicated `auth` command set yet (`auth login/check` still pending)
+- Following and timeline imports still depend on Twikit behavior and can break if X internals change
+- No full integration/e2e test for real X account flow in CI
+- No summarization pipeline yet (ingestion is in place, processing is next)
+
+## Quickstart (`uv`)
 
 ```bash
 uv sync --extra dev
-```
-
-Run the CLI:
-
-```bash
 uv run xs2n --help
 ```
 
-Or use task aliases:
+If you prefer one command bootstrap (including Playwright Chromium used for browser cookie recovery):
+
+```bash
+make setup
+```
+
+Convenience commands:
 
 ```bash
 make setup
 make run
 make test
+make wizard
 ```
 
-## Onboard Profiles
+## Usage
 
-Paste handles:
+Paste handles interactively:
 
 ```bash
 uv run xs2n onboard --paste
 ```
 
-Import from who you follow (requires authenticated Twikit session):
+Import from following list:
 
 ```bash
 uv run xs2n onboard --from-following your_screen_name --cookies-file cookies.json --limit 200
 ```
 
-Profiles are stored in `data/sources.yaml`.
+Interactive onboarding selector:
+
+```bash
+uv run xs2n onboard
+uv run xs2n onboard --wizard
+```
+
+Ingest posts + retweets from an account since a cutoff datetime:
+
+```bash
+uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
+```
+
+Output files:
+
+```text
+data/sources.json
+data/timeline.json
+```
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+## Project Notes
+
+- Autolearning and milestone notes: `docs/codex/autolearning.md`
+- Execution plans: `docs/codex/execplans/`
 
 ## Legacy Install (pip)
 
