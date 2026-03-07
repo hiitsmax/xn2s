@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from .backend import DigestBackend, OpenAIDigestBackend
-from .config import (
+from .agents import OpenAIDigestBackend
+from .pipeline import (
+    AssemblyResult,
+    CategorizationResult,
+    ConversationCandidate,
     DEFAULT_REPORT_MODEL,
     DEFAULT_REPORT_RUNS_PATH,
     DEFAULT_TAXONOMY_DOC,
     DEFAULT_TAXONOMY_PATH,
     DEFAULT_WINDOW_MINUTES,
-)
-from .models import (
-    AssemblyResult,
-    CategorizationResult,
-    ConversationCandidate,
     DigestRunResult,
     FilteredUnit,
     IssueCluster,
@@ -19,9 +17,11 @@ from .models import (
     SignalResult,
     ThreadState,
     TimelineRecord,
+    build_candidates,
+    run_digest_report,
+    select_report_records,
+    virality_score,
 )
-from .pipeline import run_digest_report
-from .steps import build_candidates, select_report_records, virality_score
 
 _build_candidates = build_candidates
 _select_report_records = select_report_records
@@ -36,7 +36,6 @@ __all__ = [
     "DEFAULT_TAXONOMY_DOC",
     "DEFAULT_TAXONOMY_PATH",
     "DEFAULT_WINDOW_MINUTES",
-    "DigestBackend",
     "DigestRunResult",
     "FilteredUnit",
     "IssueCluster",

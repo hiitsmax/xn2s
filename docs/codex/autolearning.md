@@ -167,7 +167,10 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 ## Report Digest Scaffold (2026-03-07)
 
 - Added `xs2n report digest` as the first runnable digest-generation command.
-- Built the digest scaffold in the `src/xs2n/agents/digest/` package with explicit step artifacts:
+- Built the digest scaffold in the `src/xs2n/agents/digest/` package with a simpler split:
+  - `pipeline.py` for models, orchestration, and deterministic steps,
+  - `agents.py` for the semantic LLM-facing agent logic.
+  It still writes explicit step artifacts:
   - selected timeline entries,
   - conversation candidates,
   - assembled units,
@@ -181,4 +184,4 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Extended timeline persistence with `favorite_count`, `retweet_count`, `reply_count`, `quote_count`, and `view_count`.
 - Changed timeline merge behavior so re-seen tweets refresh stored engagement metrics instead of freezing them at first ingest.
 - Added tests for virality extraction, duplicate refresh behavior, heated-thread carry-over, digest CLI routing, and a fake-backend end-to-end digest run.
-- Refactored the original digest monolith into the `src/xs2n/agents/digest/` package so data models, backend integration, and step logic are easier to navigate and extend.
+- Refactored the original digest monolith into a flatter `src/xs2n/agents/digest/` package centered on `pipeline.py` and `agents.py`, after the more granular split proved too abstract for the current codebase size.

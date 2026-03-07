@@ -19,7 +19,7 @@ The user-visible proof is a new report command that reads `data/timeline.json`, 
 - [x] (2026-03-07 14:00Z) Implemented the first report digest scaffold in the `src/xs2n/agents/digest/` package and wired `xs2n report digest`.
 - [x] (2026-03-07 14:06Z) Added digest tests, timeline metric tests, README usage docs, taxonomy starter config, and autolearning notes.
 - [x] (2026-03-07 14:08Z) Validated the focused suite with `uv run pytest tests/test_timeline_storage.py tests/test_timeline_fetching.py tests/test_report_cli.py tests/test_report_digest.py`.
-- [x] (2026-03-07 14:28Z) Split the original digest monolith into the `src/xs2n/agents/digest/` package, keeping behavior stable while separating models, backend, and per-step modules.
+- [x] (2026-03-07 14:28Z) Split the original digest monolith into the `src/xs2n/agents/digest/` package, then flattened that package into the simpler `pipeline.py` + `agents.py` shape to reduce internal abstraction.
 
 ## Surprises & Discoveries
 
@@ -54,8 +54,8 @@ The user-visible proof is a new report command that reads `data/timeline.json`, 
   Rationale: This matches the design discussion and leaves room to refine editorial voice later without changing the artifact pipeline.
   Date/Author: 2026-03-07 / Codex
 
-- Decision: Replace the original single-file digest implementation with a package split by responsibility.
-  Rationale: The first scaffold proved the behavior, but the user explicitly asked to break the monolith apart so future changes can target models, backend code, or individual steps without editing one thousand-line file.
+- Decision: Replace the original single-file digest implementation with a small package centered on `pipeline.py` and `agents.py`.
+  Rationale: The user wanted the monolith broken down, but also pushed back on an over-abstracted many-file split. The flatter two-module shape preserves navigability without turning a young feature into framework code.
   Date/Author: 2026-03-07 / Codex
 
 ## Outcomes & Retrospective
@@ -74,7 +74,7 @@ First, extend the timeline model to preserve the engagement fields the digest ne
 
 Second, add a new report-state storage helper so the digest pipeline has a dedicated place to persist the previous run time and per-thread heat metadata. This keeps report memory consistent with the repository’s existing storage package layout.
 
-Third, implement the first digest agent scaffold in the `src/xs2n/agents/digest/` package. The package should split the work into models, backend integration, storage/serialization helpers, and per-step modules for selection, assembly, categorization, signal extraction, issue clustering, and rendering. The CLI entrypoint in `src/xs2n/cli/report.py` should expose this through `xs2n report digest`.
+Third, implement the first digest agent scaffold in the `src/xs2n/agents/digest/` package. Keep the internal structure intentionally simple: `pipeline.py` owns models, storage/serialization helpers, deterministic steps, rendering, and orchestration; `agents.py` owns the semantic LLM-facing agent logic. The CLI entrypoint in `src/xs2n/cli/report.py` should expose this through `xs2n report digest`.
 
 Finally, add focused tests and user-facing docs. The tests should cover virality extraction, duplicate-refresh behavior, heated-thread carry-over, end-to-end digest artifact generation with a fake backend, and CLI failure/success behavior. The README should explain the new command and the need for `OPENAI_API_KEY`. The taxonomy starter file should be checked in so users have an editable default.
 
@@ -150,4 +150,4 @@ The most important runtime artifacts are:
 
 The Python model integration uses `langchain-openai` and expects `OPENAI_API_KEY` to be available in the environment. The scaffold uses LangChain structured output (`with_structured_output`) for semantic steps and deterministic Python code for numeric scoring and run-state management.
 
-Revision note (2026-03-07): Updated the checked-in state to reflect the post-scaffold refactor from a single digest module to the `src/xs2n/agents/digest/` package while keeping the original implementation details and validation steps restartable.
+Revision note (2026-03-07): Updated the checked-in state to reflect the post-scaffold refactor from a single digest module to a flatter `src/xs2n/agents/digest/` package built around `pipeline.py` and `agents.py`, while keeping the original implementation details and validation steps restartable.
