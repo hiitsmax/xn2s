@@ -21,7 +21,9 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
 - [x] (2026-03-07 16:27Z) Validated the focused digest suite with `uv run pytest tests/test_report_digest.py tests/test_report_cli.py` and `uv run xs2n report digest --help`.
 - [x] (2026-03-07 16:31Z) Ran the full repository suite with `uv run pytest` after the simplification.
 - [x] (2026-03-07 16:42Z) Renamed the thin model wrapper from `OpenAIDigestAgent` to `DigestLLM`, moved it to `llm.py`, and removed the stale `backend` vocabulary from the digest pipeline.
-- [x] (2026-03-07 16:55Z) Extracted the digest schemas into the new root-level `src/xs2n/models/digest.py` module so the pipeline no longer owns the Pydantic/data classes.
+- [x] (2026-03-07 16:55Z) Extracted the digest schemas into the new root-level schema module so the pipeline no longer owns the Pydantic/data classes.
+- [x] (2026-03-07 17:02Z) Renamed the root-level digest schema package from `src/xs2n/models/` to `src/xs2n/schemas/` so the package name matches the role more clearly.
+- [x] (2026-03-07 17:06Z) Revalidated the package rename with `uv run pytest tests/test_report_digest.py tests/test_report_cli.py`, `uv run xs2n report digest --help`, and `uv run pytest`.
 
 ## Surprises & Discoveries
 
@@ -56,8 +58,8 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
   Rationale: The wrapper only sends structured prompts to the model and returns typed results; the step files are the agentic units, while the wrapper itself is just the model interface.
   Date/Author: 2026-03-07 / Codex
 
-- Decision: Move the digest schemas into a root-level models package.
-  Rationale: The user wanted the Pydantic-heavy data definitions separated from the digest package internals. `src/xs2n/models/digest.py` keeps the schemas centralized while `pipeline.py` stays focused on flow logic.
+- Decision: Move the digest schemas into a root-level schemas package.
+  Rationale: The user wanted the Pydantic-heavy data definitions separated from the digest package internals, and `schemas` describes these validation/IO shapes more clearly than `models`.
   Date/Author: 2026-03-07 / Codex
 
 ## Outcomes & Retrospective
@@ -68,7 +70,7 @@ The digest feature is still a scaffold, but it is now a much cleaner scaffold. A
 
 `xs2n` is a Typer CLI under `src/xs2n/cli/`. The timeline ingestion command lives in `src/xs2n/cli/timeline.py` and stores flat tweet records in `data/timeline.json` via `src/xs2n/storage/timeline.py`. Those records include thread context fields such as `conversation_id`, reply linkage, and engagement metrics.
 
-The active digest code lives under `src/xs2n/agents/digest/`, but the digest schemas now live in the root-level `src/xs2n/models/digest.py` module. In the current design, `pipeline.py` owns the JSON helpers, the markdown rendering, and the top-level `run_digest_report(...)` orchestrator. `llm.py` owns the single generic OpenAI/LangChain structured-output model wrapper. The five step files are:
+The active digest code lives under `src/xs2n/agents/digest/`, but the digest schemas now live in the root-level `src/xs2n/schemas/digest.py` module. In the current design, `pipeline.py` owns the JSON helpers, the markdown rendering, and the top-level `run_digest_report(...)` orchestrator. `llm.py` owns the single generic OpenAI/LangChain structured-output model wrapper. The five step files are:
 
 - `src/xs2n/agents/digest/load_threads.py`
 - `src/xs2n/agents/digest/categorize_threads.py`
@@ -86,7 +88,7 @@ Second, make the digest input contract as small as possible. `src/xs2n/agents/di
 
 Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/categorize_threads.py`, `filter_threads.py`, `extract_signals.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic LLM wrapper in `src/xs2n/agents/digest/llm.py` with a prompt, a JSON payload, and a Pydantic schema.
 
-Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should not define the digest schemas anymore; those belong in `src/xs2n/models/digest.py`. `pipeline.py` should only define helper functions like `virality_score(...)`, markdown rendering, and `run_digest_report(...)`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `signals.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
+Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should not define the digest schemas anymore; those belong in `src/xs2n/schemas/digest.py`. `pipeline.py` should only define helper functions like `virality_score(...)`, markdown rendering, and `run_digest_report(...)`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `signals.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
 
 Finally, keep the CLI small. `src/xs2n/cli/report.py` should accept `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model`, then print a one-line summary of loaded threads, kept threads, produced issues, and the digest path.
 
@@ -149,7 +151,7 @@ The most important runtime artifacts are:
     run_digest_report(...)
     def virality_score(record: TimelineRecord) -> float
 
-`src/xs2n/models/digest.py` must expose:
+`src/xs2n/schemas/digest.py` must expose:
 
     @dataclass class DigestRunResult
     class TimelineRecord(BaseModel)

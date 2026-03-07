@@ -24,8 +24,8 @@ src/xs2n/cli/onboard.py
 src/xs2n/cli/parameters.py
 src/xs2n/cli/report.py
 src/xs2n/cli/timeline.py
-src/xs2n/models/__init__.py
-src/xs2n/models/digest.py
+src/xs2n/schemas/__init__.py
+src/xs2n/schemas/digest.py
 src/xs2n/profile/auth.py
 src/xs2n/profile/browser_cookies.py
 src/xs2n/profile/following.py

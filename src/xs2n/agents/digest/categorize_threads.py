@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from xs2n.models.digest import (
+from xs2n.schemas.digest import (
     CategorizationResult,
     CategorizedThread,
     TaxonomyConfig,

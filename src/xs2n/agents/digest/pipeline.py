@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from xs2n.models.digest import (
+from xs2n.schemas.digest import (
     DigestRunResult,
     Issue,
     IssueThread,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
-from xs2n.models.digest import (
+from xs2n.schemas.digest import (
     Issue,
     IssueAssignmentResult,
     IssueThread,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .load_threads import run as _load_threads
 from .llm import DigestLLM
-from xs2n.models.digest import (
+from xs2n.schemas.digest import (
     CategorizationResult,
     CategorySpec,
     DigestRunResult,
