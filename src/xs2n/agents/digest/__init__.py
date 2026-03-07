@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from .agents import OpenAIDigestAgent, OpenAIDigestBackend
 from .load_threads import run as _load_threads
+from .llm import DigestLLM
 from .pipeline import (
     CategorizationResult,
     CategorySpec,
@@ -34,8 +34,7 @@ __all__ = [
     "FilterResult",
     "Issue",
     "IssueAssignmentResult",
-    "OpenAIDigestAgent",
-    "OpenAIDigestBackend",
+    "DigestLLM",
     "SignalResult",
     "TaxonomyConfig",
     "ThreadInput",

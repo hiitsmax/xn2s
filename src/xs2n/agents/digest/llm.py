@@ -13,7 +13,7 @@ from .pipeline import DEFAULT_REPORT_MODEL, to_jsonable
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
-class OpenAIDigestAgent:
+class DigestLLM:
     def __init__(
         self,
         *,
@@ -40,6 +40,3 @@ class OpenAIDigestAgent:
             f"{prompt}\n\nInput JSON:\n{json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2)}"
         )
         return cast(SchemaT, response)
-
-
-OpenAIDigestBackend = OpenAIDigestAgent

@@ -436,17 +436,16 @@ def run_digest_report(
     output_dir: Path = DEFAULT_REPORT_RUNS_PATH,
     taxonomy_file: Path = DEFAULT_TAXONOMY_PATH,
     model: str = DEFAULT_REPORT_MODEL,
-    agent: Any | None = None,
-    backend: Any | None = None,
+    llm: Any | None = None,
 ) -> DigestRunResult:
-    from .agents import OpenAIDigestAgent
     from .categorize_threads import run as categorize_threads
     from .extract_signals import run as extract_signals
     from .filter_threads import run as filter_threads
     from .group_issues import run as group_issues
+    from .llm import DigestLLM
     from .load_threads import run as load_threads
 
-    resolved_agent = agent or backend or OpenAIDigestAgent(model=model)
+    digest_llm = llm or DigestLLM(model=model)
     run_started_at = datetime.now(timezone.utc)
     run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
     run_dir = output_dir / run_id
@@ -457,27 +456,27 @@ def run_digest_report(
     write_json(run_dir / "threads.json", threads)
 
     categorized_threads = categorize_threads(
-        agent=resolved_agent,
+        llm=digest_llm,
         taxonomy=taxonomy,
         threads=threads,
     )
     write_json(run_dir / "categorized_threads.json", categorized_threads)
 
     filtered_threads = filter_threads(
-        agent=resolved_agent,
+        llm=digest_llm,
         taxonomy=taxonomy,
         threads=categorized_threads,
     )
     write_json(run_dir / "filtered_threads.json", filtered_threads)
 
     signal_threads = extract_signals(
-        agent=resolved_agent,
+        llm=digest_llm,
         threads=filtered_threads,
     )
     write_json(run_dir / "signals.json", signal_threads)
 
     issue_threads, issues = group_issues(
-        agent=resolved_agent,
+        llm=digest_llm,
         threads=signal_threads,
     )
     write_json(run_dir / "issue_assignments.json", issue_threads)

@@ -14,12 +14,13 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
 - [x] (2026-03-07 13:33Z) Added engagement metrics to `TimelineEntry` extraction and persistence.
 - [x] (2026-03-07 13:41Z) Updated timeline merge behavior so repeated imports refresh stored metrics for existing tweet IDs instead of freezing virality at first sighting.
 - [x] (2026-03-07 14:00Z) Implemented the first runnable digest scaffold and wired `xs2n report digest`.
-- [x] (2026-03-07 14:28Z) Flattened the first refactor back down to the simpler `pipeline.py` + `agents.py` shape after the earlier split was too abstract for the feature size.
+- [x] (2026-03-07 14:28Z) Flattened the first refactor back down to the simpler digest-package shape after the earlier split was too abstract for the feature size.
 - [x] (2026-03-07 16:10Z) Reworked the digest package again so `pipeline.py` now calls five explicit step files: `load_threads.py`, `categorize_threads.py`, `filter_threads.py`, `extract_signals.py`, and `group_issues.py`.
 - [x] (2026-03-07 16:18Z) Removed the stateful selection/assembly path from the active digest command so it now operates directly on thread bundles derived from `timeline.json`.
 - [x] (2026-03-07 16:24Z) Updated report tests, CLI docs, and autolearning notes to match the simpler thread-first pipeline.
 - [x] (2026-03-07 16:27Z) Validated the focused digest suite with `uv run pytest tests/test_report_digest.py tests/test_report_cli.py` and `uv run xs2n report digest --help`.
 - [x] (2026-03-07 16:31Z) Ran the full repository suite with `uv run pytest` after the simplification.
+- [x] (2026-03-07 16:42Z) Renamed the thin model wrapper from `OpenAIDigestAgent` to `DigestLLM`, moved it to `llm.py`, and removed the stale `backend` vocabulary from the digest pipeline.
 
 ## Surprises & Discoveries
 
@@ -30,7 +31,7 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
   Evidence: `conversation_id`, `in_reply_to_tweet_id`, reply records, and persisted engagement metrics were enough to build thread bundles directly from `data/timeline.json`.
 
 - Observation: LangChain structured output still fits the simpler design cleanly.
-  Evidence: A single generic agent wrapper using `ChatOpenAI.with_structured_output(..., method="json_schema")` works well when each step file loops over threads and asks for one schema at a time.
+  Evidence: A single generic LLM wrapper using `ChatOpenAI.with_structured_output(..., method="json_schema")` works well when each step file loops over threads and asks for one schema at a time.
 
 ## Decision Log
 
@@ -46,8 +47,12 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
   Rationale: This preserves the user’s preference for agentic semantic steps while still keeping measurable logic out of the model.
   Date/Author: 2026-03-07 / Codex
 
-- Decision: Use one generic OpenAI/LangChain agent wrapper instead of one backend class with per-step methods.
-  Rationale: The user asked for “the single agent that just gets the prompt and then the result for each thread,” so the code now exposes exactly that shape.
+- Decision: Use one generic OpenAI/LangChain LLM wrapper instead of one backend class with per-step methods.
+  Rationale: The user asked for one thin model interface that each step can call with a prompt and schema, so the code now exposes exactly that shape.
+  Date/Author: 2026-03-07 / Codex
+
+- Decision: Rename the thin model client from “agent” to “LLM.”
+  Rationale: The wrapper only sends structured prompts to the model and returns typed results; the step files are the agentic units, while the wrapper itself is just the model interface.
   Date/Author: 2026-03-07 / Codex
 
 ## Outcomes & Retrospective
@@ -58,7 +63,7 @@ The digest feature is still a scaffold, but it is now a much cleaner scaffold. A
 
 `xs2n` is a Typer CLI under `src/xs2n/cli/`. The timeline ingestion command lives in `src/xs2n/cli/timeline.py` and stores flat tweet records in `data/timeline.json` via `src/xs2n/storage/timeline.py`. Those records include thread context fields such as `conversation_id`, reply linkage, and engagement metrics.
 
-The active digest code lives under `src/xs2n/agents/digest/`. In the current design, `pipeline.py` owns the shared models, the JSON helpers, the markdown rendering, and the top-level `run_digest_report(...)` orchestrator. `agents.py` owns the single generic OpenAI/LangChain structured-output agent. The five step files are:
+The active digest code lives under `src/xs2n/agents/digest/`. In the current design, `pipeline.py` owns the shared models, the JSON helpers, the markdown rendering, and the top-level `run_digest_report(...)` orchestrator. `llm.py` owns the single generic OpenAI/LangChain structured-output model wrapper. The five step files are:
 
 - `src/xs2n/agents/digest/load_threads.py`
 - `src/xs2n/agents/digest/categorize_threads.py`
@@ -74,7 +79,7 @@ First, keep the ingestion-side engagement metrics already added to `TimelineEntr
 
 Second, make the digest input contract as small as possible. `src/xs2n/agents/digest/load_threads.py` should read `data/timeline.json`, validate the entries into `TimelineRecord`, group them by conversation, discard conversations that do not contain any source-authored tweet, and emit `ThreadInput` objects sorted by recency.
 
-Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/categorize_threads.py`, `filter_threads.py`, `extract_signals.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic agent wrapper in `src/xs2n/agents/digest/agents.py` with a prompt, a JSON payload, and a Pydantic schema.
+Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/categorize_threads.py`, `filter_threads.py`, `extract_signals.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic LLM wrapper in `src/xs2n/agents/digest/llm.py` with a prompt, a JSON payload, and a Pydantic schema.
 
 Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should define the shared data models, helper functions like `virality_score(...)`, the five step-calling helper methods, and `run_digest_report(...)`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `signals.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
 
@@ -129,9 +134,9 @@ The most important runtime artifacts are:
 
 ## Interfaces and Dependencies
 
-`src/xs2n/agents/digest/agents.py` must expose:
+`src/xs2n/agents/digest/llm.py` must expose:
 
-    class OpenAIDigestAgent:
+    class DigestLLM:
         def run(self, *, prompt: str, payload: Any, schema: type[BaseModel]) -> BaseModel: ...
 
 `src/xs2n/agents/digest/pipeline.py` must expose:

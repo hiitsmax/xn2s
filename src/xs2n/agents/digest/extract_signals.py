@@ -7,14 +7,14 @@ from .pipeline import FilteredThread, SignalResult, SignalThread, virality_score
 
 def run(
     *,
-    agent: Any,
+    llm: Any,
     threads: list[FilteredThread],
 ) -> list[SignalThread]:
     signal_threads: list[SignalThread] = []
     for thread in threads:
         if not thread.keep:
             continue
-        result = agent.run(
+        result = llm.run(
             prompt=(
                 "You extract the signal from one kept X/Twitter thread for a compact "
                 "magazine-style digest. Be concrete and brief. Name the claim, why it "

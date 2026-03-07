@@ -12,7 +12,7 @@ from .pipeline import (
 
 def run(
     *,
-    agent: Any,
+    llm: Any,
     taxonomy: TaxonomyConfig,
     threads: list[ThreadInput],
 ) -> list[CategorizedThread]:
@@ -29,7 +29,7 @@ def run(
 
     categorized_threads: list[CategorizedThread] = []
     for thread in threads:
-        result = agent.run(
+        result = llm.run(
             prompt=(
                 "You are categorizing one X/Twitter thread for a high-signal digest. "
                 "Pick exactly one category slug from the provided taxonomy. Prefer the "

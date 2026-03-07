@@ -12,13 +12,13 @@ from .pipeline import (
 
 def run(
     *,
-    agent: Any,
+    llm: Any,
     taxonomy: TaxonomyConfig,
     threads: list[CategorizedThread],
 ) -> list[FilteredThread]:
     filtered_threads: list[FilteredThread] = []
     for thread in threads:
-        result = agent.run(
+        result = llm.run(
             prompt=(
                 "You decide whether one categorized X/Twitter thread belongs in a "
                 "high-signal, low-noise digest. Default to keeping real signal. Default "

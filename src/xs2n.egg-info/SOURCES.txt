@@ -10,11 +10,11 @@ src/xs2n.egg-info/requires.txt
 src/xs2n.egg-info/top_level.txt
 src/xs2n/agents/__init__.py
 src/xs2n/agents/digest/__init__.py
-src/xs2n/agents/digest/agents.py
 src/xs2n/agents/digest/categorize_threads.py
 src/xs2n/agents/digest/extract_signals.py
 src/xs2n/agents/digest/filter_threads.py
 src/xs2n/agents/digest/group_issues.py
+src/xs2n/agents/digest/llm.py
 src/xs2n/agents/digest/load_threads.py
 src/xs2n/agents/digest/pipeline.py
 src/xs2n/cli/__init__.py

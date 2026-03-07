@@ -17,7 +17,7 @@ from xs2n.agents.digest import (
 )
 
 
-class _FakeAgent:
+class _FakeLLM:
     def run(self, *, prompt, payload, schema):  # noqa: ANN001, ANN201
         if schema is CategorizationResult:
             thread = payload["thread"]
@@ -251,7 +251,7 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
         output_dir=output_dir,
         taxonomy_file=taxonomy_file,
         model="fake-model",
-        agent=_FakeAgent(),
+        llm=_FakeLLM(),
     )
 
     expected_files = {

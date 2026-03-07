@@ -169,7 +169,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added `xs2n report digest` as the first runnable digest-generation command.
 - Built the digest scaffold in the `src/xs2n/agents/digest/` package with a simpler split:
   - `pipeline.py` for models, orchestration, and deterministic steps,
-  - `agents.py` for the semantic LLM-facing agent logic.
+  - `llm.py` for the semantic model-facing logic.
   It still writes explicit step artifacts:
   - selected timeline entries,
   - conversation candidates,
@@ -180,11 +180,11 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - final markdown digest.
 - Introduced `data/report_state.json` and `src/xs2n/storage/report_state.py` so heated threads can be revisited across runs.
 - Added a checked-in editable taxonomy starter file at `docs/codex/report_taxonomy.json`.
-- Used LangChain structured output with an OpenAI backend for semantic steps while keeping numeric scoring and state tracking deterministic.
+- Used LangChain structured output with an OpenAI model wrapper for semantic steps while keeping numeric scoring and state tracking deterministic.
 - Extended timeline persistence with `favorite_count`, `retweet_count`, `reply_count`, `quote_count`, and `view_count`.
 - Changed timeline merge behavior so re-seen tweets refresh stored engagement metrics instead of freezing them at first ingest.
-- Added tests for virality extraction, duplicate refresh behavior, heated-thread carry-over, digest CLI routing, and a fake-backend end-to-end digest run.
-- Refactored the original digest monolith into a flatter `src/xs2n/agents/digest/` package centered on `pipeline.py` and `agents.py`, after the more granular split proved too abstract for the current codebase size.
+- Added tests for virality extraction, duplicate refresh behavior, heated-thread carry-over, digest CLI routing, and a fake-LLM end-to-end digest run.
+- Refactored the original digest monolith into a flatter `src/xs2n/agents/digest/` package centered on `pipeline.py` and the model wrapper module, after the more granular split proved too abstract for the current codebase size.
 
 ## Digest Pipeline Simplification (2026-03-07)
 
@@ -195,6 +195,13 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - `filter_threads.py`
   - `extract_signals.py`
   - `group_issues.py`
-- Replaced the older per-step backend methods with one generic structured-output agent wrapper in `src/xs2n/agents/digest/agents.py`.
-- Kept deterministic code only for thread loading, virality scoring, artifact writing, and markdown rendering; the semantic steps now loop thread-by-thread and call the same agent with different prompts.
+- Replaced the older per-step backend methods with one generic structured-output LLM wrapper in `src/xs2n/agents/digest/llm.py`.
+- Kept deterministic code only for thread loading, virality scoring, artifact writing, and markdown rendering; the semantic steps now loop thread-by-thread and call the same LLM wrapper with different prompts.
 - Simplified the CLI surface for `xs2n report digest` down to `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model`.
+
+## Digest Naming Cleanup (2026-03-07)
+
+- Renamed the generic model wrapper from `OpenAIDigestAgent` to `DigestLLM`.
+- Renamed the module from `src/xs2n/agents/digest/agents.py` to `src/xs2n/agents/digest/llm.py`.
+- Renamed digest step parameters from `agent` to `llm` and removed the leftover `backend` vocabulary from `run_digest_report(...)`.
+- Kept the “agentic” language for the step files conceptually, not for the thin model client.

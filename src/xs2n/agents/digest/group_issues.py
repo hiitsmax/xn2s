@@ -15,14 +15,14 @@ from .pipeline import (
 
 def run(
     *,
-    agent: Any,
+    llm: Any,
     threads: list[SignalThread],
 ) -> tuple[list[IssueThread], list[Issue]]:
     issue_threads: list[IssueThread] = []
     grouped_threads: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
     for thread in threads:
-        result = agent.run(
+        result = llm.run(
             prompt=(
                 "You assign one high-signal X/Twitter thread to the live issue or argument "
                 "it belongs to. Reuse a stable issue_slug when multiple threads are clearly "
