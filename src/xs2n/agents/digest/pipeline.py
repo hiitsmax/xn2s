@@ -238,12 +238,12 @@ def run_digest_report(
     model: str = DEFAULT_REPORT_MODEL,
     llm: Any | None = None,
 ) -> DigestRunResult:
-    from .categorize_threads import run as categorize_threads
-    from .filter_threads import run as filter_threads
-    from .group_issues import run as group_issues
     from .llm import DigestLLM
-    from .load_threads import run as load_threads
-    from .process_threads import run as process_threads
+    from .steps.categorize_threads import run as categorize_threads
+    from .steps.filter_threads import run as filter_threads
+    from .steps.group_issues import run as group_issues
+    from .steps.load_threads import run as load_threads
+    from .steps.process_threads import run as process_threads
 
     digest_llm = llm or DigestLLM(model=model)
     run_started_at = datetime.now(timezone.utc)

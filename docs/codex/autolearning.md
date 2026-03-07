@@ -190,11 +190,11 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 
 - Simplified the active digest path again so it now starts directly from the thread-aware `timeline.json` file instead of maintaining a stateful preselection layer.
 - Reworked the package around one orchestrator plus five explicit step files:
-  - `load_threads.py`
-  - `categorize_threads.py`
-  - `filter_threads.py`
-  - `process_threads.py`
-  - `group_issues.py`
+  - `steps/load_threads.py`
+  - `steps/categorize_threads.py`
+  - `steps/filter_threads.py`
+  - `steps/process_threads.py`
+  - `steps/group_issues.py`
 - Replaced the older per-step backend methods with one generic structured-output LLM wrapper in `src/xs2n/agents/digest/llm.py`.
 - Kept deterministic code only for thread loading, virality scoring, artifact writing, and markdown rendering; the semantic steps now loop thread-by-thread and call the same LLM wrapper with different prompts.
 - Simplified the CLI surface for `xs2n report digest` down to `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model`.
@@ -202,6 +202,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 ## Thread Processing Naming Cleanup (2026-03-07)
 
 - Renamed the thread-level raw-output step from `extract_signals.py` to `process_threads.py`.
+- Moved the step files under `src/xs2n/agents/digest/steps/` so the package layout matches the conceptual pipeline shape.
 - Renamed the core thread-processing schemas from `SignalResult`/`SignalThread` to `ThreadProcessResult`/`ProcessedThread`.
 - Renamed the run artifact from `signals.json` to `processed_threads.json` so the artifact matches the thread-centric operation.
 

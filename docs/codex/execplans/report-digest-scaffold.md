@@ -25,6 +25,7 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
 - [x] (2026-03-07 17:02Z) Renamed the root-level digest schema package from `src/xs2n/models/` to `src/xs2n/schemas/` so the package name matches the role more clearly.
 - [x] (2026-03-07 17:06Z) Revalidated the package rename with `uv run pytest tests/test_report_digest.py tests/test_report_cli.py`, `uv run xs2n report digest --help`, and `uv run pytest`.
 - [x] (2026-03-07 17:12Z) Renamed the thread-level raw-output step from `extract_signals.py` to `process_threads.py` and updated the digest artifact name to `processed_threads.json`.
+- [x] (2026-03-07 17:18Z) Moved the five digest step modules into `src/xs2n/agents/digest/steps/` and rewired imports/metadata to match.
 
 ## Surprises & Discoveries
 
@@ -77,11 +78,11 @@ The digest feature is still a scaffold, but it is now a much cleaner scaffold. A
 
 The active digest code lives under `src/xs2n/agents/digest/`, but the digest schemas now live in the root-level `src/xs2n/schemas/digest.py` module. In the current design, `pipeline.py` owns the JSON helpers, the markdown rendering, and the top-level `run_digest_report(...)` orchestrator. `llm.py` owns the single generic OpenAI/LangChain structured-output model wrapper. The five step files are:
 
-- `src/xs2n/agents/digest/load_threads.py`
-- `src/xs2n/agents/digest/categorize_threads.py`
-- `src/xs2n/agents/digest/filter_threads.py`
-- `src/xs2n/agents/digest/process_threads.py`
-- `src/xs2n/agents/digest/group_issues.py`
+- `src/xs2n/agents/digest/steps/load_threads.py`
+- `src/xs2n/agents/digest/steps/categorize_threads.py`
+- `src/xs2n/agents/digest/steps/filter_threads.py`
+- `src/xs2n/agents/digest/steps/process_threads.py`
+- `src/xs2n/agents/digest/steps/group_issues.py`
 
 When this document says “thread,” it means one conversation bundle grouped from `timeline.json` by `conversation_id`, keeping only conversations that contain at least one source-authored tweet. Outside replies already present in the timeline file stay attached as context inside that bundle.
 
@@ -89,9 +90,9 @@ When this document says “thread,” it means one conversation bundle grouped f
 
 First, keep the ingestion-side engagement metrics already added to `TimelineEntry` and timeline persistence so virality remains available during digest generation.
 
-Second, make the digest input contract as small as possible. `src/xs2n/agents/digest/load_threads.py` should read `data/timeline.json`, validate the entries into `TimelineRecord`, group them by conversation, discard conversations that do not contain any source-authored tweet, and emit `ThreadInput` objects sorted by recency.
+Second, make the digest input contract as small as possible. `src/xs2n/agents/digest/steps/load_threads.py` should read `data/timeline.json`, validate the entries into `TimelineRecord`, group them by conversation, discard conversations that do not contain any source-authored tweet, and emit `ThreadInput` objects sorted by recency.
 
-Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/categorize_threads.py`, `filter_threads.py`, `process_threads.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic LLM wrapper in `src/xs2n/agents/digest/llm.py` with a prompt, a JSON payload, and a Pydantic schema.
+Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/steps/categorize_threads.py`, `filter_threads.py`, `process_threads.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic LLM wrapper in `src/xs2n/agents/digest/llm.py` with a prompt, a JSON payload, and a Pydantic schema.
 
 Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should not define the digest schemas anymore; those belong in `src/xs2n/schemas/digest.py`. `pipeline.py` should only define helper functions like `virality_score(...)`, markdown rendering, and `run_digest_report(...)`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `processed_threads.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
 
