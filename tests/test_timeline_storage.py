@@ -6,7 +6,16 @@ from xs2n.profile.types import TimelineEntry
 from xs2n.storage import load_timeline, merge_timeline_entries
 
 
-def _entry(tweet_id: str, account: str = "mx") -> TimelineEntry:
+def _entry(
+    tweet_id: str,
+    account: str = "mx",
+    *,
+    favorite_count: int | None = None,
+    retweet_count: int | None = None,
+    reply_count: int | None = None,
+    quote_count: int | None = None,
+    view_count: int | None = None,
+) -> TimelineEntry:
     return TimelineEntry(
         tweet_id=tweet_id,
         account_handle=account,
@@ -17,6 +26,11 @@ def _entry(tweet_id: str, account: str = "mx") -> TimelineEntry:
         retweeted_tweet_id=None,
         retweeted_author_handle=None,
         retweeted_created_at=None,
+        favorite_count=favorite_count,
+        retweet_count=retweet_count,
+        reply_count=reply_count,
+        quote_count=quote_count,
+        view_count=view_count,
     )
 
 
@@ -60,3 +74,50 @@ def test_merge_timeline_entries_persists_thread_metadata(tmp_path: Path) -> None
     assert stored["in_reply_to_tweet_id"] == "tweet-1"
     assert stored["conversation_id"] == "conv-1"
     assert stored["timeline_source"] == "replies"
+
+
+def test_merge_timeline_entries_persists_engagement_metrics(tmp_path: Path) -> None:
+    timeline_file = tmp_path / "timeline.json"
+
+    merge_timeline_entries(
+        [
+            _entry(
+                "metric-1",
+                favorite_count=101,
+                retweet_count=22,
+                reply_count=13,
+                quote_count=4,
+                view_count=9000,
+            )
+        ],
+        path=timeline_file,
+    )
+
+    doc = load_timeline(timeline_file)
+    stored = doc["entries"][0]
+    assert stored["favorite_count"] == 101
+    assert stored["retweet_count"] == 22
+    assert stored["reply_count"] == 13
+    assert stored["quote_count"] == 4
+    assert stored["view_count"] == 9000
+
+
+def test_merge_timeline_entries_refreshes_existing_metrics(tmp_path: Path) -> None:
+    timeline_file = tmp_path / "timeline.json"
+
+    merge_timeline_entries(
+        [_entry("1", favorite_count=10, retweet_count=2)],
+        path=timeline_file,
+    )
+    merge_result = merge_timeline_entries(
+        [_entry("1", favorite_count=25, retweet_count=5)],
+        path=timeline_file,
+    )
+
+    assert merge_result.added == 0
+    assert merge_result.skipped_duplicates == 1
+
+    doc = load_timeline(timeline_file)
+    stored = doc["entries"][0]
+    assert stored["favorite_count"] == 25
+    assert stored["retweet_count"] == 5

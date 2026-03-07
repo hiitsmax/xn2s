@@ -9,6 +9,8 @@ Requires-Dist: twikit>=2.3.3
 Requires-Dist: tenacity>=9.1.4
 Requires-Dist: playwright>=1.58.0
 Requires-Dist: browser-cookie3>=0.20.1
+Requires-Dist: langchain-openai>=0.3.7
+Requires-Dist: pydantic>=2.10.6
 Provides-Extra: dev
 Requires-Dist: pytest>=8.3.0; extra == "dev"
 
@@ -27,7 +29,7 @@ In scope today:
 - Import followed accounts from X via Twikit (`--from-following`).
 - Merge into a persistent deduplicated catalog (`data/sources.json`).
 - Provide a recovery flow for Cloudflare `403` blocks during following import.
-- Ingest posts and retweets from a specific account since a cutoff datetime.
+- Ingest posts, replies (thread-aware), and retweets from a specific account since a cutoff datetime.
 - Persist deduplicated timeline entries for downstream processing (`data/timeline.json`).
 
 Out of scope for now:
@@ -43,13 +45,14 @@ Working now:
 - `xs2n onboard --paste`
 - `xs2n onboard --from-following <handle>`
 - `xs2n timeline --account <handle> --since <iso-datetime>`
+- `xs2n timeline --from-sources --since <iso-datetime>`
+- `xs2n report auth` (delegates ChatGPT/Codex authentication)
 - Interactive mode selection when no onboarding mode is provided
 - Local-browser cookie preflight (with profile selection) before Twikit login prompts
 - Cloudflare block detection + local-browser cookie refresh + Playwright fallback + retry
 - Unit tests for parsing, merge behavior, timeline fetching/storage, and recovery flow
 
 Known gaps / WIP:
-- No dedicated `auth` command set yet (`auth login/check` still pending)
 - Following and timeline imports still depend on Twikit behavior and can break if X internals change
 - No full integration/e2e test for real X account flow in CI
 - No summarization pipeline yet (ingestion is in place, processing is next)
@@ -97,10 +100,52 @@ uv run xs2n onboard
 uv run xs2n onboard --wizard
 ```
 
-Ingest posts + retweets from an account since a cutoff datetime:
+Ingest posts + replies + retweets from an account since a cutoff datetime:
 
 ```bash
 uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
+```
+
+Ingest posts + replies + retweets for all onboarded sources in `data/sources.json`:
+
+```bash
+uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
+```
+
+If `data/sources.json` is missing but legacy `data/sources.yaml` exists, `--from-sources` auto-migrates it to JSON before ingestion.
+
+Rate-limit hardening and slower fetch options:
+
+```bash
+uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --slow-fetch-seconds 1.0 --page-delay-seconds 0.4 --wait-on-rate-limit
+```
+
+By default, timeline ingestion now waits/retries on X `429` and uses conservative pacing (`--slow-fetch-seconds 1.0`, `--page-delay-seconds 0.4`). Use `--no-wait-on-rate-limit` or set delays to `0` for a faster/fail-fast run.
+
+Thread expansion options (bounded):
+
+```bash
+uv run xs2n timeline --account your_screen_name --since 2026-03-01T00:00:00Z --thread-parent-limit 120 --thread-replies-limit 240 --thread-other-replies-limit 120
+```
+
+- `--thread-parent-limit`: hydrate replied-to parent chain tweets (recursive upward).
+- `--thread-replies-limit`: recursively include conversation replies.
+- `--thread-other-replies-limit`: cap replies authored by non-target accounts.
+- Set any of these to `0` to disable that expansion path.
+
+Authenticate report-pipeline model access via Codex CLI (ChatGPT account flow):
+
+```bash
+uv run xs2n report auth
+uv run xs2n report auth --device-auth
+uv run xs2n report auth --status
+uv run xs2n report auth --logout
+```
+
+If `codex` is not installed yet, install it first:
+
+```bash
+npm install -g @openai/codex
 ```
 
 Output files:

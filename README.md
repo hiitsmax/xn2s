@@ -1,12 +1,13 @@
 # xs2n
 
-`xs2n` is an early-stage CLI project for building a free-first X (Twitter) onboarding and timeline-ingestion layer for a future summarization pipeline.
+`xs2n` is an early-stage CLI project for building a free-first X (Twitter) onboarding, timeline-ingestion, and digest-generation layer for a future summarization pipeline.
 
 ## Scope
 
-This repository currently focuses on two foundations for downstream summarization:
+This repository currently focuses on three foundations for downstream summarization:
 - source onboarding
 - timeline ingestion
+- report digest scaffolding
 
 In scope today:
 - Normalize handles from pasted input (`@name`, `name`, `x.com/name`).
@@ -14,16 +15,17 @@ In scope today:
 - Merge into a persistent deduplicated catalog (`data/sources.json`).
 - Provide a recovery flow for Cloudflare `403` blocks during following import.
 - Ingest posts, replies (thread-aware), and retweets from a specific account since a cutoff datetime.
-- Persist deduplicated timeline entries for downstream processing (`data/timeline.json`).
+- Persist deduplicated timeline entries for downstream processing (`data/timeline.json`), including engagement metrics used for virality.
+- Generate a traceable markdown digest issue from timeline data (`xs2n report digest`).
 
 Out of scope for now:
-- Ranking or signal scoring.
-- Summarization generation and delivery.
+- Final production ranking/tuning.
+- Delivery integrations such as email or LaTeX export.
 - Scheduled/production orchestration.
 
 ## Current Status (WIP)
 
-Milestone: **Onboarding + timeline ingestion hardening**.
+Milestone: **First digest scaffold on top of hardened ingestion**.
 
 Working now:
 - `xs2n onboard --paste`
@@ -31,15 +33,17 @@ Working now:
 - `xs2n timeline --account <handle> --since <iso-datetime>`
 - `xs2n timeline --from-sources --since <iso-datetime>`
 - `xs2n report auth` (delegates ChatGPT/Codex authentication)
+- `xs2n report digest` (traceable markdown issue scaffold with per-step artifacts)
 - Interactive mode selection when no onboarding mode is provided
 - Local-browser cookie preflight (with profile selection) before Twikit login prompts
 - Cloudflare block detection + local-browser cookie refresh + Playwright fallback + retry
-- Unit tests for parsing, merge behavior, timeline fetching/storage, and recovery flow
+- Unit tests for parsing, merge behavior, timeline fetching/storage, recovery flow, and digest scaffolding
 
 Known gaps / WIP:
 - Following and timeline imports still depend on Twikit behavior and can break if X internals change
 - No full integration/e2e test for real X account flow in CI
-- No summarization pipeline yet (ingestion is in place, processing is next)
+- Digest uses a first OpenAI/LangChain scaffold and still needs richer editorial tuning
+- No delivery automation yet (email/LaTeX are future steps)
 
 ## Quickstart (`uv`)
 
@@ -132,11 +136,33 @@ If `codex` is not installed yet, install it first:
 npm install -g @openai/codex
 ```
 
+Generate a markdown digest issue from `data/timeline.json` using the OpenAI API:
+
+```bash
+export OPENAI_API_KEY=your_key_here
+uv run xs2n report digest --model gpt-4.1-mini
+```
+
+Useful digest options:
+
+```bash
+uv run xs2n report digest \
+  --timeline-file data/timeline.json \
+  --output-dir data/report_runs \
+  --state-file data/report_state.json \
+  --taxonomy-file docs/codex/report_taxonomy.json \
+  --window-minutes 10
+```
+
+The digest command writes one run folder per execution with intermediate JSON artifacts and a final `digest.md`.
+
 Output files:
 
 ```text
 data/sources.json
 data/timeline.json
+data/report_state.json
+data/report_runs/<run_id>/digest.md
 ```
 
 ## Tests
@@ -149,6 +175,7 @@ uv run pytest
 
 - Autolearning and milestone notes: `docs/codex/autolearning.md`
 - Execution plans: `docs/codex/execplans/`
+- Digest taxonomy starter file: `docs/codex/report_taxonomy.json`
 
 ## Legacy Install (pip)
 

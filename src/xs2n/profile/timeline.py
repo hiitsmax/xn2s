@@ -64,6 +64,24 @@ def _safe_handle(raw: str | None, fallback: str) -> str:
     return fallback
 
 
+def _to_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip().replace(",", "")
+        if not stripped:
+            return None
+        try:
+            return int(stripped)
+        except ValueError:
+            return None
+    return None
+
+
 def _tweet_id(tweet: Any) -> str | None:
     raw_id = str(getattr(tweet, "id", "")).strip()
     return raw_id or None
@@ -153,6 +171,11 @@ def _to_timeline_entry(
         in_reply_to_tweet_id=in_reply_to_tweet_id,
         conversation_id=conversation_id,
         timeline_source=timeline_source,
+        favorite_count=_to_int(getattr(tweet, "favorite_count", None)),
+        retweet_count=_to_int(getattr(tweet, "retweet_count", None)),
+        reply_count=_to_int(getattr(tweet, "reply_count", None)),
+        quote_count=_to_int(getattr(tweet, "quote_count", None)),
+        view_count=_to_int(getattr(tweet, "view_count", None)),
     )
 
 

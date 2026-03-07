@@ -32,6 +32,11 @@ class _DummyTweet:
         conversation_id: str | None = None,
         legacy_conversation_id: str | None = None,
         replies: "_DummyBatch | None" = None,
+        favorite_count: int | None = None,
+        retweet_count: int | None = None,
+        reply_count: int | None = None,
+        quote_count: int | None = None,
+        view_count: int | None = None,
     ) -> None:
         self.id = tweet_id
         self.created_at_datetime = created_at_datetime
@@ -46,6 +51,11 @@ class _DummyTweet:
         if legacy_conversation_id is not None:
             self._legacy["conversation_id_str"] = legacy_conversation_id
         self.replies = replies
+        self.favorite_count = favorite_count
+        self.retweet_count = retweet_count
+        self.reply_count = reply_count
+        self.quote_count = quote_count
+        self.view_count = view_count
 
 
 class _DummyBatch(list):
@@ -115,6 +125,11 @@ def _tweet(
     conversation_id: str | None = None,
     legacy_conversation_id: str | None = None,
     replies: _DummyBatch | None = None,
+    favorite_count: int | None = None,
+    retweet_count: int | None = None,
+    reply_count: int | None = None,
+    quote_count: int | None = None,
+    view_count: int | None = None,
 ) -> _DummyTweet:
     fallback_created_at = (
         created_at_datetime or datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -130,6 +145,11 @@ def _tweet(
         conversation_id=conversation_id,
         legacy_conversation_id=legacy_conversation_id,
         replies=replies,
+        favorite_count=favorite_count,
+        retweet_count=retweet_count,
+        reply_count=reply_count,
+        quote_count=quote_count,
+        view_count=view_count,
     )
 
 
@@ -273,6 +293,56 @@ def test_import_timeline_entries_uses_self_account_and_created_at_fallback(
     assert len(result.entries) == 1
     assert result.entries[0].account_handle == "self_handle"
     assert result.entries[0].tweet_id == "fallback"
+
+
+def test_import_timeline_entries_captures_engagement_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    tweet = _tweet(
+        "metrics",
+        datetime(2026, 1, 5, tzinfo=timezone.utc),
+        text="metrics",
+        favorite_count=101,
+        retweet_count=12,
+        reply_count=7,
+        quote_count=4,
+        view_count=9090,
+    )
+    batch = _DummyBatch([tweet])
+    dummy_user = _DummyUser(screen_name="mx", tweets_batch=batch)
+
+    def fake_client(locale: str) -> _DummyClient:
+        return _DummyClient(locale=locale, user=dummy_user)
+
+    async def fake_ensure_authenticated_client(**kwargs):  # noqa: ANN202
+        return None
+
+    monkeypatch.setattr("xs2n.profile.timeline.Client", fake_client)
+    monkeypatch.setattr(
+        "xs2n.profile.timeline.ensure_authenticated_client",
+        fake_ensure_authenticated_client,
+    )
+
+    result = asyncio.run(
+        import_timeline_entries(
+            account_screen_name="mx",
+            cookies_file=Path("cookies.json"),
+            since_datetime=since,
+            limit=10,
+            prompt_login=lambda *_: ("u", "e", "p"),
+            thread_parent_limit=0,
+            thread_replies_limit=0,
+            thread_other_replies_limit=0,
+        )
+    )
+
+    entry = result.entries[0]
+    assert entry.favorite_count == 101
+    assert entry.retweet_count == 12
+    assert entry.reply_count == 7
+    assert entry.quote_count == 4
+    assert entry.view_count == 9090
 
 
 def test_import_timeline_entries_applies_page_delay_between_pages(

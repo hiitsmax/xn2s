@@ -36,6 +36,11 @@ class TimelineEntry:
     in_reply_to_tweet_id: str | None = None
     conversation_id: str | None = None
     timeline_source: TimelineEntrySource | None = None
+    favorite_count: int | None = None
+    retweet_count: int | None = None
+    reply_count: int | None = None
+    quote_count: int | None = None
+    view_count: int | None = None
 
 
 @dataclass(slots=True)
@@ -49,6 +54,5 @@ class TimelineFetchResult:
 class TimelineMergeResult:
     added: int
     skipped_duplicates: int
-
 
 

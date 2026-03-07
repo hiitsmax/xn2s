@@ -48,35 +48,42 @@ def merge_timeline_entries(
     doc = load_timeline(path)
     entries = doc.setdefault("entries", [])
 
-    existing = {
-        str(item.get("tweet_id", ""))
-        for item in entries
+    existing_indexes = {
+        str(item.get("tweet_id", "")): index
+        for index, item in enumerate(entries)
         if isinstance(item, dict)
     }
 
     added = 0
     skipped = 0
     for entry in new_entries:
-        if entry.tweet_id in existing:
+        serialized_entry = {
+            "tweet_id": entry.tweet_id,
+            "account_handle": entry.account_handle,
+            "author_handle": entry.author_handle,
+            "kind": entry.kind,
+            "created_at": entry.created_at,
+            "text": entry.text,
+            "retweeted_tweet_id": entry.retweeted_tweet_id,
+            "retweeted_author_handle": entry.retweeted_author_handle,
+            "retweeted_created_at": entry.retweeted_created_at,
+            "in_reply_to_tweet_id": entry.in_reply_to_tweet_id,
+            "conversation_id": entry.conversation_id,
+            "timeline_source": entry.timeline_source,
+            "favorite_count": entry.favorite_count,
+            "retweet_count": entry.retweet_count,
+            "reply_count": entry.reply_count,
+            "quote_count": entry.quote_count,
+            "view_count": entry.view_count,
+        }
+
+        existing_index = existing_indexes.get(entry.tweet_id)
+        if existing_index is not None:
+            entries[existing_index] = serialized_entry
             skipped += 1
             continue
-        entries.append(
-            {
-                "tweet_id": entry.tweet_id,
-                "account_handle": entry.account_handle,
-                "author_handle": entry.author_handle,
-                "kind": entry.kind,
-                "created_at": entry.created_at,
-                "text": entry.text,
-                "retweeted_tweet_id": entry.retweeted_tweet_id,
-                "retweeted_author_handle": entry.retweeted_author_handle,
-                "retweeted_created_at": entry.retweeted_created_at,
-                "in_reply_to_tweet_id": entry.in_reply_to_tweet_id,
-                "conversation_id": entry.conversation_id,
-                "timeline_source": entry.timeline_source,
-            }
-        )
-        existing.add(entry.tweet_id)
+        entries.append(serialized_entry)
+        existing_indexes[entry.tweet_id] = len(entries) - 1
         added += 1
 
     save_timeline(doc, path)

@@ -163,3 +163,21 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Split storage ownership into `sources.py`, `timeline.py`, and `onboard_state.py` to match the three persisted documents managed by the app.
 - Removed onboarding-state JSON read/write logic from `src/xs2n/cli/helpers.py` so the CLI layer now consumes storage helpers instead of implementing them.
 - Kept `src/xs2n/timeline_storage.py` as a thin compatibility wrapper while internal code moved to `xs2n.storage`.
+
+## Report Digest Scaffold (2026-03-07)
+
+- Added `xs2n report digest` as the first runnable digest-generation command.
+- Built the digest scaffold in `src/xs2n/agents/digest.py` with explicit step artifacts:
+  - selected timeline entries,
+  - conversation candidates,
+  - assembled units,
+  - categorized/filtered units,
+  - extracted signals,
+  - clustered issues,
+  - final markdown digest.
+- Introduced `data/report_state.json` and `src/xs2n/storage/report_state.py` so heated threads can be revisited across runs.
+- Added a checked-in editable taxonomy starter file at `docs/codex/report_taxonomy.json`.
+- Used LangChain structured output with an OpenAI backend for semantic steps while keeping numeric scoring and state tracking deterministic.
+- Extended timeline persistence with `favorite_count`, `retweet_count`, `reply_count`, `quote_count`, and `view_count`.
+- Changed timeline merge behavior so re-seen tweets refresh stored engagement metrics instead of freezing them at first ingest.
+- Added tests for virality extraction, duplicate refresh behavior, heated-thread carry-over, digest CLI routing, and a fake-backend end-to-end digest run.

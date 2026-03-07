@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
 import subprocess
 
 import typer
+
+from xs2n.agents import (
+    DEFAULT_REPORT_MODEL,
+    DEFAULT_REPORT_RUNS_PATH,
+    DEFAULT_TAXONOMY_PATH,
+    DEFAULT_WINDOW_MINUTES,
+    run_digest_report,
+)
+from xs2n.storage import DEFAULT_REPORT_STATE_PATH, DEFAULT_TIMELINE_PATH
 
 report_app = typer.Typer(
     help="Report pipeline commands.",
@@ -75,3 +85,59 @@ def auth(
     if device_auth:
         command.append("--device-auth")
     _run_codex_command(command)
+
+
+@report_app.command("digest")
+def digest(
+    timeline_file: Path = typer.Option(
+        DEFAULT_TIMELINE_PATH,
+        "--timeline-file",
+        help="Timeline JSON produced by ingestion.",
+    ),
+    output_dir: Path = typer.Option(
+        DEFAULT_REPORT_RUNS_PATH,
+        "--output-dir",
+        help="Directory where report run artifacts are written.",
+    ),
+    state_file: Path = typer.Option(
+        DEFAULT_REPORT_STATE_PATH,
+        "--state-file",
+        help="JSON file used to remember heated threads between runs.",
+    ),
+    taxonomy_file: Path = typer.Option(
+        DEFAULT_TAXONOMY_PATH,
+        "--taxonomy-file",
+        help="Editable taxonomy JSON file.",
+    ),
+    window_minutes: int = typer.Option(
+        DEFAULT_WINDOW_MINUTES,
+        "--window-minutes",
+        min=1,
+        help="Freshness window used on the first run or when no prior run state exists.",
+    ),
+    model: str = typer.Option(
+        DEFAULT_REPORT_MODEL,
+        "--model",
+        help="OpenAI model name used for structured digest steps.",
+    ),
+) -> None:
+    """Generate a traceable markdown digest from timeline data."""
+
+    try:
+        result = run_digest_report(
+            timeline_file=timeline_file,
+            output_dir=output_dir,
+            state_file=state_file,
+            taxonomy_file=taxonomy_file,
+            window_minutes=window_minutes,
+            model=model,
+        )
+    except RuntimeError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from error
+
+    typer.echo(
+        f"Digest run {result.run_id}: selected {result.selected_count} entries, "
+        f"kept {result.kept_count} units, produced {result.issue_count} issues "
+        f"({result.heated_count} heated). Saved markdown to {result.digest_path}."
+    )
