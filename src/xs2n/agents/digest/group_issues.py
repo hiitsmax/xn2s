@@ -3,14 +3,14 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
-from .pipeline import (
-    DEFAULT_MAX_ISSUES,
+from xs2n.models.digest import (
     Issue,
     IssueAssignmentResult,
     IssueThread,
     SignalThread,
-    slugify_issue,
 )
+
+from .pipeline import DEFAULT_MAX_ISSUES, slugify_issue
 
 
 def run(

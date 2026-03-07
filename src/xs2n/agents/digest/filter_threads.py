@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .pipeline import (
+from xs2n.models.digest import (
     CategorizedThread,
     FilteredThread,
     FilterResult,

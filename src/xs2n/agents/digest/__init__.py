@@ -2,13 +2,9 @@ from __future__ import annotations
 
 from .load_threads import run as _load_threads
 from .llm import DigestLLM
-from .pipeline import (
+from xs2n.models.digest import (
     CategorizationResult,
     CategorySpec,
-    DEFAULT_REPORT_MODEL,
-    DEFAULT_REPORT_RUNS_PATH,
-    DEFAULT_TAXONOMY_DOC,
-    DEFAULT_TAXONOMY_PATH,
     DigestRunResult,
     FilterResult,
     Issue,
@@ -17,6 +13,12 @@ from .pipeline import (
     TaxonomyConfig,
     ThreadInput,
     TimelineRecord,
+)
+from .pipeline import (
+    DEFAULT_REPORT_MODEL,
+    DEFAULT_REPORT_RUNS_PATH,
+    DEFAULT_TAXONOMY_DOC,
+    DEFAULT_TAXONOMY_PATH,
     run_digest_report,
     virality_score,
 )

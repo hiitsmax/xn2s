@@ -205,3 +205,9 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Renamed the module from `src/xs2n/agents/digest/agents.py` to `src/xs2n/agents/digest/llm.py`.
 - Renamed digest step parameters from `agent` to `llm` and removed the leftover `backend` vocabulary from `run_digest_report(...)`.
 - Kept the “agentic” language for the step files conceptually, not for the thin model client.
+
+## Digest Model Extraction (2026-03-07)
+
+- Moved the digest Pydantic/data classes out of `src/xs2n/agents/digest/pipeline.py`.
+- Added a root-level `src/xs2n/models/` package with `src/xs2n/models/digest.py` as the source of truth for digest schemas.
+- Kept `pipeline.py` focused on orchestration, rendering, and deterministic helpers while the step files now import their schemas from `xs2n.models.digest`.

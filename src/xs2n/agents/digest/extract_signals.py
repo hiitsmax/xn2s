@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .pipeline import FilteredThread, SignalResult, SignalThread, virality_score
+from xs2n.models.digest import FilteredThread, SignalResult, SignalThread
+
+from .pipeline import virality_score
 
 
 def run(

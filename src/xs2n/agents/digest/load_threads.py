@@ -4,9 +4,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from xs2n.models.digest import ThreadInput, TimelineRecord
 from xs2n.storage import load_timeline
-
-from .pipeline import ThreadInput, TimelineRecord
 
 
 def run(*, timeline_file: Path) -> list[ThreadInput]:
