@@ -107,10 +107,9 @@ def test_report_digest_runs_pipeline(
         captured.update(kwargs)
         return SimpleNamespace(
             run_id="20260307T120000Z",
-            selected_count=3,
+            thread_count=3,
             kept_count=2,
             issue_count=1,
-            heated_count=1,
             digest_path=tmp_path / "report_runs" / "digest.md",
         )
 
@@ -119,16 +118,13 @@ def test_report_digest_runs_pipeline(
     digest(
         timeline_file=tmp_path / "timeline.json",
         output_dir=tmp_path / "report_runs",
-        state_file=tmp_path / "report_state.json",
         taxonomy_file=tmp_path / "taxonomy.json",
-        window_minutes=15,
         model="gpt-4.1-mini",
     )
 
-    assert captured["window_minutes"] == 15
     assert captured["model"] == "gpt-4.1-mini"
     out = capsys.readouterr().out
-    assert "selected 3 entries" in out
+    assert "loaded 3 threads" in out
     assert "produced 1 issues" in out
 
 
@@ -146,9 +142,7 @@ def test_report_digest_surfaces_runtime_error(
         digest(
             timeline_file=tmp_path / "timeline.json",
             output_dir=tmp_path / "report_runs",
-            state_file=tmp_path / "report_state.json",
             taxonomy_file=tmp_path / "taxonomy.json",
-            window_minutes=15,
             model="gpt-4.1-mini",
         )
 

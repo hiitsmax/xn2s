@@ -149,19 +149,16 @@ Useful digest options:
 uv run xs2n report digest \
   --timeline-file data/timeline.json \
   --output-dir data/report_runs \
-  --state-file data/report_state.json \
-  --taxonomy-file docs/codex/report_taxonomy.json \
-  --window-minutes 10
+  --taxonomy-file docs/codex/report_taxonomy.json
 ```
 
-The digest command writes one run folder per execution with intermediate JSON artifacts and a final `digest.md`.
+The digest command reads the thread-aware `timeline.json`, groups it into conversation threads, runs five simple steps, and writes one run folder per execution with intermediate JSON artifacts and a final `digest.md`.
 
 Output files:
 
 ```text
 data/sources.json
 data/timeline.json
-data/report_state.json
 data/report_runs/<run_id>/digest.md
 ```
 

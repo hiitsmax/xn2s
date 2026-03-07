@@ -185,3 +185,16 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Changed timeline merge behavior so re-seen tweets refresh stored engagement metrics instead of freezing them at first ingest.
 - Added tests for virality extraction, duplicate refresh behavior, heated-thread carry-over, digest CLI routing, and a fake-backend end-to-end digest run.
 - Refactored the original digest monolith into a flatter `src/xs2n/agents/digest/` package centered on `pipeline.py` and `agents.py`, after the more granular split proved too abstract for the current codebase size.
+
+## Digest Pipeline Simplification (2026-03-07)
+
+- Simplified the active digest path again so it now starts directly from the thread-aware `timeline.json` file instead of maintaining a stateful preselection layer.
+- Reworked the package around one orchestrator plus five explicit step files:
+  - `load_threads.py`
+  - `categorize_threads.py`
+  - `filter_threads.py`
+  - `extract_signals.py`
+  - `group_issues.py`
+- Replaced the older per-step backend methods with one generic structured-output agent wrapper in `src/xs2n/agents/digest/agents.py`.
+- Kept deterministic code only for thread loading, virality scoring, artifact writing, and markdown rendering; the semantic steps now loop thread-by-thread and call the same agent with different prompts.
+- Simplified the CLI surface for `xs2n report digest` down to `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model`.

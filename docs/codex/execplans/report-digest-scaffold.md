@@ -6,148 +6,141 @@ This repository does not contain a checked-in `PLANS.md`; this document follows 
 
 ## Purpose / Big Picture
 
-After this change, a user can run `uv run xs2n report digest` and turn previously downloaded timeline data into a traceable markdown issue that reads like a compact magazine brief. The run produces a final `digest.md`, intermediate JSON artifacts for each step, and a lightweight `data/report_state.json` file so future runs can revisit heated threads instead of starting from scratch every time.
-
-The user-visible proof is a new report command that reads `data/timeline.json`, writes a new folder under `data/report_runs/<run_id>/`, and prints a short summary that includes how many timeline entries were considered, how many conversation units were kept, how many issue sections were produced, and where the markdown digest was saved.
+After this change, a user can run `uv run xs2n report digest` on the existing `data/timeline.json` file and get a traceable markdown issue that organizes the captured X/Twitter threads into a compact, readable digest. The key visible behavior is that the command now follows a very small pipeline: load threads from the timeline file, categorize them, filter them, extract the signal from the kept threads, assign them to issues, and render a markdown issue. Each step writes a JSON artifact so the run stays inspectable.
 
 ## Progress
 
 - [x] (2026-03-07 13:20Z) Confirmed the current report CLI surface, timeline storage shape, and existing tests before editing.
 - [x] (2026-03-07 13:33Z) Added engagement metrics to `TimelineEntry` extraction and persistence.
 - [x] (2026-03-07 13:41Z) Updated timeline merge behavior so repeated imports refresh stored metrics for existing tweet IDs instead of freezing virality at first sighting.
-- [x] (2026-03-07 13:52Z) Added `src/xs2n/storage/report_state.py` for heated-thread memory between digest runs.
-- [x] (2026-03-07 14:00Z) Implemented the first report digest scaffold in the `src/xs2n/agents/digest/` package and wired `xs2n report digest`.
-- [x] (2026-03-07 14:06Z) Added digest tests, timeline metric tests, README usage docs, taxonomy starter config, and autolearning notes.
-- [x] (2026-03-07 14:08Z) Validated the focused suite with `uv run pytest tests/test_timeline_storage.py tests/test_timeline_fetching.py tests/test_report_cli.py tests/test_report_digest.py`.
-- [x] (2026-03-07 14:28Z) Split the original digest monolith into the `src/xs2n/agents/digest/` package, then flattened that package into the simpler `pipeline.py` + `agents.py` shape to reduce internal abstraction.
+- [x] (2026-03-07 14:00Z) Implemented the first runnable digest scaffold and wired `xs2n report digest`.
+- [x] (2026-03-07 14:28Z) Flattened the first refactor back down to the simpler `pipeline.py` + `agents.py` shape after the earlier split was too abstract for the feature size.
+- [x] (2026-03-07 16:10Z) Reworked the digest package again so `pipeline.py` now calls five explicit step files: `load_threads.py`, `categorize_threads.py`, `filter_threads.py`, `extract_signals.py`, and `group_issues.py`.
+- [x] (2026-03-07 16:18Z) Removed the stateful selection/assembly path from the active digest command so it now operates directly on thread bundles derived from `timeline.json`.
+- [x] (2026-03-07 16:24Z) Updated report tests, CLI docs, and autolearning notes to match the simpler thread-first pipeline.
+- [x] (2026-03-07 16:27Z) Validated the focused digest suite with `uv run pytest tests/test_report_digest.py tests/test_report_cli.py` and `uv run xs2n report digest --help`.
+- [x] (2026-03-07 16:31Z) Ran the full repository suite with `uv run pytest` after the simplification.
 
 ## Surprises & Discoveries
 
-- Observation: The original timeline merge logic skipped duplicate tweet IDs entirely.
-  Evidence: Virality and heated-thread tracking would never move forward after the first ingest because likes/retweets/replies/views on existing tweets would stay stale.
+- Observation: The user’s objection was not only about file count; it was really about control flow.
+  Evidence: The simpler design became much clearer once the digest stopped pretending it needed stateful selection and “assembly” before it had even loaded the thread units the timeline command already provides.
 
-- Observation: Codex ChatGPT login is useful for the CLI bootstrap flow, but it does not expose a clean Python credential path for LangChain model calls.
-  Evidence: `codex login status` reports `Logged in using ChatGPT`, while the CLI help exposes `--with-api-key` only for feeding the CLI itself.
+- Observation: The current timeline document is already rich enough to be the only input contract for the digest.
+  Evidence: `conversation_id`, `in_reply_to_tweet_id`, reply records, and persisted engagement metrics were enough to build thread bundles directly from `data/timeline.json`.
 
-- Observation: The current timeline document already contains enough thread metadata to support a first conversation-unit scaffold without reworking ingestion again.
-  Evidence: Existing timeline entries carry `conversation_id`, `in_reply_to_tweet_id`, and `timeline_source`, which made it possible to build a candidate-bundling step immediately.
+- Observation: LangChain structured output still fits the simpler design cleanly.
+  Evidence: A single generic agent wrapper using `ChatOpenAI.with_structured_output(..., method="json_schema")` works well when each step file loops over threads and asks for one schema at a time.
 
 ## Decision Log
 
-- Decision: Keep the report scaffold as explicit step functions with JSON handoffs instead of a shared LangGraph state machine.
-  Rationale: The user explicitly rejected shared graph-state complexity for v1 and wanted each step to stay separate and inspectable.
+- Decision: Keep the active digest architecture to one orchestrator plus five step files.
+  Rationale: This matches the user’s requested mental model exactly: one simple pipeline method, five methods that call five separate step files, and one generic agent used inside the semantic steps.
   Date/Author: 2026-03-07 / Codex
 
-- Decision: Use LangChain structured output with a small backend interface and ship one real provider first: OpenAI via `langchain-openai`.
-  Rationale: This keeps the scaffold runnable today while preserving room to add a Codex-CLI adapter or another provider later without reshaping the pipeline.
+- Decision: Drop the stateful “selected entries / assembled units / heated thread memory” path from the active digest command.
+  Rationale: The user explicitly asked to start from the threads already captured by the timeline command, so the digest should consume that file directly instead of layering more orchestration first.
   Date/Author: 2026-03-07 / Codex
 
-- Decision: Treat report state as first-class CLI-managed storage in `src/xs2n/storage/report_state.py`.
-  Rationale: The repository already centralizes persisted CLI state under `src/xs2n/storage/`, so heated-thread memory belongs beside sources, timeline, and onboarding state.
+- Decision: Keep deterministic code only for what is mechanical: thread loading, JSON writing, virality scoring, and markdown rendering.
+  Rationale: This preserves the user’s preference for agentic semantic steps while still keeping measurable logic out of the model.
   Date/Author: 2026-03-07 / Codex
 
-- Decision: Refresh duplicate timeline entries in place during merge.
-  Rationale: Engagement metrics are only useful for virality and momentum if later scrapes can update the stored values for tweets that were already seen before.
-  Date/Author: 2026-03-07 / Codex
-
-- Decision: Start with a mixed-brief markdown issue shape: top issues, heated-thread watch, and standout signals.
-  Rationale: This matches the design discussion and leaves room to refine editorial voice later without changing the artifact pipeline.
-  Date/Author: 2026-03-07 / Codex
-
-- Decision: Replace the original single-file digest implementation with a small package centered on `pipeline.py` and `agents.py`.
-  Rationale: The user wanted the monolith broken down, but also pushed back on an over-abstracted many-file split. The flatter two-module shape preserves navigability without turning a young feature into framework code.
+- Decision: Use one generic OpenAI/LangChain agent wrapper instead of one backend class with per-step methods.
+  Rationale: The user asked for “the single agent that just gets the prompt and then the result for each thread,” so the code now exposes exactly that shape.
   Date/Author: 2026-03-07 / Codex
 
 ## Outcomes & Retrospective
 
-The scaffold now exists end-to-end: ingestion persists the virality inputs the digest needs, the report command generates a traceable markdown issue, and every run writes intermediate artifacts that make the pipeline debuggable. The biggest remaining gaps are editorial sophistication, delivery automation, and richer observability, but the repo now has a concrete base for those next steps instead of only design notes.
+The digest feature is still a scaffold, but it is now a much cleaner scaffold. A run reads one timeline file, groups source-authored conversations into thread units, sends each thread through clear semantic steps, and writes both the intermediate artifacts and the final markdown issue. The biggest lesson from this iteration is that a young pipeline benefits more from obvious control flow than from abstraction that anticipates future needs too early.
 
 ## Context and Orientation
 
-`xs2n` is a Typer CLI under `src/xs2n/cli/`. Before this change, the `report` command group only exposed `xs2n report auth`, which delegated authentication to the external Codex CLI. Timeline ingestion lived in `src/xs2n/profile/timeline.py`, normalized tweet records into `TimelineEntry` instances in `src/xs2n/profile/types.py`, and stored them in `data/timeline.json` via helpers in `src/xs2n/storage/timeline.py`.
+`xs2n` is a Typer CLI under `src/xs2n/cli/`. The timeline ingestion command lives in `src/xs2n/cli/timeline.py` and stores flat tweet records in `data/timeline.json` via `src/xs2n/storage/timeline.py`. Those records include thread context fields such as `conversation_id`, reply linkage, and engagement metrics.
 
-In this repository, “report scaffold” means the first runnable version of the digest pipeline, not a final editorial system. The scaffold should read the existing timeline document, select candidate conversation units, call an LLM for the semantic steps, write intermediate JSON artifacts, render a markdown issue, and remember heated threads for the next run. “Traceable” means every major section in the markdown digest must point back to the source tweet URLs that justified the summary.
+The active digest code lives under `src/xs2n/agents/digest/`. In the current design, `pipeline.py` owns the shared models, the JSON helpers, the markdown rendering, and the top-level `run_digest_report(...)` orchestrator. `agents.py` owns the single generic OpenAI/LangChain structured-output agent. The five step files are:
+
+- `src/xs2n/agents/digest/load_threads.py`
+- `src/xs2n/agents/digest/categorize_threads.py`
+- `src/xs2n/agents/digest/filter_threads.py`
+- `src/xs2n/agents/digest/extract_signals.py`
+- `src/xs2n/agents/digest/group_issues.py`
+
+When this document says “thread,” it means one conversation bundle grouped from `timeline.json` by `conversation_id`, keeping only conversations that contain at least one source-authored tweet. Outside replies already present in the timeline file stay attached as context inside that bundle.
 
 ## Plan of Work
 
-First, extend the timeline model to preserve the engagement fields the digest needs: likes, retweets, replies, quotes, and views. While doing that, adjust merge behavior so repeated imports update existing tweet records rather than leaving stale numbers behind.
+First, keep the ingestion-side engagement metrics already added to `TimelineEntry` and timeline persistence so virality remains available during digest generation.
 
-Second, add a new report-state storage helper so the digest pipeline has a dedicated place to persist the previous run time and per-thread heat metadata. This keeps report memory consistent with the repository’s existing storage package layout.
+Second, make the digest input contract as small as possible. `src/xs2n/agents/digest/load_threads.py` should read `data/timeline.json`, validate the entries into `TimelineRecord`, group them by conversation, discard conversations that do not contain any source-authored tweet, and emit `ThreadInput` objects sorted by recency.
 
-Third, implement the first digest agent scaffold in the `src/xs2n/agents/digest/` package. Keep the internal structure intentionally simple: `pipeline.py` owns models, storage/serialization helpers, deterministic steps, rendering, and orchestration; `agents.py` owns the semantic LLM-facing agent logic. The CLI entrypoint in `src/xs2n/cli/report.py` should expose this through `xs2n report digest`.
+Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/categorize_threads.py`, `filter_threads.py`, `extract_signals.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic agent wrapper in `src/xs2n/agents/digest/agents.py` with a prompt, a JSON payload, and a Pydantic schema.
 
-Finally, add focused tests and user-facing docs. The tests should cover virality extraction, duplicate-refresh behavior, heated-thread carry-over, end-to-end digest artifact generation with a fake backend, and CLI failure/success behavior. The README should explain the new command and the need for `OPENAI_API_KEY`. The taxonomy starter file should be checked in so users have an editable default.
+Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should define the shared data models, helper functions like `virality_score(...)`, the five step-calling helper methods, and `run_digest_report(...)`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `signals.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
+
+Finally, keep the CLI small. `src/xs2n/cli/report.py` should accept `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model`, then print a one-line summary of loaded threads, kept threads, produced issues, and the digest path.
 
 ## Concrete Steps
 
 Run these commands from `/Users/mx/Documents/Progetti/mine/active/xs2n`.
 
-1. Run the focused validation suite:
+1. Validate the focused digest suite:
 
-       uv run pytest tests/test_timeline_storage.py tests/test_timeline_fetching.py tests/test_report_cli.py tests/test_report_digest.py
+       uv run pytest tests/test_report_digest.py tests/test_report_cli.py
 
-   Expect all listed tests to pass.
+   Expect the report tests to pass.
 
-2. Run the full test suite:
+2. Check the user-facing CLI shape:
+
+       uv run xs2n report digest --help
+
+   Expect the help output to list only `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model` for the digest command.
+
+3. Run the full test suite:
 
        uv run pytest
 
-   Expect the repository test suite to pass after the digest scaffold lands.
-
-3. Exercise the new report command with a valid timeline file and OpenAI API key:
-
-       export OPENAI_API_KEY=your_key_here
-       uv run xs2n report digest --timeline-file data/timeline.json --taxonomy-file docs/codex/report_taxonomy.json
-
-   Expect one new folder under `data/report_runs/` containing `digest.md`, `run.json`, and the step artifacts.
+   Expect the repository suite to pass after the simplification.
 
 ## Validation and Acceptance
 
-Acceptance is behavioral:
+Acceptance is behavioral.
 
-Run `uv run xs2n report digest` with a valid `data/timeline.json` and `OPENAI_API_KEY`. The command should print a one-line summary ending with the path to `digest.md`. The run directory should include `selected_entries.json`, `candidates.json`, `assembled_units.json`, `categorized_units.json`, `filtered_units.json`, `signals.json`, `issues.json`, `run.json`, and `digest.md`.
+Run `uv run xs2n report digest --timeline-file data/timeline.json --taxonomy-file docs/codex/report_taxonomy.json` with `OPENAI_API_KEY` exported. The command should print a one-line summary ending with the saved `digest.md` path. The run directory under `data/report_runs/<run_id>/` should contain `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `signals.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
 
-Inspect the markdown digest. It should contain the sections `Top Issues`, `Heated Threads Watch`, and `Standout Signals`, and each kept unit should expose source links back to X tweet URLs.
+Open the markdown digest. It should contain at least `Top Issues` and `Standout Threads`, and each kept thread should include source links pointing back to tweet URLs.
 
-Re-run timeline ingestion on the same tweets after their public engagement counts change. The next saved `data/timeline.json` should refresh those metrics in place, and a subsequent digest run should be able to compare the newer heat score against the prior report state instead of reusing stale numbers.
+Run `uv run pytest`. The report tests should confirm that thread loading groups conversations correctly, virality scoring still prefers larger engagement signals, and the simplified fake-agent end-to-end digest run writes the expected artifacts.
 
 ## Idempotence and Recovery
 
-The digest command is additive and safe to rerun. Each run creates a new timestamped folder under `data/report_runs/` and overwrites only `data/report_state.json`. If a run fails before writing `digest.md`, the partial run folder can be deleted and the command rerun safely.
+The digest command is additive and safe to rerun. Each run creates a new timestamped folder under `data/report_runs/`. If a run fails partway through, delete the partial run folder and rerun the command.
 
-The taxonomy file is editable. If `docs/codex/report_taxonomy.json` is missing, the scaffold falls back to the built-in starter taxonomy baked into the `src/xs2n/agents/digest/` package.
+If `docs/codex/report_taxonomy.json` is missing, the digest code falls back to the built-in starter taxonomy in `src/xs2n/agents/digest/pipeline.py`.
 
 ## Artifacts and Notes
 
 The most important runtime artifacts are:
 
-- `data/report_runs/<run_id>/selected_entries.json`: timeline entries selected for this run by freshness window or heated-thread carry-over.
-- `data/report_runs/<run_id>/candidates.json`: conversation candidate bundles before LLM assembly.
-- `data/report_runs/<run_id>/signals.json`: the kept, signal-bearing conversation units with heat metadata.
-- `data/report_runs/<run_id>/digest.md`: the final markdown issue.
+- `data/report_runs/<run_id>/threads.json`: thread bundles derived directly from `timeline.json`
+- `data/report_runs/<run_id>/signals.json`: kept threads with extracted signal fields and virality scores
+- `data/report_runs/<run_id>/issues.json`: grouped issue sections derived from the signal threads
+- `data/report_runs/<run_id>/digest.md`: the final markdown issue
 
 ## Interfaces and Dependencies
 
-`src/xs2n/profile/types.py` must expose `TimelineEntry` with the added optional engagement fields:
+`src/xs2n/agents/digest/agents.py` must expose:
 
-    favorite_count: int | None
-    retweet_count: int | None
-    reply_count: int | None
-    quote_count: int | None
-    view_count: int | None
+    class OpenAIDigestAgent:
+        def run(self, *, prompt: str, payload: Any, schema: type[BaseModel]) -> BaseModel: ...
 
-`src/xs2n/storage/report_state.py` must expose:
-
-    DEFAULT_REPORT_STATE_PATH = Path("data/report_state.json")
-    load_report_state(path: Path | None = None) -> dict[str, Any]
-    save_report_state(doc: dict[str, Any], path: Path | None = None) -> None
-
-`src/xs2n/agents/digest/__init__.py` must expose:
+`src/xs2n/agents/digest/pipeline.py` must expose:
 
     run_digest_report(...)
-    class OpenAIDigestBackend
     @dataclass class DigestRunResult
+    def virality_score(record: TimelineRecord) -> float
+    def load_threads_step(*, timeline_file: Path) -> list[ThreadInput]
 
-The Python model integration uses `langchain-openai` and expects `OPENAI_API_KEY` to be available in the environment. The scaffold uses LangChain structured output (`with_structured_output`) for semantic steps and deterministic Python code for numeric scoring and run-state management.
+The model integration uses `langchain-openai` and expects `OPENAI_API_KEY` to be available in the environment. The structured-output pattern should use `ChatOpenAI.with_structured_output(..., method="json_schema")`, which is the current supported LangChain integration for returning Pydantic objects from model calls.
 
-Revision note (2026-03-07): Updated the checked-in state to reflect the post-scaffold refactor from a single digest module to a flatter `src/xs2n/agents/digest/` package built around `pipeline.py` and `agents.py`, while keeping the original implementation details and validation steps restartable.
+Revision note (2026-03-07): Rewrote this ExecPlan to match the simplified thread-first digest architecture after the earlier stateful scaffold and heavier abstractions proved misaligned with the user’s requested shape.
