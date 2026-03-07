@@ -11,7 +11,7 @@ from .helpers import load_taxonomy, write_json
 
 DEFAULT_REPORT_RUNS_PATH = Path("data/report_runs")
 DEFAULT_TAXONOMY_PATH = Path("docs/codex/report_taxonomy.json")
-DEFAULT_REPORT_MODEL = "gpt-4.1-mini"
+DEFAULT_REPORT_MODEL = "gpt-5.4"
 
 
 def run_digest_report(

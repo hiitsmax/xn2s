@@ -130,7 +130,7 @@ Run these commands from `/Users/mx/Documents/Progetti/mine/active/xs2n`.
 
 Acceptance is behavioral.
 
-Run `uv run xs2n report digest --timeline-file data/timeline.json --taxonomy-file docs/codex/report_taxonomy.json` with `OPENAI_API_KEY` exported. The command should print a one-line summary ending with the saved `digest.md` path. The run directory under `data/report_runs/<run_id>/` should contain `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `processed_threads.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
+Run `uv run xs2n report digest --timeline-file data/timeline.json --taxonomy-file docs/codex/report_taxonomy.json` either with `OPENAI_API_KEY` exported or with an active Codex login from `xs2n report auth`. The command should print a one-line summary ending with the saved `digest.md` path. The run directory under `data/report_runs/<run_id>/` should contain `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `processed_threads.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
 
 Open the markdown digest. It should contain at least `Top Issues` and `Standout Threads`, and each kept thread should include source links pointing back to tweet URLs.
 
@@ -173,6 +173,6 @@ The most important runtime artifacts are:
     class TaxonomyConfig(BaseModel)
     class ThreadInput(BaseModel)
 
-The model integration uses `langchain-openai` and expects `OPENAI_API_KEY` to be available in the environment. The structured-output pattern should use `ChatOpenAI.with_structured_output(..., method="json_schema")`, which is the current supported LangChain integration for returning Pydantic objects from model calls.
+The model integration uses the OpenAI Python SDK Responses client. It should accept either `OPENAI_API_KEY` or a Codex ChatGPT auth session from `~/.codex/auth.json`, and it should request strict JSON-schema output so the digest steps can still return Pydantic objects deterministically.
 
 Revision note (2026-03-07): Rewrote this ExecPlan to match the simplified thread-first digest architecture after the earlier stateful scaffold and heavier abstractions proved misaligned with the user’s requested shape.

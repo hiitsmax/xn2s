@@ -119,10 +119,10 @@ def test_report_digest_runs_pipeline(
         timeline_file=tmp_path / "timeline.json",
         output_dir=tmp_path / "report_runs",
         taxonomy_file=tmp_path / "taxonomy.json",
-        model="gpt-4.1-mini",
+        model="gpt-5.4",
     )
 
-    assert captured["model"] == "gpt-4.1-mini"
+    assert captured["model"] == "gpt-5.4"
     out = capsys.readouterr().out
     assert "loaded 3 threads" in out
     assert "produced 1 issues" in out
@@ -143,7 +143,7 @@ def test_report_digest_surfaces_runtime_error(
             timeline_file=tmp_path / "timeline.json",
             output_dir=tmp_path / "report_runs",
             taxonomy_file=tmp_path / "taxonomy.json",
-            model="gpt-4.1-mini",
+            model="gpt-5.4",
         )
 
     assert error.value.exit_code == 1

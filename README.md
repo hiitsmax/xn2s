@@ -136,12 +136,21 @@ If `codex` is not installed yet, install it first:
 npm install -g @openai/codex
 ```
 
-Generate a markdown digest issue from `data/timeline.json` using the OpenAI API:
+Generate a markdown digest issue from `data/timeline.json` using Codex auth:
+
+```bash
+uv run xs2n report auth --status
+uv run xs2n report digest --model gpt-5.4
+```
+
+If you prefer the standard OpenAI API, `OPENAI_API_KEY` still works:
 
 ```bash
 export OPENAI_API_KEY=your_key_here
 uv run xs2n report digest --model gpt-4.1-mini
 ```
+
+When the digest uses Codex auth, choose a Codex-supported GPT-5 model such as `gpt-5.4`.
 
 Useful digest options:
 

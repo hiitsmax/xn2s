@@ -225,6 +225,14 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Promoted markdown generation to a real step module at `src/xs2n/agents/digest/steps/render_digest.py`.
 - Reduced `pipeline.py` down to run orchestration plus default path/model constants, which makes the digest flow easier to read and less deceptive about where logic actually lives.
 
+## Digest Codex Auth Reuse (2026-03-07)
+
+- Replaced the digest model transport with the OpenAI Python SDK Responses client.
+- `xs2n report digest` now prefers `OPENAI_API_KEY` when present, otherwise reuses the Codex ChatGPT auth session from `CODEX_HOME/auth.json` or `~/.codex/auth.json`.
+- Switched the default digest model to `gpt-5.4` so the Codex-auth path works without extra flags.
+- Added deterministic tests for credential resolution, streamed structured-output parsing, and Codex-unsupported model errors.
+- Removed the old LangChain dependency path from the digest flow because the new transport is smaller and matches the real supported auth surface better.
+
 ## Coding Preference Capture (2026-03-07)
 
 - Added `docs/codex/coding-preferences.md` to preserve the coding-style lessons learned during the digest refactor in a reusable form.

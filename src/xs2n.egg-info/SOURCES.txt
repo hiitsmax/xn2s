@@ -10,6 +10,7 @@ src/xs2n.egg-info/requires.txt
 src/xs2n.egg-info/top_level.txt
 src/xs2n/agents/__init__.py
 src/xs2n/agents/digest/__init__.py
+src/xs2n/agents/digest/credentials.py
 src/xs2n/agents/digest/helpers.py
 src/xs2n/agents/digest/llm.py
 src/xs2n/agents/digest/pipeline.py
@@ -27,8 +28,6 @@ src/xs2n/cli/onboard.py
 src/xs2n/cli/parameters.py
 src/xs2n/cli/report.py
 src/xs2n/cli/timeline.py
-src/xs2n/schemas/__init__.py
-src/xs2n/schemas/digest.py
 src/xs2n/profile/auth.py
 src/xs2n/profile/browser_cookies.py
 src/xs2n/profile/following.py
@@ -36,6 +35,8 @@ src/xs2n/profile/helpers.py
 src/xs2n/profile/playwright.py
 src/xs2n/profile/timeline.py
 src/xs2n/profile/types.py
+src/xs2n/schemas/__init__.py
+src/xs2n/schemas/digest.py
 src/xs2n/storage/__init__.py
 src/xs2n/storage/onboard_state.py
 src/xs2n/storage/report_state.py
@@ -50,6 +51,7 @@ tests/test_onboard_recovery.py
 tests/test_onboarding.py
 tests/test_report_cli.py
 tests/test_report_digest.py
+tests/test_report_llm.py
 tests/test_timeline_cli.py
 tests/test_timeline_fetching.py
 tests/test_timeline_storage.py
