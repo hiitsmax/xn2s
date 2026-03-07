@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from xs2n.schemas.digest import FilteredThread, SignalResult, SignalThread
+from xs2n.schemas.digest import FilteredThread, ProcessedThread, ThreadProcessResult
 
 from .pipeline import virality_score
 
@@ -11,22 +11,22 @@ def run(
     *,
     llm: Any,
     threads: list[FilteredThread],
-) -> list[SignalThread]:
-    signal_threads: list[SignalThread] = []
+) -> list[ProcessedThread]:
+    processed_threads: list[ProcessedThread] = []
     for thread in threads:
         if not thread.keep:
             continue
         result = llm.run(
             prompt=(
-                "You extract the signal from one kept X/Twitter thread for a compact "
-                "magazine-style digest. Be concrete and brief. Name the claim, why it "
-                "matters, any key entities, and whether the thread shows real disagreement."
+                "You process one kept X/Twitter thread for a compact magazine-style digest. "
+                "Return the raw thread-level output: the headline, main claim, why it matters, "
+                "key entities, and whether the thread shows real disagreement."
             ),
             payload=thread,
-            schema=SignalResult,
+            schema=ThreadProcessResult,
         )
-        signal_threads.append(
-            SignalThread(
+        processed_threads.append(
+            ProcessedThread(
                 **thread.model_dump(),
                 headline=result.headline,
                 main_claim=result.main_claim,
@@ -41,8 +41,8 @@ def run(
             )
         )
 
-    signal_threads.sort(
+    processed_threads.sort(
         key=lambda thread: (thread.signal_score, thread.virality_score),
         reverse=True,
     )
-    return signal_threads
+    return processed_threads

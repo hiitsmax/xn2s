@@ -7,7 +7,7 @@ from xs2n.schemas.digest import (
     Issue,
     IssueAssignmentResult,
     IssueThread,
-    SignalThread,
+    ProcessedThread,
 )
 
 from .pipeline import DEFAULT_MAX_ISSUES, slugify_issue
@@ -16,7 +16,7 @@ from .pipeline import DEFAULT_MAX_ISSUES, slugify_issue
 def run(
     *,
     llm: Any,
-    threads: list[SignalThread],
+    threads: list[ProcessedThread],
 ) -> tuple[list[IssueThread], list[Issue]]:
     issue_threads: list[IssueThread] = []
     grouped_threads: OrderedDict[str, dict[str, Any]] = OrderedDict()

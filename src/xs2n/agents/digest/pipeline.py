@@ -199,7 +199,7 @@ def render_digest(
     if not standout_threads:
         lines.extend(
             [
-                "No standalone thread signals were kept in this run.",
+                "No processed threads were kept in this run.",
                 "",
             ]
         )
@@ -239,11 +239,11 @@ def run_digest_report(
     llm: Any | None = None,
 ) -> DigestRunResult:
     from .categorize_threads import run as categorize_threads
-    from .extract_signals import run as extract_signals
     from .filter_threads import run as filter_threads
     from .group_issues import run as group_issues
     from .llm import DigestLLM
     from .load_threads import run as load_threads
+    from .process_threads import run as process_threads
 
     digest_llm = llm or DigestLLM(model=model)
     run_started_at = datetime.now(timezone.utc)
@@ -269,15 +269,15 @@ def run_digest_report(
     )
     write_json(run_dir / "filtered_threads.json", filtered_threads)
 
-    signal_threads = extract_signals(
+    processed_threads = process_threads(
         llm=digest_llm,
         threads=filtered_threads,
     )
-    write_json(run_dir / "signals.json", signal_threads)
+    write_json(run_dir / "processed_threads.json", processed_threads)
 
     issue_threads, issues = group_issues(
         llm=digest_llm,
-        threads=signal_threads,
+        threads=processed_threads,
     )
     write_json(run_dir / "issue_assignments.json", issue_threads)
     write_json(run_dir / "issues.json", issues)
@@ -297,7 +297,7 @@ def run_digest_report(
         "taxonomy_file": str(taxonomy_file),
         "model": model,
         "thread_count": len(threads),
-        "kept_count": len(signal_threads),
+        "kept_count": len(processed_threads),
         "issue_count": len(issues),
         "digest_path": str(digest_path),
     }
@@ -308,6 +308,6 @@ def run_digest_report(
         run_dir=run_dir,
         digest_path=digest_path,
         thread_count=len(threads),
-        kept_count=len(signal_threads),
+        kept_count=len(processed_threads),
         issue_count=len(issues),
     )

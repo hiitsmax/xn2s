@@ -175,7 +175,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - conversation candidates,
   - assembled units,
   - categorized/filtered units,
-  - extracted signals,
+  - processed threads,
   - clustered issues,
   - final markdown digest.
 - Introduced `data/report_state.json` and `src/xs2n/storage/report_state.py` so heated threads can be revisited across runs.
@@ -193,11 +193,17 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - `load_threads.py`
   - `categorize_threads.py`
   - `filter_threads.py`
-  - `extract_signals.py`
+  - `process_threads.py`
   - `group_issues.py`
 - Replaced the older per-step backend methods with one generic structured-output LLM wrapper in `src/xs2n/agents/digest/llm.py`.
 - Kept deterministic code only for thread loading, virality scoring, artifact writing, and markdown rendering; the semantic steps now loop thread-by-thread and call the same LLM wrapper with different prompts.
 - Simplified the CLI surface for `xs2n report digest` down to `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model`.
+
+## Thread Processing Naming Cleanup (2026-03-07)
+
+- Renamed the thread-level raw-output step from `extract_signals.py` to `process_threads.py`.
+- Renamed the core thread-processing schemas from `SignalResult`/`SignalThread` to `ThreadProcessResult`/`ProcessedThread`.
+- Renamed the run artifact from `signals.json` to `processed_threads.json` so the artifact matches the thread-centric operation.
 
 ## Digest Naming Cleanup (2026-03-07)
 

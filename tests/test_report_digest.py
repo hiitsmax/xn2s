@@ -9,7 +9,7 @@ from xs2n.agents.digest import (
     DEFAULT_TAXONOMY_DOC,
     FilterResult,
     IssueAssignmentResult,
-    SignalResult,
+    ThreadProcessResult,
     TimelineRecord,
     _load_threads,
     _virality_score,
@@ -42,11 +42,11 @@ class _FakeLLM:
                 filter_reason="keep_for_signal" if thread.category != "promo" else "drop_promo",
             )
 
-        if schema is SignalResult:
+        if schema is ThreadProcessResult:
             thread = payload
             joined_text = " ".join(tweet.text.lower() for tweet in thread.tweets)
             disagreement = "debate" in joined_text
-            return SignalResult(
+            return ThreadProcessResult(
                 headline=thread.tweets[0].text[:40],
                 main_claim=thread.tweets[0].text,
                 why_it_matters="This matters for the digest.",
@@ -258,7 +258,7 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
         "threads.json",
         "categorized_threads.json",
         "filtered_threads.json",
-        "signals.json",
+        "processed_threads.json",
         "issue_assignments.json",
         "issues.json",
         "run.json",

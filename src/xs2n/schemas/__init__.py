@@ -10,9 +10,9 @@ from .digest import (
     Issue,
     IssueAssignmentResult,
     IssueThread,
-    SignalResult,
-    SignalThread,
+    ProcessedThread,
     TaxonomyConfig,
+    ThreadProcessResult,
     ThreadInput,
     TimelineRecord,
 )
@@ -27,9 +27,9 @@ __all__ = [
     "Issue",
     "IssueAssignmentResult",
     "IssueThread",
-    "SignalResult",
-    "SignalThread",
+    "ProcessedThread",
     "TaxonomyConfig",
+    "ThreadProcessResult",
     "ThreadInput",
     "TimelineRecord",
 ]

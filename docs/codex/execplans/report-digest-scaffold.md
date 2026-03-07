@@ -15,7 +15,7 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
 - [x] (2026-03-07 13:41Z) Updated timeline merge behavior so repeated imports refresh stored metrics for existing tweet IDs instead of freezing virality at first sighting.
 - [x] (2026-03-07 14:00Z) Implemented the first runnable digest scaffold and wired `xs2n report digest`.
 - [x] (2026-03-07 14:28Z) Flattened the first refactor back down to the simpler digest-package shape after the earlier split was too abstract for the feature size.
-- [x] (2026-03-07 16:10Z) Reworked the digest package again so `pipeline.py` now calls five explicit step files: `load_threads.py`, `categorize_threads.py`, `filter_threads.py`, `extract_signals.py`, and `group_issues.py`.
+- [x] (2026-03-07 16:10Z) Reworked the digest package again so `pipeline.py` now calls five explicit step files: `load_threads.py`, `categorize_threads.py`, `filter_threads.py`, `process_threads.py`, and `group_issues.py`.
 - [x] (2026-03-07 16:18Z) Removed the stateful selection/assembly path from the active digest command so it now operates directly on thread bundles derived from `timeline.json`.
 - [x] (2026-03-07 16:24Z) Updated report tests, CLI docs, and autolearning notes to match the simpler thread-first pipeline.
 - [x] (2026-03-07 16:27Z) Validated the focused digest suite with `uv run pytest tests/test_report_digest.py tests/test_report_cli.py` and `uv run xs2n report digest --help`.
@@ -24,6 +24,7 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
 - [x] (2026-03-07 16:55Z) Extracted the digest schemas into the new root-level schema module so the pipeline no longer owns the Pydantic/data classes.
 - [x] (2026-03-07 17:02Z) Renamed the root-level digest schema package from `src/xs2n/models/` to `src/xs2n/schemas/` so the package name matches the role more clearly.
 - [x] (2026-03-07 17:06Z) Revalidated the package rename with `uv run pytest tests/test_report_digest.py tests/test_report_cli.py`, `uv run xs2n report digest --help`, and `uv run pytest`.
+- [x] (2026-03-07 17:12Z) Renamed the thread-level raw-output step from `extract_signals.py` to `process_threads.py` and updated the digest artifact name to `processed_threads.json`.
 
 ## Surprises & Discoveries
 
@@ -62,6 +63,10 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
   Rationale: The user wanted the Pydantic-heavy data definitions separated from the digest package internals, and `schemas` describes these validation/IO shapes more clearly than `models`.
   Date/Author: 2026-03-07 / Codex
 
+- Decision: Name the thread-level semantic operation `process_threads`, not `extract_signals`.
+  Rationale: The main operation is processing a thread and returning its raw thread-level output. “Signal” is one field inside that output, not the identity of the whole step.
+  Date/Author: 2026-03-07 / Codex
+
 ## Outcomes & Retrospective
 
 The digest feature is still a scaffold, but it is now a much cleaner scaffold. A run reads one timeline file, groups source-authored conversations into thread units, sends each thread through clear semantic steps, and writes both the intermediate artifacts and the final markdown issue. The biggest lesson from this iteration is that a young pipeline benefits more from obvious control flow than from abstraction that anticipates future needs too early.
@@ -75,7 +80,7 @@ The active digest code lives under `src/xs2n/agents/digest/`, but the digest sch
 - `src/xs2n/agents/digest/load_threads.py`
 - `src/xs2n/agents/digest/categorize_threads.py`
 - `src/xs2n/agents/digest/filter_threads.py`
-- `src/xs2n/agents/digest/extract_signals.py`
+- `src/xs2n/agents/digest/process_threads.py`
 - `src/xs2n/agents/digest/group_issues.py`
 
 When this document says “thread,” it means one conversation bundle grouped from `timeline.json` by `conversation_id`, keeping only conversations that contain at least one source-authored tweet. Outside replies already present in the timeline file stay attached as context inside that bundle.
@@ -86,9 +91,9 @@ First, keep the ingestion-side engagement metrics already added to `TimelineEntr
 
 Second, make the digest input contract as small as possible. `src/xs2n/agents/digest/load_threads.py` should read `data/timeline.json`, validate the entries into `TimelineRecord`, group them by conversation, discard conversations that do not contain any source-authored tweet, and emit `ThreadInput` objects sorted by recency.
 
-Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/categorize_threads.py`, `filter_threads.py`, `extract_signals.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic LLM wrapper in `src/xs2n/agents/digest/llm.py` with a prompt, a JSON payload, and a Pydantic schema.
+Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/categorize_threads.py`, `filter_threads.py`, `process_threads.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic LLM wrapper in `src/xs2n/agents/digest/llm.py` with a prompt, a JSON payload, and a Pydantic schema.
 
-Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should not define the digest schemas anymore; those belong in `src/xs2n/schemas/digest.py`. `pipeline.py` should only define helper functions like `virality_score(...)`, markdown rendering, and `run_digest_report(...)`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `signals.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
+Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should not define the digest schemas anymore; those belong in `src/xs2n/schemas/digest.py`. `pipeline.py` should only define helper functions like `virality_score(...)`, markdown rendering, and `run_digest_report(...)`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `processed_threads.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
 
 Finally, keep the CLI small. `src/xs2n/cli/report.py` should accept `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model`, then print a one-line summary of loaded threads, kept threads, produced issues, and the digest path.
 
@@ -118,7 +123,7 @@ Run these commands from `/Users/mx/Documents/Progetti/mine/active/xs2n`.
 
 Acceptance is behavioral.
 
-Run `uv run xs2n report digest --timeline-file data/timeline.json --taxonomy-file docs/codex/report_taxonomy.json` with `OPENAI_API_KEY` exported. The command should print a one-line summary ending with the saved `digest.md` path. The run directory under `data/report_runs/<run_id>/` should contain `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `signals.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
+Run `uv run xs2n report digest --timeline-file data/timeline.json --taxonomy-file docs/codex/report_taxonomy.json` with `OPENAI_API_KEY` exported. The command should print a one-line summary ending with the saved `digest.md` path. The run directory under `data/report_runs/<run_id>/` should contain `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `processed_threads.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
 
 Open the markdown digest. It should contain at least `Top Issues` and `Standout Threads`, and each kept thread should include source links pointing back to tweet URLs.
 
@@ -135,7 +140,7 @@ If `docs/codex/report_taxonomy.json` is missing, the digest code falls back to t
 The most important runtime artifacts are:
 
 - `data/report_runs/<run_id>/threads.json`: thread bundles derived directly from `timeline.json`
-- `data/report_runs/<run_id>/signals.json`: kept threads with extracted signal fields and virality scores
+- `data/report_runs/<run_id>/processed_threads.json`: kept threads with processed thread output fields and virality scores
 - `data/report_runs/<run_id>/issues.json`: grouped issue sections derived from the signal threads
 - `data/report_runs/<run_id>/digest.md`: the final markdown issue
 

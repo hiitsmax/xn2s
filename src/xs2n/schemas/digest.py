@@ -126,7 +126,7 @@ class FilteredThread(BaseModel):
         return ThreadInput(**self.model_dump()).source_urls
 
 
-class SignalResult(BaseModel):
+class ThreadProcessResult(BaseModel):
     headline: str
     main_claim: str
     why_it_matters: str
@@ -137,7 +137,7 @@ class SignalResult(BaseModel):
     signal_score: int = Field(ge=0, le=100)
 
 
-class SignalThread(BaseModel):
+class ProcessedThread(BaseModel):
     thread_id: str
     conversation_id: str
     account_handle: str
