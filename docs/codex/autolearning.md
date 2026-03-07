@@ -156,3 +156,10 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - `codex logout`.
 - Added process hardening for missing `codex` binary and non-zero exit propagation.
 - Added deterministic unit tests for login/status/logout routing and error handling.
+
+## Storage Package Boundary (2026-03-07)
+
+- Moved CLI-managed persistence into a dedicated `src/xs2n/storage/` package.
+- Split storage ownership into `sources.py`, `timeline.py`, and `onboard_state.py` to match the three persisted documents managed by the app.
+- Removed onboarding-state JSON read/write logic from `src/xs2n/cli/helpers.py` so the CLI layer now consumes storage helpers instead of implementing them.
+- Kept `src/xs2n/timeline_storage.py` as a thin compatibility wrapper while internal code moved to `xs2n.storage`.

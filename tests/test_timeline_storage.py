@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from xs2n.profile.types import TimelineEntry
-from xs2n.timeline_storage import load_timeline, merge_timeline_entries
+from xs2n.storage import load_timeline, merge_timeline_entries
 
 
 def _entry(tweet_id: str, account: str = "mx") -> TimelineEntry:

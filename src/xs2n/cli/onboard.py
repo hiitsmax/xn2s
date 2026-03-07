@@ -19,12 +19,14 @@ from xs2n.profile.browser_cookies import (
     maybe_warn_keychain_prompt,
     write_cookie_candidate,
 )
-from xs2n.profile.following import run_import_following_handles
+from xs2n.profile.following import (
+    DEFAULT_IMPORT_FOLLOWING_HANDLES,
+    IMPORT_FOLLOWING_HANDLES_LIMIT,
+    run_import_following_handles,
+)
 from xs2n.profile.helpers import build_entries_from_handles
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
 from xs2n.storage import DEFAULT_SOURCES_PATH, merge_profiles
-from xs2n.profile.following import IMPORT_FOLLOWING_HANDLES_LIMIT, DEFAULT_IMPORT_FOLLOWING_HANDLES
-
 
 
 def choose_cookie_candidate(candidates: list[BrowserCookieCandidate]) -> BrowserCookieCandidate:

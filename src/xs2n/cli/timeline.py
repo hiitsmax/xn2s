@@ -21,8 +21,13 @@ from xs2n.profile.timeline import (
     TimelineFetchResult,
     run_import_timeline_entries,
 )
-from xs2n.storage import DEFAULT_SOURCES_PATH, migrate_legacy_sources_yaml, load_sources
-from xs2n.timeline_storage import DEFAULT_TIMELINE_PATH, merge_timeline_entries
+from xs2n.storage import (
+    DEFAULT_SOURCES_PATH,
+    DEFAULT_TIMELINE_PATH,
+    load_sources,
+    merge_timeline_entries,
+    migrate_legacy_sources_yaml,
+)
 
 
 def parse_since_datetime(value: str) -> datetime:

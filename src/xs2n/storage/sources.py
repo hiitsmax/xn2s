@@ -15,12 +15,13 @@ def _empty_doc() -> dict[str, Any]:
     return {"profiles": []}
 
 
-def load_sources(path: Path = DEFAULT_SOURCES_PATH) -> dict[str, Any]:
-    if not path.exists():
+def load_sources(path: Path | None = None) -> dict[str, Any]:
+    storage_path = path or DEFAULT_SOURCES_PATH
+    if not storage_path.exists():
         return _empty_doc()
 
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(storage_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return _empty_doc()
 
@@ -32,9 +33,10 @@ def load_sources(path: Path = DEFAULT_SOURCES_PATH) -> dict[str, Any]:
     return data
 
 
-def save_sources(doc: dict[str, Any], path: Path = DEFAULT_SOURCES_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+def save_sources(doc: dict[str, Any], path: Path | None = None) -> None:
+    storage_path = path or DEFAULT_SOURCES_PATH
+    storage_path.parent.mkdir(parents=True, exist_ok=True)
+    storage_path.write_text(
         f"{json.dumps(doc, ensure_ascii=False, indent=2)}\n",
         encoding="utf-8",
     )
@@ -85,15 +87,17 @@ def _parse_legacy_sources_yaml(text: str) -> list[dict[str, str]]:
 
 
 def migrate_legacy_sources_yaml(
-    yaml_path: Path = LEGACY_SOURCES_PATH,
-    json_path: Path = DEFAULT_SOURCES_PATH,
+    yaml_path: Path | None = None,
+    json_path: Path | None = None,
 ) -> int:
-    if not yaml_path.exists():
+    legacy_path = yaml_path or LEGACY_SOURCES_PATH
+    storage_path = json_path or DEFAULT_SOURCES_PATH
+    if not legacy_path.exists():
         return 0
 
-    profiles = _parse_legacy_sources_yaml(yaml_path.read_text(encoding="utf-8"))
+    profiles = _parse_legacy_sources_yaml(legacy_path.read_text(encoding="utf-8"))
     if not profiles:
-        save_sources(_empty_doc(), path=json_path)
+        save_sources(_empty_doc(), path=storage_path)
         return 0
 
     deduped_profiles: list[dict[str, str]] = []
@@ -106,18 +110,21 @@ def migrate_legacy_sources_yaml(
         deduped_profiles.append(
             {
                 "handle": handle,
-                "added_via": str(profile.get("added_via", "legacy_migration")).strip() or "legacy_migration",
+                "added_via": (
+                    str(profile.get("added_via", "legacy_migration")).strip()
+                    or "legacy_migration"
+                ),
                 "added_at": str(profile.get("added_at", "")).strip(),
             }
         )
 
-    save_sources({"profiles": deduped_profiles}, path=json_path)
+    save_sources({"profiles": deduped_profiles}, path=storage_path)
     return len(deduped_profiles)
 
 
 def merge_profiles(
     new_entries: list[ProfileEntry],
-    path: Path = DEFAULT_SOURCES_PATH,
+    path: Path | None = None,
 ) -> OnboardResult:
     doc = load_sources(path)
     profiles = doc.setdefault("profiles", [])

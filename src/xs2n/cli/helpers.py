@@ -1,9 +1,9 @@
-import json
 from pathlib import Path
 from typing import Any
 
 import typer
 
+import xs2n.storage.onboard_state as onboard_state_storage
 from xs2n.profile.browser_cookies import (
     BrowserCookieCandidate,
     describe_cookie_candidate,
@@ -13,37 +13,6 @@ from xs2n.profile.browser_cookies import (
     write_cookie_candidate,
 )
 from xs2n.profile.helpers import normalize_handle
-
-DEFAULT_ONBOARD_STATE_PATH = Path("data/onboard_state.json")
-
-
-def _load_onboard_state(path: Path = DEFAULT_ONBOARD_STATE_PATH) -> dict[str, str]:
-    if not path.exists():
-        return {}
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-
-    if not isinstance(data, dict):
-        return {}
-    return {str(k): str(v) for k, v in data.items() if isinstance(v, (str, int, float))}
-
-
-def _save_onboard_state(state: dict[str, str], path: Path = DEFAULT_ONBOARD_STATE_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        f"{json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True)}\n",
-        encoding="utf-8",
-    )
-
-
-def _onboard_state_path(parameters: dict[str, Any]) -> Path:
-    override = parameters.get("onboard_state_file")
-    if isinstance(override, Path):
-        return override
-    return DEFAULT_ONBOARD_STATE_PATH
 
 
 def normalize_following_account(raw: str) -> str:
@@ -96,12 +65,14 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
     if parameters["paste"] and parameters["from_following"]:
         raise typer.BadParameter("Use either --paste or --from-following, not both.")
 
-    state_path = _onboard_state_path(parameters)
-    state = _load_onboard_state(state_path)
+    state_path = onboard_state_storage.resolve_onboard_state_path(parameters)
+    state = onboard_state_storage.load_onboard_state(state_path)
 
     if parameters["from_following"]:
-        parameters["from_following"] = normalize_following_account(str(parameters["from_following"]))
-        _save_onboard_state(
+        parameters["from_following"] = normalize_following_account(
+            str(parameters["from_following"])
+        )
+        onboard_state_storage.save_onboard_state(
             {
                 "last_following": str(parameters["from_following"]),
                 "last_mode": "following",
@@ -110,7 +81,10 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
         )
 
     if parameters["paste"]:
-        _save_onboard_state({**state, "last_mode": "paste"}, path=state_path)
+        onboard_state_storage.save_onboard_state(
+            {**state, "last_mode": "paste"},
+            path=state_path,
+        )
         return
 
     if parameters["from_following"]:
@@ -123,7 +97,10 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
     ).strip().lower()
     if choice in {"paste", "p", "1"}:
         parameters["paste"] = True
-        _save_onboard_state({**state, "last_mode": "paste"}, path=state_path)
+        onboard_state_storage.save_onboard_state(
+            {**state, "last_mode": "paste"},
+            path=state_path,
+        )
         return
 
     if choice in {"following", "f", "2"}:
@@ -134,8 +111,9 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
                 saved_path = write_cookie_candidate(selected_candidate, cookies_file)
                 typer.echo(f"Saved browser cookies to {saved_path}.")
 
-            resolved_screen_name = selected_candidate.screen_name or resolve_screen_name_from_cookies(
-                selected_candidate.cookies
+            resolved_screen_name = (
+                selected_candidate.screen_name
+                or resolve_screen_name_from_cookies(selected_candidate.cookies)
             )
             if resolved_screen_name:
                 parameters["from_following"] = resolved_screen_name
@@ -164,8 +142,10 @@ def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
                     "X screen name (@, plain, or x.com URL)",
                 )
 
-        parameters["from_following"] = normalize_following_account(str(parameters["from_following"]))
-        _save_onboard_state(
+        parameters["from_following"] = normalize_following_account(
+            str(parameters["from_following"])
+        )
+        onboard_state_storage.save_onboard_state(
             {
                 "last_following": str(parameters["from_following"]),
                 "last_mode": "following",

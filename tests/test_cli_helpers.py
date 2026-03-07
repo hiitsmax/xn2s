@@ -15,7 +15,10 @@ def isolate_onboard_state_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("xs2n.cli.helpers.DEFAULT_ONBOARD_STATE_PATH", tmp_path / "onboard_state.json")
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.onboard_state_storage.DEFAULT_ONBOARD_STATE_PATH",
+        tmp_path / "onboard_state.json",
+    )
 
 
 def test_sanitize_cli_parameters_defaults_to_interactive_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
