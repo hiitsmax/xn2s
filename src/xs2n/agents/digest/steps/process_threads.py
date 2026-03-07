@@ -4,7 +4,7 @@ from typing import Any
 
 from xs2n.schemas.digest import FilteredThread, ProcessedThread, ThreadProcessResult
 
-from ..pipeline import virality_score
+from ..helpers import virality_score
 
 
 def run(

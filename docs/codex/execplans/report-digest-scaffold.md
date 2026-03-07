@@ -26,6 +26,7 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
 - [x] (2026-03-07 17:06Z) Revalidated the package rename with `uv run pytest tests/test_report_digest.py tests/test_report_cli.py`, `uv run xs2n report digest --help`, and `uv run pytest`.
 - [x] (2026-03-07 17:12Z) Renamed the thread-level raw-output step from `extract_signals.py` to `process_threads.py` and updated the digest artifact name to `processed_threads.json`.
 - [x] (2026-03-07 17:18Z) Moved the five digest step modules into `src/xs2n/agents/digest/steps/` and rewired imports/metadata to match.
+- [x] (2026-03-07 17:31Z) Extracted digest helpers into `helpers.py` and moved markdown rendering into `steps/render_digest.py` so `pipeline.py` is now only the run orchestrator.
 
 ## Surprises & Discoveries
 
@@ -68,6 +69,10 @@ After this change, a user can run `uv run xs2n report digest` on the existing `d
   Rationale: The main operation is processing a thread and returning its raw thread-level output. “Signal” is one field inside that output, not the identity of the whole step.
   Date/Author: 2026-03-07 / Codex
 
+- Decision: Treat markdown rendering as a first-class digest step and move shared utility functions into `helpers.py`.
+  Rationale: The user explicitly wanted the pipeline reduced to step orchestration only. Rendering belongs with the step files, while taxonomy/JSON/virality helpers are shared utilities rather than pipeline logic.
+  Date/Author: 2026-03-07 / Codex
+
 ## Outcomes & Retrospective
 
 The digest feature is still a scaffold, but it is now a much cleaner scaffold. A run reads one timeline file, groups source-authored conversations into thread units, sends each thread through clear semantic steps, and writes both the intermediate artifacts and the final markdown issue. The biggest lesson from this iteration is that a young pipeline benefits more from obvious control flow than from abstraction that anticipates future needs too early.
@@ -76,13 +81,14 @@ The digest feature is still a scaffold, but it is now a much cleaner scaffold. A
 
 `xs2n` is a Typer CLI under `src/xs2n/cli/`. The timeline ingestion command lives in `src/xs2n/cli/timeline.py` and stores flat tweet records in `data/timeline.json` via `src/xs2n/storage/timeline.py`. Those records include thread context fields such as `conversation_id`, reply linkage, and engagement metrics.
 
-The active digest code lives under `src/xs2n/agents/digest/`, but the digest schemas now live in the root-level `src/xs2n/schemas/digest.py` module. In the current design, `pipeline.py` owns the JSON helpers, the markdown rendering, and the top-level `run_digest_report(...)` orchestrator. `llm.py` owns the single generic OpenAI/LangChain structured-output model wrapper. The five step files are:
+The active digest code lives under `src/xs2n/agents/digest/`, but the digest schemas now live in the root-level `src/xs2n/schemas/digest.py` module. In the current design, `pipeline.py` owns only the top-level `run_digest_report(...)` orchestrator and the default path/model constants. `helpers.py` owns the shared taxonomy/JSON/virality utilities. `llm.py` owns the single generic OpenAI/LangChain structured-output model wrapper. The six step files are:
 
 - `src/xs2n/agents/digest/steps/load_threads.py`
 - `src/xs2n/agents/digest/steps/categorize_threads.py`
 - `src/xs2n/agents/digest/steps/filter_threads.py`
 - `src/xs2n/agents/digest/steps/process_threads.py`
 - `src/xs2n/agents/digest/steps/group_issues.py`
+- `src/xs2n/agents/digest/steps/render_digest.py`
 
 When this document says “thread,” it means one conversation bundle grouped from `timeline.json` by `conversation_id`, keeping only conversations that contain at least one source-authored tweet. Outside replies already present in the timeline file stay attached as context inside that bundle.
 
@@ -94,7 +100,7 @@ Second, make the digest input contract as small as possible. `src/xs2n/agents/di
 
 Third, keep the semantic steps explicit and separate. `src/xs2n/agents/digest/steps/categorize_threads.py`, `filter_threads.py`, `process_threads.py`, and `group_issues.py` should each expose a `run(...)` function. Inside those files, loop over threads one by one and call the single generic LLM wrapper in `src/xs2n/agents/digest/llm.py` with a prompt, a JSON payload, and a Pydantic schema.
 
-Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should not define the digest schemas anymore; those belong in `src/xs2n/schemas/digest.py`. `pipeline.py` should only define helper functions like `virality_score(...)`, markdown rendering, and `run_digest_report(...)`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `processed_threads.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
+Fourth, make `src/xs2n/agents/digest/pipeline.py` intentionally boring. It should not define digest schemas or utility helpers; those belong in `src/xs2n/schemas/digest.py` and `src/xs2n/agents/digest/helpers.py`. The report command should write these artifacts per run: `threads.json`, `categorized_threads.json`, `filtered_threads.json`, `processed_threads.json`, `issue_assignments.json`, `issues.json`, `run.json`, and `digest.md`.
 
 Finally, keep the CLI small. `src/xs2n/cli/report.py` should accept `--timeline-file`, `--output-dir`, `--taxonomy-file`, and `--model`, then print a one-line summary of loaded threads, kept threads, produced issues, and the digest path.
 
@@ -134,7 +140,7 @@ Run `uv run pytest`. The report tests should confirm that thread loading groups 
 
 The digest command is additive and safe to rerun. Each run creates a new timestamped folder under `data/report_runs/`. If a run fails partway through, delete the partial run folder and rerun the command.
 
-If `docs/codex/report_taxonomy.json` is missing, the digest code falls back to the built-in starter taxonomy in `src/xs2n/agents/digest/pipeline.py`.
+If `docs/codex/report_taxonomy.json` is missing, the digest code falls back to the built-in starter taxonomy in `src/xs2n/agents/digest/helpers.py`.
 
 ## Artifacts and Notes
 
@@ -155,6 +161,9 @@ The most important runtime artifacts are:
 `src/xs2n/agents/digest/pipeline.py` must expose:
 
     run_digest_report(...)
+
+`src/xs2n/agents/digest/helpers.py` must expose:
+
     def virality_score(record: TimelineRecord) -> float
 
 `src/xs2n/schemas/digest.py` must expose:

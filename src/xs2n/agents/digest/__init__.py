@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .steps.load_threads import run as _load_threads
 from .llm import DigestLLM
+from .helpers import DEFAULT_TAXONOMY_DOC, virality_score
 from xs2n.schemas.digest import (
     CategorizationResult,
     CategorySpec,
@@ -18,10 +19,8 @@ from xs2n.schemas.digest import (
 from .pipeline import (
     DEFAULT_REPORT_MODEL,
     DEFAULT_REPORT_RUNS_PATH,
-    DEFAULT_TAXONOMY_DOC,
     DEFAULT_TAXONOMY_PATH,
     run_digest_report,
-    virality_score,
 )
 
 _virality_score = virality_score

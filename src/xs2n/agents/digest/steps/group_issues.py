@@ -10,7 +10,10 @@ from xs2n.schemas.digest import (
     ProcessedThread,
 )
 
-from ..pipeline import DEFAULT_MAX_ISSUES, slugify_issue
+from ..helpers import slugify_issue
+
+
+DEFAULT_MAX_ISSUES = 6
 
 
 def run(

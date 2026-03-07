@@ -218,3 +218,9 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Moved the digest Pydantic/data classes out of `src/xs2n/agents/digest/pipeline.py`.
 - Added a root-level `src/xs2n/schemas/` package with `src/xs2n/schemas/digest.py` as the source of truth for digest schemas.
 - Kept `pipeline.py` focused on orchestration, rendering, and deterministic helpers while the step files now import their schemas from `xs2n.schemas.digest`.
+
+## Digest Helper And Render Split (2026-03-07)
+
+- Moved shared digest utilities out of `src/xs2n/agents/digest/pipeline.py` into `src/xs2n/agents/digest/helpers.py`.
+- Promoted markdown generation to a real step module at `src/xs2n/agents/digest/steps/render_digest.py`.
+- Reduced `pipeline.py` down to run orchestration plus default path/model constants, which makes the digest flow easier to read and less deceptive about where logic actually lives.

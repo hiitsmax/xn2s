@@ -7,7 +7,8 @@ from typing import Any, TypeVar, cast
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from .pipeline import DEFAULT_REPORT_MODEL, to_jsonable
+from .helpers import to_jsonable
+from .pipeline import DEFAULT_REPORT_MODEL
 
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
