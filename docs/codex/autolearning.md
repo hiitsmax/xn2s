@@ -224,3 +224,9 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Moved shared digest utilities out of `src/xs2n/agents/digest/pipeline.py` into `src/xs2n/agents/digest/helpers.py`.
 - Promoted markdown generation to a real step module at `src/xs2n/agents/digest/steps/render_digest.py`.
 - Reduced `pipeline.py` down to run orchestration plus default path/model constants, which makes the digest flow easier to read and less deceptive about where logic actually lives.
+
+## Coding Preference Capture (2026-03-07)
+
+- Added `docs/codex/coding-preferences.md` to preserve the coding-style lessons learned during the digest refactor in a reusable form.
+- Kept the rules general and portable, while grounding each one with a concrete example taken from the same refactor session.
+- Captured a few strong preferences explicitly: name modules by real responsibility, keep pipelines visually direct, avoid meaningless indirection, and prefer responsibility-based file boundaries over speculative abstraction.
