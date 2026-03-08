@@ -16,7 +16,7 @@ After this change, a user can run one command to produce a digest from the lates
 - [x] (2026-03-08 21:24Z) Added deterministic tests in `tests/test_report_cli.py` for since-resolution, orchestration wiring, and digest runtime error propagation.
 - [x] (2026-03-08 21:30Z) Ran focused validation: `uv run pytest tests/test_report_cli.py` (14 passed) and `uv run xs2n report latest --help`.
 - [x] (2026-03-08 21:31Z) Ran full suite validation: `uv run pytest` (84 passed).
-- [ ] Commit the feature with a conventional commit message.
+- [x] (2026-03-08 21:33Z) Committed implementation as `feat(cli): add report latest end-to-end command` (`b2db1e9`).
 
 ## Surprises & Discoveries
 
