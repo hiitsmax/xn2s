@@ -34,6 +34,7 @@ Working now:
 - `xs2n timeline --from-sources --since <iso-datetime>`
 - `xs2n report auth` (delegates ChatGPT/Codex authentication)
 - `xs2n report digest` (traceable markdown issue scaffold with per-step artifacts)
+- `xs2n report latest` (one command: ingest latest from onboarded sources, then render digest)
 - Interactive mode selection when no onboarding mode is provided
 - Local-browser cookie preflight (with profile selection) before Twikit login prompts
 - Cloudflare block detection + local-browser cookie refresh + Playwright fallback + retry
@@ -162,6 +163,15 @@ uv run xs2n report digest \
 ```
 
 The digest command reads the thread-aware `timeline.json`, groups it into conversation threads, runs five simple steps, and writes one run folder per execution with intermediate JSON artifacts and a final `digest.md`.
+
+Run ingestion + digest end-to-end in one cron-friendly command:
+
+```bash
+uv run xs2n report latest --lookback-hours 24
+uv run xs2n report latest --since 2026-03-01T00:00:00Z
+```
+
+`xs2n report latest` first runs timeline ingestion using all handles in `data/sources.json`, then runs `xs2n report digest` on the updated `data/timeline.json`.
 
 Output files:
 

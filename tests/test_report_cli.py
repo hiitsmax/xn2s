@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import typer
 
-from xs2n.cli.report import _run_codex_command, auth, digest
+from xs2n.cli.report import (
+    _resolve_latest_since,
+    _run_codex_command,
+    auth,
+    digest,
+    latest,
+)
 
 
 def test_report_auth_runs_codex_login(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,3 +156,103 @@ def test_report_digest_surfaces_runtime_error(
     assert error.value.exit_code == 1
     captured = capsys.readouterr()
     assert "OPENAI_API_KEY missing" in captured.err
+
+
+def test_resolve_latest_since_prefers_explicit_since() -> None:
+    now = datetime(2026, 3, 8, 20, 0, tzinfo=timezone.utc)
+
+    resolved = _resolve_latest_since(
+        since="2026-03-01T10:30:00Z",
+        lookback_hours=12,
+        now=now,
+    )
+
+    assert resolved == datetime(2026, 3, 1, 10, 30, tzinfo=timezone.utc)
+
+
+def test_resolve_latest_since_uses_lookback_window() -> None:
+    now = datetime(2026, 3, 8, 20, 0, tzinfo=timezone.utc)
+
+    resolved = _resolve_latest_since(
+        since=None,
+        lookback_hours=6,
+        now=now,
+    )
+
+    assert resolved == now - timedelta(hours=6)
+
+
+def test_report_latest_runs_timeline_then_digest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    timeline_calls: list[dict[str, object]] = []
+    digest_calls: list[dict[str, object]] = []
+
+    def fake_timeline(**kwargs):
+        timeline_calls.append(kwargs)
+
+    def fake_run_digest_report(**kwargs):
+        digest_calls.append(kwargs)
+        return SimpleNamespace(
+            run_id="20260308T120000Z",
+            thread_count=8,
+            kept_count=3,
+            issue_count=2,
+            digest_path=tmp_path / "report_runs" / "digest.md",
+        )
+
+    monkeypatch.setattr("xs2n.cli.report.timeline", fake_timeline)
+    monkeypatch.setattr("xs2n.cli.report.run_digest_report", fake_run_digest_report)
+
+    latest(
+        since="2026-03-08T00:00:00Z",
+        lookback_hours=24,
+        cookies_file=tmp_path / "cookies.json",
+        limit=120,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+        output_dir=tmp_path / "report_runs",
+        taxonomy_file=tmp_path / "taxonomy.json",
+        model="gpt-5.4",
+    )
+
+    assert len(timeline_calls) == 1
+    assert timeline_calls[0]["from_sources"] is True
+    assert timeline_calls[0]["account"] is None
+    assert timeline_calls[0]["since"] == "2026-03-08T00:00:00+00:00"
+    assert len(digest_calls) == 1
+    assert digest_calls[0]["model"] == "gpt-5.4"
+    out = capsys.readouterr().out
+    assert "Ingesting source timelines before digest generation" in out
+    assert "Latest digest run 20260308T120000Z" in out
+
+
+def test_report_latest_surfaces_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("xs2n.cli.report.timeline", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "xs2n.cli.report.run_digest_report",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("digest failed")),
+    )
+
+    with pytest.raises(typer.Exit) as error:
+        latest(
+            since="2026-03-08T00:00:00Z",
+            lookback_hours=24,
+            cookies_file=tmp_path / "cookies.json",
+            limit=120,
+            timeline_file=tmp_path / "timeline.json",
+            sources_file=tmp_path / "sources.json",
+            output_dir=tmp_path / "report_runs",
+            taxonomy_file=tmp_path / "taxonomy.json",
+            model="gpt-5.4",
+        )
+
+    assert error.value.exit_code == 1
+    captured = capsys.readouterr()
+    assert "digest failed" in captured.err

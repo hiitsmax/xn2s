@@ -238,3 +238,10 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added `docs/codex/coding-preferences.md` to preserve the coding-style lessons learned during the digest refactor in a reusable form.
 - Kept the rules general and portable, while grounding each one with a concrete example taken from the same refactor session.
 - Captured a few strong preferences explicitly: name modules by real responsibility, keep pipelines visually direct, avoid meaningless indirection, and prefer responsibility-based file boundaries over speculative abstraction.
+
+## Report Latest End-To-End Command (2026-03-08)
+
+- Added `xs2n report latest` to run a full report cycle with one CLI command: batch timeline ingestion from onboarded sources, then digest rendering.
+- Added a small `--since` / `--lookback-hours` resolver so scheduled runs can be configured by fixed cutoff or rolling window.
+- Kept orchestration explicit by reusing existing `timeline(...)` and `run_digest_report(...)` entrypoints in sequence instead of adding new hidden wrappers.
+- Added deterministic tests for since-resolution behavior, timeline+digest orchestration wiring, and digest runtime error propagation.
