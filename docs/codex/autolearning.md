@@ -245,3 +245,11 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added a small `--since` / `--lookback-hours` resolver so scheduled runs can be configured by fixed cutoff or rolling window.
 - Kept orchestration explicit by reusing existing `timeline(...)` and `run_digest_report(...)` entrypoints in sequence instead of adding new hidden wrappers.
 - Added deterministic tests for since-resolution behavior, timeline+digest orchestration wiring, and digest runtime error propagation.
+
+## Home Latest Timeline Mode (2026-03-08)
+
+- Added `xs2n timeline --home-latest` to ingest authenticated `Home -> Following` latest feed items, not just per-account timelines or onboarded source lists.
+- Implemented Twikit `get_latest_timeline()` pagination with since-cutoff filtering, dedupe by tweet id, and normalization into the existing `TimelineEntry` schema.
+- Added `xs2n report latest --home-latest` so one command can ingest platform feed data and render a digest run.
+- Kept default `report latest` behavior unchanged (`--from-sources`) to avoid breaking existing cron flows.
+- Added deterministic tests for home-latest importer behavior, timeline mode validation/routing, and report latest home-latest orchestration.

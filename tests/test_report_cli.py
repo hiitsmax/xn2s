@@ -213,6 +213,7 @@ def test_report_latest_runs_timeline_then_digest(
         limit=120,
         timeline_file=tmp_path / "timeline.json",
         sources_file=tmp_path / "sources.json",
+        home_latest=False,
         output_dir=tmp_path / "report_runs",
         taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
@@ -220,6 +221,7 @@ def test_report_latest_runs_timeline_then_digest(
 
     assert len(timeline_calls) == 1
     assert timeline_calls[0]["from_sources"] is True
+    assert timeline_calls[0]["home_latest"] is False
     assert timeline_calls[0]["account"] is None
     assert timeline_calls[0]["since"] == "2026-03-08T00:00:00+00:00"
     assert len(digest_calls) == 1
@@ -227,6 +229,52 @@ def test_report_latest_runs_timeline_then_digest(
     out = capsys.readouterr().out
     assert "Ingesting source timelines before digest generation" in out
     assert "Latest digest run 20260308T120000Z" in out
+
+
+def test_report_latest_routes_home_latest_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    timeline_calls: list[dict[str, object]] = []
+    digest_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "xs2n.cli.report.timeline",
+        lambda **kwargs: timeline_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.report.run_digest_report",
+        lambda **kwargs: digest_calls.append(kwargs)
+        or SimpleNamespace(
+            run_id="20260308T120000Z",
+            thread_count=5,
+            kept_count=2,
+            issue_count=1,
+            digest_path=tmp_path / "report_runs" / "digest.md",
+        ),
+    )
+
+    latest(
+        since="2026-03-08T00:00:00Z",
+        lookback_hours=24,
+        cookies_file=tmp_path / "cookies.json",
+        limit=120,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+        home_latest=True,
+        output_dir=tmp_path / "report_runs",
+        taxonomy_file=tmp_path / "taxonomy.json",
+        model="gpt-5.4",
+    )
+
+    assert len(timeline_calls) == 1
+    assert timeline_calls[0]["from_sources"] is False
+    assert timeline_calls[0]["home_latest"] is True
+    assert timeline_calls[0]["account"] is None
+    assert len(digest_calls) == 1
+    out = capsys.readouterr().out
+    assert "Ingesting Home->Following latest timeline before digest generation" in out
 
 
 def test_report_latest_surfaces_runtime_error(
@@ -248,6 +296,7 @@ def test_report_latest_surfaces_runtime_error(
             limit=120,
             timeline_file=tmp_path / "timeline.json",
             sources_file=tmp_path / "sources.json",
+            home_latest=False,
             output_dir=tmp_path / "report_runs",
             taxonomy_file=tmp_path / "taxonomy.json",
             model="gpt-5.4",

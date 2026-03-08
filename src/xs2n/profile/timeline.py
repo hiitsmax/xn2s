@@ -24,6 +24,7 @@ DEFAULT_THREAD_REPLIES_LIMIT = 240
 DEFAULT_THREAD_OTHER_REPLIES_LIMIT = 120
 THREAD_SOURCE_PARENT = "thread_parent"
 THREAD_SOURCE_REPLY = "thread_reply"
+HOME_TIMELINE_SOURCE = "home_latest"
 
 
 def _to_utc_datetime(value: datetime) -> datetime:
@@ -315,6 +316,55 @@ async def _collect_timeline_feed_entries(
     return TimelineFetchResult(entries=entries, scanned=scanned, skipped_old=skipped_old)
 
 
+async def _collect_home_latest_entries(
+    *,
+    client: Client,
+    since_utc: datetime,
+    limit: int,
+    page_delay_seconds: float,
+) -> TimelineFetchResult:
+    result = await client.get_latest_timeline(
+        count=min(IMPORT_TIMELINE_PAGE_SIZE, max(1, limit))
+    )
+    entries: list[TimelineEntry] = []
+    seen_ids: set[str] = set()
+    scanned = 0
+    skipped_old = 0
+
+    async for tweet in _iter_result_items(result, page_delay_seconds):
+        scanned += 1
+        created_at = _tweet_datetime(tweet)
+        if created_at is None:
+            continue
+
+        if created_at < since_utc:
+            skipped_old += 1
+            continue
+
+        tweet_id = _tweet_id(tweet)
+        if tweet_id is None or tweet_id in seen_ids:
+            continue
+
+        source_handle = _tweet_author_handle(tweet, "unknown")
+        entry = _to_timeline_entry(
+            tweet,
+            account_handle=source_handle,
+            created_at=created_at,
+            timeline_source=HOME_TIMELINE_SOURCE,
+        )
+        if entry is None:
+            continue
+
+        seen_ids.add(tweet_id)
+        entries.append(entry)
+
+        if len(entries) >= limit:
+            break
+
+    entries.sort(key=lambda entry: entry.created_at, reverse=True)
+    return TimelineFetchResult(entries=entries, scanned=scanned, skipped_old=skipped_old)
+
+
 async def _hydrate_parent_context(
     *,
     client: Client,
@@ -564,6 +614,29 @@ async def import_timeline_entries(
     return TimelineFetchResult(entries=all_entries, scanned=scanned, skipped_old=skipped_old)
 
 
+async def import_home_latest_timeline_entries(
+    cookies_file: Path,
+    since_datetime: datetime,
+    limit: int,
+    prompt_login: LoginPrompt,
+    page_delay_seconds: float = 0.0,
+) -> TimelineFetchResult:
+    client = Client("en-US")
+    await ensure_authenticated_client(
+        client=client,
+        cookies_file=cookies_file,
+        prompt=prompt_login,
+    )
+
+    since_utc = _to_utc_datetime(since_datetime)
+    return await _collect_home_latest_entries(
+        client=client,
+        since_utc=since_utc,
+        limit=limit,
+        page_delay_seconds=page_delay_seconds,
+    )
+
+
 def run_import_timeline_entries(
     account_screen_name: str,
     cookies_file: Path,
@@ -586,5 +659,23 @@ def run_import_timeline_entries(
             thread_parent_limit=thread_parent_limit,
             thread_replies_limit=thread_replies_limit,
             thread_other_replies_limit=thread_other_replies_limit,
+        )
+    )
+
+
+def run_import_home_latest_timeline_entries(
+    cookies_file: Path,
+    since_datetime: datetime,
+    limit: int,
+    prompt_login: LoginPrompt,
+    page_delay_seconds: float = 0.0,
+) -> TimelineFetchResult:
+    return asyncio.run(
+        import_home_latest_timeline_entries(
+            cookies_file=cookies_file,
+            since_datetime=since_datetime,
+            limit=limit,
+            prompt_login=prompt_login,
+            page_delay_seconds=page_delay_seconds,
         )
     )

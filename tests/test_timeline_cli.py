@@ -8,7 +8,12 @@ import pytest
 import typer
 from twikit.errors import Forbidden, TooManyRequests
 
-from xs2n.cli.timeline import import_timeline_with_recovery, parse_since_datetime, timeline
+from xs2n.cli.timeline import (
+    import_home_latest_with_recovery,
+    import_timeline_with_recovery,
+    parse_since_datetime,
+    timeline,
+)
 from xs2n.profile.types import TimelineEntry, TimelineFetchResult, TimelineMergeResult
 
 DEFAULT_TIMELINE_OPTIONS = {
@@ -186,11 +191,37 @@ def test_import_timeline_with_recovery_passes_thread_limits(
     assert captured["thread_other_replies_limit"] == 3
 
 
-def test_timeline_requires_account_or_from_sources(tmp_path: Path) -> None:
+def test_import_home_latest_with_recovery_passes_page_delay(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_import_home_latest_timeline_entries(**kwargs):
+        captured.update(kwargs)
+        return _fetch_result()
+
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.run_import_home_latest_timeline_entries",
+        fake_run_import_home_latest_timeline_entries,
+    )
+
+    import_home_latest_with_recovery(
+        cookies_file=tmp_path / "cookies.json",
+        since_datetime=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        limit=50,
+        page_delay_seconds=1.25,
+    )
+
+    assert captured["page_delay_seconds"] == 1.25
+
+
+def test_timeline_requires_exactly_one_mode(tmp_path: Path) -> None:
     with pytest.raises(typer.BadParameter):
         timeline(
             account=None,
             from_sources=False,
+            home_latest=False,
             since="2026-03-01T00:00:00Z",
             cookies_file=tmp_path / "cookies.json",
             limit=50,
@@ -205,6 +236,37 @@ def test_timeline_rejects_account_with_from_sources(tmp_path: Path) -> None:
         timeline(
             account="mx",
             from_sources=True,
+            home_latest=False,
+            since="2026-03-01T00:00:00Z",
+            cookies_file=tmp_path / "cookies.json",
+            limit=50,
+            timeline_file=tmp_path / "timeline.json",
+            sources_file=tmp_path / "sources.json",
+            **DEFAULT_TIMELINE_OPTIONS,
+        )
+
+
+def test_timeline_rejects_account_with_home_latest(tmp_path: Path) -> None:
+    with pytest.raises(typer.BadParameter):
+        timeline(
+            account="mx",
+            from_sources=False,
+            home_latest=True,
+            since="2026-03-01T00:00:00Z",
+            cookies_file=tmp_path / "cookies.json",
+            limit=50,
+            timeline_file=tmp_path / "timeline.json",
+            sources_file=tmp_path / "sources.json",
+            **DEFAULT_TIMELINE_OPTIONS,
+        )
+
+
+def test_timeline_rejects_from_sources_with_home_latest(tmp_path: Path) -> None:
+    with pytest.raises(typer.BadParameter):
+        timeline(
+            account=None,
+            from_sources=True,
+            home_latest=True,
             since="2026-03-01T00:00:00Z",
             cookies_file=tmp_path / "cookies.json",
             limit=50,
@@ -270,6 +332,7 @@ def test_timeline_from_sources_ingests_unique_valid_handles(
     timeline(
         account=None,
         from_sources=True,
+        home_latest=False,
         since="2026-03-01T00:00:00Z",
         cookies_file=tmp_path / "cookies.json",
         limit=50,
@@ -313,6 +376,7 @@ def test_timeline_from_sources_migrates_legacy_yaml_when_json_missing(
     timeline(
         account=None,
         from_sources=True,
+        home_latest=False,
         since="2026-03-01T00:00:00Z",
         cookies_file=tmp_path / "cookies.json",
         limit=50,
@@ -339,6 +403,7 @@ def test_timeline_single_account_handles_rate_limit(
         timeline(
             account="mx",
             from_sources=False,
+            home_latest=False,
             since="2026-03-01T00:00:00Z",
             cookies_file=tmp_path / "cookies.json",
             limit=50,
@@ -403,6 +468,7 @@ def test_timeline_from_sources_stops_cleanly_on_rate_limit(
         timeline(
             account=None,
             from_sources=True,
+            home_latest=False,
             since="2026-03-01T00:00:00Z",
             cookies_file=tmp_path / "cookies.json",
             limit=50,
@@ -451,6 +517,7 @@ def test_timeline_single_account_waits_and_retries_on_rate_limit(
     timeline(
         account="mx",
         from_sources=False,
+        home_latest=False,
         since="2026-03-01T00:00:00Z",
         cookies_file=tmp_path / "cookies.json",
         limit=50,
@@ -492,6 +559,7 @@ def test_timeline_from_sources_applies_slow_fetch_delay(
     timeline(
         account=None,
         from_sources=True,
+        home_latest=False,
         since="2026-03-01T00:00:00Z",
         cookies_file=tmp_path / "cookies.json",
         limit=50,
@@ -507,3 +575,81 @@ def test_timeline_from_sources_applies_slow_fetch_delay(
     )
 
     assert 0.25 in sleep_calls
+
+
+def test_timeline_home_latest_ingests_entries(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.import_home_latest_with_recovery",
+        lambda **kwargs: _fetch_result(),
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.merge_timeline_entries",
+        lambda entries, path: TimelineMergeResult(added=len(entries), skipped_duplicates=0),
+    )
+
+    timeline(
+        account=None,
+        from_sources=False,
+        home_latest=True,
+        since="2026-03-01T00:00:00Z",
+        cookies_file=tmp_path / "cookies.json",
+        limit=50,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+        slow_fetch_seconds=0.0,
+        page_delay_seconds=0.0,
+        wait_on_rate_limit=True,
+        rate_limit_wait_seconds=900,
+        rate_limit_poll_seconds=30,
+        max_rate_limit_wait_seconds=1800,
+        max_rate_limit_retries=30,
+        thread_parent_limit=0,
+        thread_replies_limit=0,
+        thread_other_replies_limit=0,
+    )
+
+    output = capsys.readouterr().out
+    assert "Home->Following timeline" in output
+
+
+def test_timeline_home_latest_handles_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.import_home_latest_with_recovery",
+        lambda **kwargs: (_ for _ in ()).throw(
+            TooManyRequests('status: 429, message: "Rate limit exceeded"')
+        ),
+    )
+
+    with pytest.raises(typer.Exit) as exc:
+        timeline(
+            account=None,
+            from_sources=False,
+            home_latest=True,
+            since="2026-03-01T00:00:00Z",
+            cookies_file=tmp_path / "cookies.json",
+            limit=50,
+            timeline_file=tmp_path / "timeline.json",
+            sources_file=tmp_path / "sources.json",
+            wait_on_rate_limit=False,
+            slow_fetch_seconds=0.0,
+            page_delay_seconds=0.0,
+            rate_limit_wait_seconds=900,
+            rate_limit_poll_seconds=30,
+            max_rate_limit_wait_seconds=1800,
+            max_rate_limit_retries=30,
+            thread_parent_limit=0,
+            thread_replies_limit=0,
+            thread_other_replies_limit=0,
+        )
+
+    assert exc.value.exit_code == 1
+    captured = capsys.readouterr()
+    assert "rate limit" in captured.err.lower()

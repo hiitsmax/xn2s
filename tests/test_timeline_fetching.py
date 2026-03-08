@@ -9,6 +9,7 @@ from twikit.errors import NotFound
 
 from xs2n.profile.timeline import (
     AUTHENTICATED_ACCOUNT_SENTINEL,
+    import_home_latest_timeline_entries,
     import_timeline_entries,
 )
 
@@ -91,13 +92,16 @@ class _DummyClient:
         locale: str,
         user: _DummyUser,
         tweet_details: dict[str, _DummyTweet] | None = None,
+        home_latest_batch: _DummyBatch | None = None,
     ) -> None:
         self.locale = locale
         self._user = user
         self._tweet_details = tweet_details or {}
+        self._home_latest_batch = home_latest_batch or _DummyBatch([])
         self.user_called = False
         self.by_name_calls: list[str] = []
         self.detail_calls: list[str] = []
+        self.home_latest_calls: list[tuple[int, list[str] | None, str | None]] = []
 
     async def user(self) -> _DummyUser:
         self.user_called = True
@@ -112,6 +116,15 @@ class _DummyClient:
         if tweet_id not in self._tweet_details:
             raise NotFound(f"tweet {tweet_id} not found")
         return self._tweet_details[tweet_id]
+
+    async def get_latest_timeline(
+        self,
+        count: int = 20,
+        seen_tweet_ids: list[str] | None = None,
+        cursor: str | None = None,
+    ) -> _DummyBatch:
+        self.home_latest_calls.append((count, seen_tweet_ids, cursor))
+        return self._home_latest_batch
 
 
 def _tweet(
@@ -243,6 +256,84 @@ def test_import_timeline_entries_includes_replies_and_classifies_kinds(
     assert client.by_name_calls == ["mx"]
     assert client.user_called is False
     assert dummy_user.get_tweets_calls == [("Tweets", 10), ("Replies", 10)]
+
+
+def test_import_home_latest_timeline_entries_uses_author_as_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    original = _tweet(
+        "orig",
+        datetime(2025, 12, 30, tzinfo=timezone.utc),
+        author="other",
+        text="orig",
+    )
+    page_2 = _DummyBatch(
+        [
+            _tweet(
+                "3",
+                datetime(2026, 1, 2, tzinfo=timezone.utc),
+                author="gamma",
+                text="reply",
+                in_reply_to="1",
+                conversation_id="conv-1",
+            ),
+            _tweet("old", datetime(2025, 12, 31, tzinfo=timezone.utc), author="delta"),
+        ]
+    )
+    page_1 = _DummyBatch(
+        [
+            _tweet("1", datetime(2026, 1, 4, tzinfo=timezone.utc), author="alpha", text="post"),
+            _tweet(
+                "2",
+                datetime(2026, 1, 3, tzinfo=timezone.utc),
+                author="beta",
+                text="retweet",
+                retweeted_tweet=original,
+            ),
+        ],
+        next_batch=page_2,
+    )
+    dummy_user = _DummyUser(screen_name="mx", tweets_batch=_DummyBatch([]))
+    holder: dict[str, _DummyClient] = {}
+
+    def fake_client(locale: str) -> _DummyClient:
+        client = _DummyClient(
+            locale=locale,
+            user=dummy_user,
+            home_latest_batch=page_1,
+        )
+        holder["client"] = client
+        return client
+
+    async def fake_ensure_authenticated_client(**kwargs):  # noqa: ANN202
+        return None
+
+    monkeypatch.setattr("xs2n.profile.timeline.Client", fake_client)
+    monkeypatch.setattr(
+        "xs2n.profile.timeline.ensure_authenticated_client",
+        fake_ensure_authenticated_client,
+    )
+
+    result = asyncio.run(
+        import_home_latest_timeline_entries(
+            cookies_file=Path("cookies.json"),
+            since_datetime=since,
+            limit=3,
+            prompt_login=lambda *_: ("u", "e", "p"),
+            page_delay_seconds=0.0,
+        )
+    )
+
+    assert [entry.tweet_id for entry in result.entries] == ["1", "2", "3"]
+    assert [entry.kind for entry in result.entries] == ["post", "retweet", "reply"]
+    assert all(entry.timeline_source == "home_latest" for entry in result.entries)
+    assert all(entry.account_handle == entry.author_handle for entry in result.entries)
+    assert result.scanned == 3
+    assert result.skipped_old == 0
+
+    client = holder["client"]
+    assert client.home_latest_calls == [(3, None, None)]
 
 
 def test_import_timeline_entries_uses_self_account_and_created_at_fallback(

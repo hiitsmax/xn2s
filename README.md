@@ -101,6 +101,12 @@ Ingest posts + replies + retweets for all onboarded sources in `data/sources.jso
 uv run xs2n timeline --from-sources --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
 ```
 
+Ingest latest tweets from your authenticated Home -> Following feed:
+
+```bash
+uv run xs2n timeline --home-latest --since 2026-03-01T00:00:00Z --cookies-file cookies.json --limit 500
+```
+
 If `data/sources.json` is missing but legacy `data/sources.yaml` exists, `--from-sources` auto-migrates it to JSON before ingestion.
 
 Rate-limit hardening and slower fetch options:
@@ -169,9 +175,10 @@ Run ingestion + digest end-to-end in one cron-friendly command:
 ```bash
 uv run xs2n report latest --lookback-hours 24
 uv run xs2n report latest --since 2026-03-01T00:00:00Z
+uv run xs2n report latest --home-latest --lookback-hours 24
 ```
 
-`xs2n report latest` first runs timeline ingestion using all handles in `data/sources.json`, then runs `xs2n report digest` on the updated `data/timeline.json`.
+`xs2n report latest` first runs timeline ingestion (from `data/sources.json` by default, or Home -> Following when `--home-latest` is enabled), then runs `xs2n report digest` on the updated `data/timeline.json`.
 
 Output files:
 

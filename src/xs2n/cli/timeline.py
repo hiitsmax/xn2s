@@ -19,6 +19,7 @@ from xs2n.profile.timeline import (
     DEFAULT_THREAD_REPLIES_LIMIT,
     IMPORT_TIMELINE_LIMIT,
     TimelineFetchResult,
+    run_import_home_latest_timeline_entries,
     run_import_timeline_entries,
 )
 from xs2n.storage import (
@@ -155,6 +156,90 @@ def import_timeline_with_recovery(
             raise
 
 
+def import_home_latest_with_recovery(
+    cookies_file: Path,
+    since_datetime: datetime,
+    limit: int,
+    page_delay_seconds: float = 0.0,
+) -> TimelineFetchResult:
+    def retry_import() -> TimelineFetchResult:
+        return run_import_home_latest_timeline_entries(
+            cookies_file=cookies_file,
+            since_datetime=since_datetime,
+            limit=limit,
+            prompt_login=prompt_login,
+            page_delay_seconds=page_delay_seconds,
+        )
+
+    if not cookies_file.exists():
+        typer.echo("Checking local browser cookies for logged-in X sessions...")
+        try:
+            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
+            typer.echo(f"Saved browser cookies to {saved_path}.")
+        except RuntimeError as local_cookie_error:
+            typer.echo(
+                "No usable local browser cookies were found. "
+                f"Details: {local_cookie_error}",
+                err=True,
+            )
+
+    try:
+        return retry_import()
+    except Forbidden as error:
+        if not is_cloudflare_block_error(error):
+            raise
+
+        typer.echo(
+            "X blocked this automated login request (Cloudflare 403).",
+            err=True,
+        )
+        typer.echo(
+            "Trying to refresh cookies from your local browser first.",
+            err=True,
+        )
+        try:
+            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
+            typer.echo(f"Imported local browser cookies to {saved_path}. Retrying...")
+            return retry_import()
+        except RuntimeError as local_cookie_error:
+            typer.echo(
+                f"Could not import cookies from local browser: {local_cookie_error}",
+                err=True,
+            )
+        except Forbidden as local_retry_error:
+            if not is_cloudflare_block_error(local_retry_error):
+                raise
+            typer.echo(
+                "Still blocked by Cloudflare after importing local browser cookies.",
+                err=True,
+            )
+
+        typer.echo(
+            "We can open a real browser to refresh session cookies, then retry automatically.",
+            err=True,
+        )
+        recover_now = typer.confirm("Open browser login and retry now?", default=True)
+        if not recover_now:
+            raise typer.Exit(code=1)
+
+        try:
+            saved_path = bootstrap_cookies_via_browser(cookies_file)
+            typer.echo(f"Saved browser cookies to {saved_path}. Retrying...")
+            return retry_import()
+        except RuntimeError as bootstrap_error:
+            typer.echo(f"Could not bootstrap cookies: {bootstrap_error}", err=True)
+            raise typer.Exit(code=1) from bootstrap_error
+        except Forbidden as retry_error:
+            if is_cloudflare_block_error(retry_error):
+                typer.echo(
+                    "Still blocked by Cloudflare after browser login. "
+                    "Try again from a normal residential/mobile network.",
+                    err=True,
+                )
+                raise typer.Exit(code=1) from retry_error
+            raise
+
+
 def _legacy_sources_path_for(path: Path) -> Path:
     return path.with_suffix(".yaml")
 
@@ -194,6 +279,22 @@ def _single_account_summary(
 ) -> None:
     typer.echo(
         f"Scanned {fetch_result.scanned} timeline items for @{account}. "
+        f"Matched {len(fetch_result.entries)} items since {since_datetime.isoformat()} "
+        f"(skipped {fetch_result.skipped_old} older items). "
+        f"Added {merge_result_added}, skipped {merge_result_duplicates} duplicates. "
+        f"Saved to {timeline_file}."
+    )
+
+
+def _home_latest_summary(
+    since_datetime: datetime,
+    fetch_result: TimelineFetchResult,
+    merge_result_added: int,
+    merge_result_duplicates: int,
+    timeline_file: Path,
+) -> None:
+    typer.echo(
+        f"Scanned {fetch_result.scanned} Home->Following timeline items. "
         f"Matched {len(fetch_result.entries)} items since {since_datetime.isoformat()} "
         f"(skipped {fetch_result.skipped_old} older items). "
         f"Added {merge_result_added}, skipped {merge_result_duplicates} duplicates. "
@@ -292,17 +393,74 @@ def _fetch_with_rate_limit_retries(
             )
 
 
+def _fetch_home_latest_with_rate_limit_retries(
+    *,
+    cookies_file: Path,
+    since_datetime: datetime,
+    limit: int,
+    page_delay_seconds: float,
+    wait_on_rate_limit: bool,
+    rate_limit_wait_seconds: int,
+    rate_limit_poll_seconds: int,
+    max_rate_limit_wait_seconds: int,
+    max_rate_limit_retries: int,
+) -> TimelineFetchResult:
+    retries = 0
+
+    while True:
+        try:
+            return import_home_latest_with_recovery(
+                cookies_file=cookies_file,
+                since_datetime=since_datetime,
+                limit=limit,
+                page_delay_seconds=page_delay_seconds,
+            )
+        except TooManyRequests as error:
+            if not wait_on_rate_limit:
+                raise
+
+            retries += 1
+            if retries > max_rate_limit_retries:
+                typer.echo(
+                    "Rate limit persisted for Home->Following timeline "
+                    f"after {max_rate_limit_retries} retries.",
+                    err=True,
+                )
+                raise
+
+            wait_seconds = _rate_limit_wait_seconds(
+                error=error,
+                fallback_wait_seconds=rate_limit_wait_seconds,
+                max_wait_seconds=max_rate_limit_wait_seconds,
+            )
+            _active_wait_for_rate_limit(
+                account="home_latest",
+                wait_seconds=wait_seconds,
+                poll_seconds=rate_limit_poll_seconds,
+                retry_index=retries,
+                max_retries=max_rate_limit_retries,
+            )
+
+
 def timeline(
     account: str | None = typer.Option(
         None,
         "-a",
         "--account",
-        help="X account handle (or x.com URL) to scrape. Required unless --from-sources is used.",
+        help=(
+            "X account handle (or x.com URL) to scrape. "
+            "Required unless --from-sources or --home-latest is used."
+        ),
     ),
     from_sources: bool = typer.Option(
         False,
         "--from-sources",
         help="Ingest timelines for every handle in sources file.",
+    ),
+    home_latest: bool = typer.Option(
+        False,
+        "--home-latest",
+        help="Ingest authenticated Home -> Following latest timeline.",
     ),
     since: str = typer.Option(
         ...,
@@ -393,10 +551,15 @@ def timeline(
 ) -> None:
     """Ingest posts, replies, and retweets since a datetime."""
 
-    if from_sources and account:
-        raise typer.BadParameter("Use either --account or --from-sources, not both.")
-    if not from_sources and not account:
-        raise typer.BadParameter("Provide --account or use --from-sources.")
+    active_modes = sum((bool(account), from_sources, home_latest))
+    if active_modes > 1:
+        raise typer.BadParameter(
+            "Use exactly one mode: --account, --from-sources, or --home-latest."
+        )
+    if active_modes == 0:
+        raise typer.BadParameter(
+            "Provide exactly one mode: --account, --from-sources, or --home-latest."
+        )
 
     since_datetime = parse_since_datetime(since)
 
@@ -497,6 +660,44 @@ def timeline(
         )
         if stopped_due_to_rate_limit:
             raise typer.Exit(code=1)
+        return
+
+    if home_latest:
+        try:
+            fetch_result = _fetch_home_latest_with_rate_limit_retries(
+                cookies_file=cookies_file,
+                since_datetime=since_datetime,
+                limit=limit,
+                page_delay_seconds=page_delay_seconds,
+                wait_on_rate_limit=wait_on_rate_limit,
+                rate_limit_wait_seconds=rate_limit_wait_seconds,
+                rate_limit_poll_seconds=rate_limit_poll_seconds,
+                max_rate_limit_wait_seconds=max_rate_limit_wait_seconds,
+                max_rate_limit_retries=max_rate_limit_retries,
+            )
+        except TooManyRequests as error:
+            typer.echo(
+                "Hit X rate limit (429) while fetching Home->Following latest timeline. "
+                "Stopping run.",
+                err=True,
+            )
+            raise typer.Exit(code=1) from error
+
+        if not fetch_result.entries:
+            typer.echo(
+                "No Home->Following timeline items found at or after "
+                f"{since_datetime.isoformat()}."
+            )
+            return
+
+        merge_result = merge_timeline_entries(fetch_result.entries, path=timeline_file)
+        _home_latest_summary(
+            since_datetime=since_datetime,
+            fetch_result=fetch_result,
+            merge_result_added=merge_result.added,
+            merge_result_duplicates=merge_result.skipped_duplicates,
+            timeline_file=timeline_file,
+        )
         return
 
     normalized_account = normalize_following_account(str(account))

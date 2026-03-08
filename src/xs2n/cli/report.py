@@ -179,6 +179,11 @@ def latest(
         "--sources-file",
         help="Where source handles are stored for batch ingestion.",
     ),
+    home_latest: bool = typer.Option(
+        False,
+        "--home-latest",
+        help="Use authenticated Home -> Following latest timeline instead of --from-sources.",
+    ),
     output_dir: Path = typer.Option(
         DEFAULT_REPORT_RUNS_PATH,
         "--output-dir",
@@ -195,7 +200,7 @@ def latest(
         help="OpenAI model name used for structured digest steps.",
     ),
 ) -> None:
-    """Ingest latest timeline data from onboarded sources and render one digest."""
+    """Ingest latest timeline data and render one digest."""
 
     since_datetime = _resolve_latest_since(
         since=since,
@@ -203,13 +208,19 @@ def latest(
     )
     since_value = since_datetime.isoformat()
 
+    ingest_label = (
+        "Home->Following latest timeline"
+        if home_latest
+        else "source timelines"
+    )
     typer.echo(
-        "Ingesting source timelines before digest generation "
+        f"Ingesting {ingest_label} before digest generation "
         f"(since {since_value})."
     )
     timeline(
         account=None,
-        from_sources=True,
+        from_sources=not home_latest,
+        home_latest=home_latest,
         since=since_value,
         cookies_file=cookies_file,
         limit=limit,
