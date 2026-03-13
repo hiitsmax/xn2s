@@ -168,7 +168,7 @@ uv run xs2n report digest \
   --taxonomy-file docs/codex/report_taxonomy.json
 ```
 
-The digest command reads the thread-aware `timeline.json`, groups it into conversation threads, runs five simple steps, and writes one run folder per execution with intermediate JSON artifacts and a final `digest.md`.
+The digest command reads the thread-aware `timeline.json`, groups it into conversation threads, runs five simple steps, and writes one run folder per execution with intermediate JSON artifacts and a final `digest.md`. Each run folder now also freezes the taxonomy used for that run, records per-phase timing/count metadata in `phases.json`, and writes one JSON file per LLM call under `llm_calls/` so partial failures are easier to debug.
 
 Run ingestion + digest end-to-end in one cron-friendly command:
 
@@ -185,6 +185,16 @@ Output files:
 ```text
 data/sources.json
 data/timeline.json
+data/report_runs/<run_id>/taxonomy.json
+data/report_runs/<run_id>/threads.json
+data/report_runs/<run_id>/categorized_threads.json
+data/report_runs/<run_id>/filtered_threads.json
+data/report_runs/<run_id>/processed_threads.json
+data/report_runs/<run_id>/issue_assignments.json
+data/report_runs/<run_id>/issues.json
+data/report_runs/<run_id>/phases.json
+data/report_runs/<run_id>/llm_calls/*.json
+data/report_runs/<run_id>/run.json
 data/report_runs/<run_id>/digest.md
 ```
 

@@ -30,6 +30,13 @@ from xs2n.storage import (
     migrate_legacy_sources_yaml,
 )
 
+DEFAULT_SLOW_FETCH_SECONDS = 1.0
+DEFAULT_PAGE_DELAY_SECONDS = 0.4
+DEFAULT_RATE_LIMIT_WAIT_SECONDS = 900
+DEFAULT_RATE_LIMIT_POLL_SECONDS = 30
+DEFAULT_MAX_RATE_LIMIT_WAIT_SECONDS = 1800
+DEFAULT_MAX_RATE_LIMIT_RETRIES = 30
+
 
 def parse_since_datetime(value: str) -> datetime:
     candidate = value.strip()
@@ -442,114 +449,28 @@ def _fetch_home_latest_with_rate_limit_retries(
             )
 
 
-def timeline(
-    account: str | None = typer.Option(
-        None,
-        "-a",
-        "--account",
-        help=(
-            "X account handle (or x.com URL) to scrape. "
-            "Required unless --from-sources or --home-latest is used."
-        ),
-    ),
-    from_sources: bool = typer.Option(
-        False,
-        "--from-sources",
-        help="Ingest timelines for every handle in sources file.",
-    ),
-    home_latest: bool = typer.Option(
-        False,
-        "--home-latest",
-        help="Ingest authenticated Home -> Following latest timeline.",
-    ),
-    since: str = typer.Option(
-        ...,
-        "--since",
-        help="Include posts, replies, and retweets since this ISO datetime (UTC if timezone omitted).",
-    ),
-    cookies_file: Path = typer.Option(
-        Path("cookies.json"),
-        "--cookies-file",
-        help="Twikit cookies file for authenticated scraping.",
-    ),
-    limit: int = typer.Option(
-        DEFAULT_IMPORT_TIMELINE,
-        "--limit",
-        min=1,
-        max=IMPORT_TIMELINE_LIMIT,
-        help="Maximum number of timeline entries to ingest in this run.",
-    ),
-    timeline_file: Path = typer.Option(
-        DEFAULT_TIMELINE_PATH,
-        "--timeline-file",
-        help="Where timeline entries are stored.",
-    ),
-    sources_file: Path = typer.Option(
-        DEFAULT_SOURCES_PATH,
-        "--sources-file",
-        help="Where source handles are stored (used with --from-sources).",
-    ),
-    slow_fetch_seconds: float = typer.Option(
-        1.0,
-        "--slow-fetch-seconds",
-        min=0.0,
-        help="Delay in seconds between accounts when using --from-sources.",
-    ),
-    page_delay_seconds: float = typer.Option(
-        0.4,
-        "--page-delay-seconds",
-        min=0.0,
-        help="Delay in seconds between timeline pagination requests.",
-    ),
-    thread_parent_limit: int = typer.Option(
-        DEFAULT_THREAD_PARENT_LIMIT,
-        "--thread-parent-limit",
-        min=0,
-        help="Max parent-chain context tweets hydrated for reply threads (0 disables).",
-    ),
-    thread_replies_limit: int = typer.Option(
-        DEFAULT_THREAD_REPLIES_LIMIT,
-        "--thread-replies-limit",
-        min=0,
-        help="Max recursive thread replies to add across conversations (0 disables).",
-    ),
-    thread_other_replies_limit: int = typer.Option(
-        DEFAULT_THREAD_OTHER_REPLIES_LIMIT,
-        "--thread-other-replies-limit",
-        min=0,
-        help="Max replies authored by non-target accounts to include (0 excludes them).",
-    ),
-    wait_on_rate_limit: bool = typer.Option(
-        True,
-        "--wait-on-rate-limit/--no-wait-on-rate-limit",
-        help="Automatically wait and retry when X returns rate limit (429).",
-    ),
-    rate_limit_wait_seconds: int = typer.Option(
-        900,
-        "--rate-limit-wait-seconds",
-        min=1,
-        help="Fallback wait in seconds for 429 when reset time is unavailable.",
-    ),
-    rate_limit_poll_seconds: int = typer.Option(
-        30,
-        "--rate-limit-poll-seconds",
-        min=1,
-        help="How often to print wait progress during a 429 sleep window.",
-    ),
-    max_rate_limit_wait_seconds: int = typer.Option(
-        1800,
-        "--max-rate-limit-wait-seconds",
-        min=1,
-        help="Maximum wait duration in seconds per 429 event.",
-    ),
-    max_rate_limit_retries: int = typer.Option(
-        30,
-        "--max-rate-limit-retries",
-        min=1,
-        help="Maximum 429 retries per account before the run stops.",
-    ),
+def run_timeline_ingestion(
+    *,
+    account: str | None,
+    from_sources: bool,
+    home_latest: bool,
+    since: str,
+    cookies_file: Path = Path("cookies.json"),
+    limit: int = DEFAULT_IMPORT_TIMELINE,
+    timeline_file: Path = DEFAULT_TIMELINE_PATH,
+    sources_file: Path = DEFAULT_SOURCES_PATH,
+    slow_fetch_seconds: float = DEFAULT_SLOW_FETCH_SECONDS,
+    page_delay_seconds: float = DEFAULT_PAGE_DELAY_SECONDS,
+    thread_parent_limit: int = DEFAULT_THREAD_PARENT_LIMIT,
+    thread_replies_limit: int = DEFAULT_THREAD_REPLIES_LIMIT,
+    thread_other_replies_limit: int = DEFAULT_THREAD_OTHER_REPLIES_LIMIT,
+    wait_on_rate_limit: bool = True,
+    rate_limit_wait_seconds: int = DEFAULT_RATE_LIMIT_WAIT_SECONDS,
+    rate_limit_poll_seconds: int = DEFAULT_RATE_LIMIT_POLL_SECONDS,
+    max_rate_limit_wait_seconds: int = DEFAULT_MAX_RATE_LIMIT_WAIT_SECONDS,
+    max_rate_limit_retries: int = DEFAULT_MAX_RATE_LIMIT_RETRIES,
 ) -> None:
-    """Ingest posts, replies, and retweets since a datetime."""
+    """Run timeline ingestion with concrete Python defaults."""
 
     active_modes = sum((bool(account), from_sources, home_latest))
     if active_modes > 1:
@@ -740,4 +661,134 @@ def timeline(
         merge_result_added=merge_result.added,
         merge_result_duplicates=merge_result.skipped_duplicates,
         timeline_file=timeline_file,
+    )
+
+
+def timeline(
+    account: str | None = typer.Option(
+        None,
+        "-a",
+        "--account",
+        help=(
+            "X account handle (or x.com URL) to scrape. "
+            "Required unless --from-sources or --home-latest is used."
+        ),
+    ),
+    from_sources: bool = typer.Option(
+        False,
+        "--from-sources",
+        help="Ingest timelines for every handle in sources file.",
+    ),
+    home_latest: bool = typer.Option(
+        False,
+        "--home-latest",
+        help="Ingest authenticated Home -> Following latest timeline.",
+    ),
+    since: str = typer.Option(
+        ...,
+        "--since",
+        help="Include posts, replies, and retweets since this ISO datetime (UTC if timezone omitted).",
+    ),
+    cookies_file: Path = typer.Option(
+        Path("cookies.json"),
+        "--cookies-file",
+        help="Twikit cookies file for authenticated scraping.",
+    ),
+    limit: int = typer.Option(
+        DEFAULT_IMPORT_TIMELINE,
+        "--limit",
+        min=1,
+        max=IMPORT_TIMELINE_LIMIT,
+        help="Maximum number of timeline entries to ingest in this run.",
+    ),
+    timeline_file: Path = typer.Option(
+        DEFAULT_TIMELINE_PATH,
+        "--timeline-file",
+        help="Where timeline entries are stored.",
+    ),
+    sources_file: Path = typer.Option(
+        DEFAULT_SOURCES_PATH,
+        "--sources-file",
+        help="Where source handles are stored (used with --from-sources).",
+    ),
+    slow_fetch_seconds: float = typer.Option(
+        DEFAULT_SLOW_FETCH_SECONDS,
+        "--slow-fetch-seconds",
+        min=0.0,
+        help="Delay in seconds between accounts when using --from-sources.",
+    ),
+    page_delay_seconds: float = typer.Option(
+        DEFAULT_PAGE_DELAY_SECONDS,
+        "--page-delay-seconds",
+        min=0.0,
+        help="Delay in seconds between timeline pagination requests.",
+    ),
+    thread_parent_limit: int = typer.Option(
+        DEFAULT_THREAD_PARENT_LIMIT,
+        "--thread-parent-limit",
+        min=0,
+        help="Max parent-chain context tweets hydrated for reply threads (0 disables).",
+    ),
+    thread_replies_limit: int = typer.Option(
+        DEFAULT_THREAD_REPLIES_LIMIT,
+        "--thread-replies-limit",
+        min=0,
+        help="Max recursive thread replies to add across conversations (0 disables).",
+    ),
+    thread_other_replies_limit: int = typer.Option(
+        DEFAULT_THREAD_OTHER_REPLIES_LIMIT,
+        "--thread-other-replies-limit",
+        min=0,
+        help="Max replies authored by non-target accounts to include (0 excludes them).",
+    ),
+    wait_on_rate_limit: bool = typer.Option(
+        True,
+        "--wait-on-rate-limit/--no-wait-on-rate-limit",
+        help="Automatically wait and retry when X returns rate limit (429).",
+    ),
+    rate_limit_wait_seconds: int = typer.Option(
+        DEFAULT_RATE_LIMIT_WAIT_SECONDS,
+        "--rate-limit-wait-seconds",
+        min=1,
+        help="Fallback wait in seconds for 429 when reset time is unavailable.",
+    ),
+    rate_limit_poll_seconds: int = typer.Option(
+        DEFAULT_RATE_LIMIT_POLL_SECONDS,
+        "--rate-limit-poll-seconds",
+        min=1,
+        help="How often to print wait progress during a 429 sleep window.",
+    ),
+    max_rate_limit_wait_seconds: int = typer.Option(
+        DEFAULT_MAX_RATE_LIMIT_WAIT_SECONDS,
+        "--max-rate-limit-wait-seconds",
+        min=1,
+        help="Maximum wait duration in seconds per 429 event.",
+    ),
+    max_rate_limit_retries: int = typer.Option(
+        DEFAULT_MAX_RATE_LIMIT_RETRIES,
+        "--max-rate-limit-retries",
+        min=1,
+        help="Maximum 429 retries per account before the run stops.",
+    ),
+) -> None:
+    """Ingest posts, replies, and retweets since a datetime."""
+    run_timeline_ingestion(
+        account=account,
+        from_sources=from_sources,
+        home_latest=home_latest,
+        since=since,
+        cookies_file=cookies_file,
+        limit=limit,
+        timeline_file=timeline_file,
+        sources_file=sources_file,
+        slow_fetch_seconds=slow_fetch_seconds,
+        page_delay_seconds=page_delay_seconds,
+        thread_parent_limit=thread_parent_limit,
+        thread_replies_limit=thread_replies_limit,
+        thread_other_replies_limit=thread_other_replies_limit,
+        wait_on_rate_limit=wait_on_rate_limit,
+        rate_limit_wait_seconds=rate_limit_wait_seconds,
+        rate_limit_poll_seconds=rate_limit_poll_seconds,
+        max_rate_limit_wait_seconds=max_rate_limit_wait_seconds,
+        max_rate_limit_retries=max_rate_limit_retries,
     )

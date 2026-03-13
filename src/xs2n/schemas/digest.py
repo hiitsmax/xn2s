@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -205,6 +205,41 @@ class Issue(BaseModel):
     title: str
     summary: str
     thread_ids: list[str] = Field(default_factory=list)
+
+
+class PhaseTrace(BaseModel):
+    name: str
+    status: Literal["completed", "failed"]
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int
+    input_count: int = 0
+    output_count: int = 0
+    artifact_paths: list[str] = Field(default_factory=list)
+    counts: dict[str, int] = Field(default_factory=dict)
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+class LLMCallTrace(BaseModel):
+    call_id: int
+    phase: str
+    item_id: str | None = None
+    schema_name: str
+    model: str
+    credential_source: str | None = None
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int
+    prompt: str
+    payload: Any
+    output_text: str | None = None
+    result: Any | None = None
+    response_id: str | None = None
+    request_id: str | None = None
+    usage: Any | None = None
+    error_type: str | None = None
+    error_message: str | None = None
 
 
 @dataclass(slots=True)

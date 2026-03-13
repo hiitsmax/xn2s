@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
+from pathlib import Path
 import re
 from typing import Any, TypeVar, cast
 
 from openai import BadRequestError, OpenAI
 from pydantic import BaseModel
+
+from xs2n.schemas.digest import LLMCallTrace
 
 from .credentials import resolve_digest_credentials
 from .helpers import to_jsonable
@@ -52,6 +56,23 @@ def _strict_json_schema(fragment: Any) -> Any:
     return normalized
 
 
+def _phase_name(schema: type[BaseModel]) -> str:
+    if schema.__name__ == "CategorizationResult":
+        return "categorize_threads"
+    if schema.__name__ == "FilterResult":
+        return "filter_threads"
+    if schema.__name__ == "ThreadProcessResult":
+        return "process_threads"
+    if schema.__name__ == "IssueAssignmentResult":
+        return "group_issues"
+    return "llm"
+
+
+def _item_id(payload: Any) -> str | None:
+    thread = payload.get("thread") if isinstance(payload, dict) else payload
+    return getattr(thread, "thread_id", None)
+
+
 class DigestLLM:
     def __init__(
         self,
@@ -66,6 +87,70 @@ class DigestLLM:
             api_key=credentials.token,
             base_url=credentials.base_url,
         )
+        self._trace_dir: Path | None = None
+        self._call_index = 0
+
+    @property
+    def source(self) -> str:
+        return self._source
+
+    def configure_run_logging(self, *, run_dir: Path) -> None:
+        self._trace_dir = run_dir / "llm_calls"
+        self._trace_dir.mkdir(parents=True, exist_ok=True)
+        self._call_index = 0
+
+    def _write_call_trace(
+        self,
+        *,
+        prompt: str,
+        payload: Any,
+        schema: type[BaseModel],
+        started_at: datetime,
+        finished_at: datetime,
+        output_text: str | None,
+        result: BaseModel | None,
+        response_id: str | None,
+        request_id: str | None,
+        usage: Any,
+        error: RuntimeError | None,
+    ) -> None:
+        if self._trace_dir is None:
+            return
+
+        self._call_index += 1
+        trace = LLMCallTrace(
+            call_id=self._call_index,
+            phase=_phase_name(schema),
+            item_id=_item_id(payload),
+            schema_name=schema.__name__,
+            model=self._model,
+            credential_source=self._source,
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_ms=max(
+                int((finished_at - started_at).total_seconds() * 1000),
+                0,
+            ),
+            prompt=prompt,
+            payload=to_jsonable(payload),
+            output_text=output_text,
+            result=to_jsonable(result),
+            response_id=response_id,
+            request_id=request_id,
+            usage=to_jsonable(usage),
+            error_type=type(error).__name__ if error is not None else None,
+            error_message=str(error) if error is not None else None,
+        )
+        item_suffix = re.sub(
+            r"[^a-zA-Z0-9_.-]+",
+            "_",
+            trace.item_id or f"call_{self._call_index:03d}",
+        ).strip("_")
+        filename = f"{self._call_index:03d}_{trace.phase}_{item_suffix}.json"
+        self._trace_dir.joinpath(filename).write_text(
+            f"{trace.model_dump_json(indent=2)}\n",
+            encoding="utf-8",
+        )
 
     def run(
         self,
@@ -74,9 +159,15 @@ class DigestLLM:
         payload: Any,
         schema: type[SchemaT],
     ) -> SchemaT:
+        started_at = datetime.now(timezone.utc)
         payload_json = json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2)
         schema_json = _strict_json_schema(schema.model_json_schema())
         output_text: str | None = None
+        response_id: str | None = None
+        request_id: str | None = None
+        usage: Any = None
+        parsed_result: SchemaT | None = None
+        runtime_error: RuntimeError | None = None
 
         try:
             with self._client.responses.stream(
@@ -107,29 +198,58 @@ class DigestLLM:
                     if event.type == "response.output_text.done":
                         output_text = event.text
                 final_response = stream.get_final_response()
+                response_id = getattr(final_response, "id", None)
+                request_id = getattr(final_response, "_request_id", None)
+                usage = getattr(final_response, "usage", None)
         except BadRequestError as error:
             message = str(error)
             if (
                 self._source.startswith("codex_auth")
                 and "not supported when using Codex with a ChatGPT account" in message
             ):
-                raise RuntimeError(
+                runtime_error = RuntimeError(
                     f"Model `{self._model}` is not supported via Codex auth. "
                     "Use a Codex-supported GPT-5 model such as `gpt-5.4`, "
                     "or export OPENAI_API_KEY for standard OpenAI API models."
-                ) from error
-            raise RuntimeError(f"Digest model request failed: {message}") from error
+                )
+            else:
+                runtime_error = RuntimeError(
+                    f"Digest model request failed: {message}"
+                )
         except Exception as error:
-            raise RuntimeError(f"Digest model request failed: {error}") from error
+            runtime_error = RuntimeError(f"Digest model request failed: {error}")
 
-        resolved_text = output_text or _extract_text_from_response(final_response)
-        if not resolved_text:
-            raise RuntimeError("Digest model returned no structured output text.")
+        if runtime_error is None:
+            resolved_text = output_text or _extract_text_from_response(final_response)
+            if not resolved_text:
+                runtime_error = RuntimeError(
+                    "Digest model returned no structured output text."
+                )
+            else:
+                output_text = resolved_text
+                try:
+                    parsed_result = cast(SchemaT, schema.model_validate_json(resolved_text))
+                except Exception as error:
+                    runtime_error = RuntimeError(
+                        "Digest model returned invalid structured output: "
+                        f"{error}. Raw output: {resolved_text}"
+                    )
 
-        try:
-            return cast(SchemaT, schema.model_validate_json(resolved_text))
-        except Exception as error:
-            raise RuntimeError(
-                "Digest model returned invalid structured output: "
-                f"{error}. Raw output: {resolved_text}"
-            ) from error
+        finished_at = datetime.now(timezone.utc)
+        self._write_call_trace(
+            prompt=prompt,
+            payload=payload,
+            schema=schema,
+            started_at=started_at,
+            finished_at=finished_at,
+            output_text=output_text,
+            result=parsed_result,
+            response_id=response_id,
+            request_id=request_id,
+            usage=usage,
+            error=runtime_error,
+        )
+
+        if runtime_error is not None:
+            raise runtime_error
+        return cast(SchemaT, parsed_result)

@@ -253,3 +253,18 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added `xs2n report latest --home-latest` so one command can ingest platform feed data and render a digest run.
 - Kept default `report latest` behavior unchanged (`--from-sources`) to avoid breaking existing cron flows.
 - Added deterministic tests for home-latest importer behavior, timeline mode validation/routing, and report latest home-latest orchestration.
+
+## Report Latest Reliability And Digest Run Tracing (2026-03-13)
+
+- Fixed a real production bug in `xs2n report latest`: the command had been calling the Typer-decorated `timeline(...)` function directly, which leaked `typer.Option(...)` defaults into runtime code and crashed with `OptionInfo` type errors on live runs.
+- Extracted a plain `run_timeline_ingestion(...)` helper in `src/xs2n/cli/timeline.py` so CLI parsing and reusable Python runtime logic are now separate and the end-to-end report flow can safely reuse ingestion.
+- Added richer digest run observability without changing the existing semantic snapshot files:
+  - `taxonomy.json` freezes the taxonomy used for the run,
+  - `phases.json` records per-phase timing, counts, artifacts, and failures,
+  - `llm_calls/*.json` records per-call prompt/payload/result plus response metadata,
+  - `run.json` is now written incrementally with `running`, `completed`, or `failed` status.
+- Added regression coverage for the new plain ingestion helper defaults and for partial-failure digest artifacts.
+- Verified the repaired boundary with a real `xs2n report latest --home-latest --lookback-hours 24 --model gpt-5.4` run: it got past the old crash, ingested Home->Following items, and started writing trace artifacts immediately.
+- Verified a completed real-model digest run on a trimmed timeline subset; the run folder now explains both execution flow and model decisions well enough to audit why threads were dropped.
+- New fragility discovered during live verification: `xs2n report latest` still digests the whole accumulated `data/timeline.json` after ingesting new items, so long-lived timeline files can make a “latest” run much larger and slower than the lookback window suggests.
+- New fragility discovered during manual interruption: externally terminated runs can leave `run.json` in `running` state because a process-level `SIGTERM` bypasses the normal Python exception cleanup path.

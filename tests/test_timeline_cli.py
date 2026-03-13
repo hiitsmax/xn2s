@@ -9,9 +9,19 @@ import typer
 from twikit.errors import Forbidden, TooManyRequests
 
 from xs2n.cli.timeline import (
+    DEFAULT_IMPORT_TIMELINE,
+    DEFAULT_MAX_RATE_LIMIT_RETRIES,
+    DEFAULT_MAX_RATE_LIMIT_WAIT_SECONDS,
+    DEFAULT_PAGE_DELAY_SECONDS,
+    DEFAULT_RATE_LIMIT_POLL_SECONDS,
+    DEFAULT_RATE_LIMIT_WAIT_SECONDS,
+    DEFAULT_THREAD_OTHER_REPLIES_LIMIT,
+    DEFAULT_THREAD_PARENT_LIMIT,
+    DEFAULT_THREAD_REPLIES_LIMIT,
     import_home_latest_with_recovery,
     import_timeline_with_recovery,
     parse_since_datetime,
+    run_timeline_ingestion,
     timeline,
 )
 from xs2n.profile.types import TimelineEntry, TimelineFetchResult, TimelineMergeResult
@@ -23,10 +33,10 @@ DEFAULT_TIMELINE_OPTIONS = {
     "thread_replies_limit": 0,
     "thread_other_replies_limit": 0,
     "wait_on_rate_limit": True,
-    "rate_limit_wait_seconds": 900,
-    "rate_limit_poll_seconds": 30,
-    "max_rate_limit_wait_seconds": 1800,
-    "max_rate_limit_retries": 30,
+    "rate_limit_wait_seconds": DEFAULT_RATE_LIMIT_WAIT_SECONDS,
+    "rate_limit_poll_seconds": DEFAULT_RATE_LIMIT_POLL_SECONDS,
+    "max_rate_limit_wait_seconds": DEFAULT_MAX_RATE_LIMIT_WAIT_SECONDS,
+    "max_rate_limit_retries": DEFAULT_MAX_RATE_LIMIT_RETRIES,
 }
 
 
@@ -274,6 +284,80 @@ def test_timeline_rejects_from_sources_with_home_latest(tmp_path: Path) -> None:
             sources_file=tmp_path / "sources.json",
             **DEFAULT_TIMELINE_OPTIONS,
         )
+
+
+def test_run_timeline_ingestion_from_sources_uses_python_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sources_file = tmp_path / "sources.json"
+    sources_file.write_text(
+        json.dumps({"profiles": [{"handle": "alpha"}]}),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_import(**kwargs):
+        captured.update(kwargs)
+        return TimelineFetchResult(entries=[], scanned=0, skipped_old=0)
+
+    monkeypatch.setattr("xs2n.cli.timeline.import_timeline_with_recovery", fake_import)
+
+    run_timeline_ingestion(
+        account=None,
+        from_sources=True,
+        home_latest=False,
+        since="2026-03-01T00:00:00Z",
+        cookies_file=tmp_path / "cookies.json",
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=sources_file,
+    )
+
+    assert captured["page_delay_seconds"] == DEFAULT_PAGE_DELAY_SECONDS
+    assert captured["thread_parent_limit"] == DEFAULT_THREAD_PARENT_LIMIT
+    assert captured["thread_replies_limit"] == DEFAULT_THREAD_REPLIES_LIMIT
+    assert captured["thread_other_replies_limit"] == DEFAULT_THREAD_OTHER_REPLIES_LIMIT
+    assert captured["limit"] == DEFAULT_IMPORT_TIMELINE
+    assert captured["since_datetime"] == datetime(2026, 3, 1, tzinfo=timezone.utc)
+
+
+def test_run_timeline_ingestion_home_latest_uses_python_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_fetch(**kwargs):
+        captured.update(kwargs)
+        return _fetch_result()
+
+    monkeypatch.setattr(
+        "xs2n.cli.timeline._fetch_home_latest_with_rate_limit_retries",
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.timeline.merge_timeline_entries",
+        lambda entries, path: TimelineMergeResult(added=len(entries), skipped_duplicates=0),
+    )
+
+    run_timeline_ingestion(
+        account=None,
+        from_sources=False,
+        home_latest=True,
+        since="2026-03-01T00:00:00Z",
+        cookies_file=tmp_path / "cookies.json",
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+    )
+
+    assert captured["page_delay_seconds"] == DEFAULT_PAGE_DELAY_SECONDS
+    assert captured["wait_on_rate_limit"] is True
+    assert captured["rate_limit_wait_seconds"] == DEFAULT_RATE_LIMIT_WAIT_SECONDS
+    assert captured["rate_limit_poll_seconds"] == DEFAULT_RATE_LIMIT_POLL_SECONDS
+    assert captured["max_rate_limit_wait_seconds"] == DEFAULT_MAX_RATE_LIMIT_WAIT_SECONDS
+    assert captured["max_rate_limit_retries"] == DEFAULT_MAX_RATE_LIMIT_RETRIES
+    assert captured["limit"] == DEFAULT_IMPORT_TIMELINE
+    assert captured["since_datetime"] == datetime(2026, 3, 1, tzinfo=timezone.utc)
 
 
 def test_timeline_from_sources_ingests_unique_valid_handles(

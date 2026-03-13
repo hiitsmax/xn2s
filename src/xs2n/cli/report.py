@@ -12,7 +12,7 @@ from xs2n.agents import (
     DEFAULT_TAXONOMY_PATH,
     run_digest_report,
 )
-from xs2n.cli.timeline import parse_since_datetime, timeline
+from xs2n.cli.timeline import parse_since_datetime, run_timeline_ingestion
 from xs2n.profile.timeline import DEFAULT_IMPORT_TIMELINE, IMPORT_TIMELINE_LIMIT
 from xs2n.storage import DEFAULT_SOURCES_PATH, DEFAULT_TIMELINE_PATH
 
@@ -217,7 +217,7 @@ def latest(
         f"Ingesting {ingest_label} before digest generation "
         f"(since {since_value})."
     )
-    timeline(
+    run_timeline_ingestion(
         account=None,
         from_sources=not home_latest,
         home_latest=home_latest,

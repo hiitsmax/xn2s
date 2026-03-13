@@ -190,7 +190,7 @@ def test_report_latest_runs_timeline_then_digest(
     timeline_calls: list[dict[str, object]] = []
     digest_calls: list[dict[str, object]] = []
 
-    def fake_timeline(**kwargs):
+    def fake_run_timeline_ingestion(**kwargs):
         timeline_calls.append(kwargs)
 
     def fake_run_digest_report(**kwargs):
@@ -203,7 +203,10 @@ def test_report_latest_runs_timeline_then_digest(
             digest_path=tmp_path / "report_runs" / "digest.md",
         )
 
-    monkeypatch.setattr("xs2n.cli.report.timeline", fake_timeline)
+    monkeypatch.setattr(
+        "xs2n.cli.report.run_timeline_ingestion",
+        fake_run_timeline_ingestion,
+    )
     monkeypatch.setattr("xs2n.cli.report.run_digest_report", fake_run_digest_report)
 
     latest(
@@ -240,7 +243,7 @@ def test_report_latest_routes_home_latest_mode(
     digest_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
-        "xs2n.cli.report.timeline",
+        "xs2n.cli.report.run_timeline_ingestion",
         lambda **kwargs: timeline_calls.append(kwargs),
     )
     monkeypatch.setattr(
@@ -282,7 +285,7 @@ def test_report_latest_surfaces_runtime_error(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr("xs2n.cli.report.timeline", lambda **kwargs: None)
+    monkeypatch.setattr("xs2n.cli.report.run_timeline_ingestion", lambda **kwargs: None)
     monkeypatch.setattr(
         "xs2n.cli.report.run_digest_report",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("digest failed")),

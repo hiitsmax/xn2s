@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 import json
 import math
 from pathlib import Path
@@ -86,6 +87,8 @@ DEFAULT_TAXONOMY_DOC = {
 def to_jsonable(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
+    if isinstance(value, datetime | date):
+        return value.isoformat()
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, list):
