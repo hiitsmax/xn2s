@@ -22,8 +22,8 @@ The visible proof is:
 - [x] (2026-03-15 22:43Z) Added bounded parallel execution to the `categorize_threads`, `filter_threads`, and `process_threads` step modules through a shared helper in `src/xs2n/agents/digest/helpers.py`.
 - [x] (2026-03-15 22:45Z) Threaded `parallel_workers` through `run_digest_report(...)`, the `xs2n report digest` CLI, and the `xs2n report latest` CLI, with a default of `4` and run-level artifact logging in `run.json`.
 - [x] (2026-03-15 22:48Z) Extended digest and CLI tests to cover the new parameter, worker-count recording, and ordering preservation under delayed fake-LLM calls.
-- [ ] Run the full pytest suite and record the final result in this document.
-- [ ] Commit the feature with a conventional commit message.
+- [x] (2026-03-15 22:49Z) Ran the full pytest suite and confirmed the repository stayed green after the concurrency change.
+- [x] (2026-03-15 22:50Z) Committed the feature as `9b8d28a` with `feat(report): add configurable digest worker pools`.
 
 ## Surprises & Discoveries
 
@@ -52,7 +52,7 @@ The visible proof is:
 
 ## Outcomes & Retrospective
 
-The intended runtime shape is implemented: the first three digest stages now support bounded concurrency and the chosen worker count is visible in run artifacts. The remaining work is operational closure: finish the full test run and record the final commit.
+The intended runtime shape is implemented. The first three digest stages now support bounded concurrency, both report commands expose `--parallel-workers`, and each run records the chosen worker count in `run.json`. Validation is complete with green focused and full test runs, and the feature is committed as `9b8d28a`.
 
 ## Context and Orientation
 
@@ -111,6 +111,9 @@ Actual validation completed so far:
     uv run pytest tests/test_report_cli.py tests/test_report_digest.py
     20 passed, 215 warnings in 0.69s
 
+    uv run pytest
+    95 passed, 215 warnings in 7.27s
+
 ## Validation and Acceptance
 
 Acceptance is behavioral:
@@ -123,7 +126,7 @@ Acceptance is behavioral:
 Current status:
 
 1. Passed.
-2. Pending.
+2. Passed.
 3. Implemented and covered by unit tests.
 4. Implemented and covered by unit tests.
 
@@ -170,3 +173,5 @@ The CLI command functions in `src/xs2n/cli/report.py` must each expose:
 with `min=1` validation at the Typer layer.
 
 Revision note (2026-03-15): Created this plan while implementing configurable per-stage concurrency for the digest pipeline so the design, progress, and validation remain restartable from one file.
+
+Revision note (2026-03-15, later): Updated the plan after the full pytest run and final feature commit so the progress log and acceptance state match the committed repository.
