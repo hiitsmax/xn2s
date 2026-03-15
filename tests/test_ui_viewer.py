@@ -16,11 +16,11 @@ def test_render_plain_text_html_escapes_markup() -> None:
         metadata={"cwd": "/tmp/demo"},
     )
 
-    assert "<b>command output</b>" in html
+    assert '<b><font face="Helvetica">command output</font></b>' in html
     assert "&lt;h1&gt;unsafe&lt;/h1&gt;" in html
     assert "<pre>" in html
     assert f'face="{OPENSTEP_FONT_FAMILY}"' in html
-    assert "/tmp/demo" in html
+    assert '<font face="Helvetica">/tmp/demo</font>' in html
 
 
 def test_render_artifact_html_formats_markdown(
@@ -55,8 +55,8 @@ def test_render_artifact_html_formats_markdown(
 
     html = render_artifact_html(artifact)
 
-    assert "<h1>Digest</h1>" in html
-    assert "<p>Body paragraph.</p>" in html
+    assert '<h1><font face="Helvetica">Digest</font></h1>' in html
+    assert '<p><font face="Helvetica">Body paragraph.</font></p>' in html
     assert 'width="98%"' in html
     assert 'cellpadding="12"' in html
     assert f'face="{OPENSTEP_FONT_FAMILY}"' in html

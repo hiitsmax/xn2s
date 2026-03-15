@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 from typing import Mapping
 
 from xs2n.ui.artifacts import ArtifactRecord, load_artifact_text
@@ -18,6 +19,22 @@ MARKDOWN_EXTENSIONS = [
 ]
 MARKDOWN_BODY_WIDTH = "98%"
 MARKDOWN_BODY_PADDING = 12
+OPENSTEP_FONT_BLOCK_TAGS = (
+    "blockquote",
+    "dd",
+    "dt",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "li",
+    "p",
+    "pre",
+    "td",
+    "th",
+)
 
 
 def render_artifact_html(artifact: ArtifactRecord) -> str:
@@ -65,8 +82,8 @@ def _wrap_html_document(
         metadata_rows = "".join(
             (
                 "<tr>"
-                f"<td width=\"96\"><b>{html.escape(label)}:</b></td>"
-                f"<td>{html.escape(value)}</td>"
+                f"<td width=\"96\"><b>{_wrap_openstep_face(html.escape(label))}:</b></td>"
+                f"<td>{_wrap_openstep_face(html.escape(value))}</td>"
                 "</tr>"
             )
             for label, value in metadata.items()
@@ -89,7 +106,7 @@ def _wrap_html_document(
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"8\" "
         "bgcolor=\"#cfc8b6\">"
         "<tr>"
-        f"<td><b>{html.escape(title)}</b></td>"
+        f"<td><b>{_wrap_openstep_face(html.escape(title))}</b></td>"
         "</tr>"
         "</table>"
         "<p></p>"
@@ -112,6 +129,8 @@ def _render_markdown_html(markdown_text: str) -> str:
     )
     if not rendered:
         return _render_plain_text_block(markdown_text)
+
+    rendered = _apply_openstep_font_family(rendered)
 
     return (
         f"<table width=\"{MARKDOWN_BODY_WIDTH}\" align=\"center\" "
@@ -136,3 +155,28 @@ def _render_plain_text_block(text: str) -> str:
         "</tr>"
         "</table>"
     )
+
+
+def _apply_openstep_font_family(rendered_html: str) -> str:
+    tag_pattern = "|".join(OPENSTEP_FONT_BLOCK_TAGS)
+    opening_pattern = re.compile(
+        rf"<({tag_pattern})(\s[^>]*)?>",
+        flags=re.IGNORECASE,
+    )
+    closing_pattern = re.compile(
+        rf"</({tag_pattern})>",
+        flags=re.IGNORECASE,
+    )
+    rendered_html = opening_pattern.sub(
+        lambda match: f"{match.group(0)}{_openstep_face_tag()}",
+        rendered_html,
+    )
+    return closing_pattern.sub("</font></\\1>", rendered_html)
+
+
+def _openstep_face_tag() -> str:
+    return f'<font face="{OPENSTEP_FONT_FAMILY}">'
+
+
+def _wrap_openstep_face(text: str) -> str:
+    return f"{_openstep_face_tag()}{text}</font>"
