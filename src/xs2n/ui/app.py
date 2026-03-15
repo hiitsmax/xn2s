@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, Queue
+import signal
 import subprocess
 import sys
 import threading
@@ -31,6 +33,31 @@ STATUS_HEIGHT = 24
 LEFT_PANE_WIDTH = 380
 MIDDLE_PANE_WIDTH = 340
 DETAILS_HEIGHT = 140
+
+
+def _run_browser_event_loop(*, close_browser: Callable[[], None]) -> None:
+    close_requested = False
+    previous_sigint_handler = signal.getsignal(signal.SIGINT)
+
+    def request_close(_signum, _frame) -> None:  # noqa: ANN001
+        nonlocal close_requested
+        close_requested = True
+
+    def close_on_idle(_data=None) -> None:  # noqa: ANN001
+        nonlocal close_requested
+        if not close_requested:
+            return
+
+        close_requested = False
+        close_browser()
+
+    signal.signal(signal.SIGINT, request_close)
+    fltk.Fl.add_idle(close_on_idle)
+    try:
+        fltk.Fl.run()
+    finally:
+        fltk.Fl.remove_idle(close_on_idle)
+        signal.signal(signal.SIGINT, previous_sigint_handler)
 
 
 @dataclass(slots=True)
@@ -363,8 +390,12 @@ class ArtifactBrowserWindow:
             args=["report", "latest", "--lookback-hours", "24"],
         )
 
-    def _on_quit_clicked(self, widget=None, data=None) -> None:  # noqa: ANN001
+    def close_browser(self) -> None:
         self.window.hide()
+        fltk.Fl.hide_all_windows()
+
+    def _on_quit_clicked(self, widget=None, data=None) -> None:  # noqa: ANN001
+        self.close_browser()
 
     def _on_run_selected(self, widget, data=None) -> None:  # noqa: ANN001
         selection = widget.value()
@@ -435,4 +466,4 @@ def run_artifact_browser(
         initial_run_id=initial_run_id,
     )
     browser.show()
-    fltk.Fl.run()
+    _run_browser_event_loop(close_browser=browser.close_browser)

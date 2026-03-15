@@ -254,6 +254,12 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Kept the HTML viewer on legacy `Fl_Help_View`-friendly markup by using explicit `<font face=\"Helvetica\">` tags instead of relying on modern CSS support.
 - Added regression coverage for both the FLTK font-slot remapping logic and the viewer HTML output.
 
+## UI Terminal Interrupt Shutdown (2026-03-16)
+
+- Reproduced a concrete `pyfltk` quirk on macOS: pressing `Ctrl+C` while `Fl.run()` is active can surface `KeyboardInterrupt` from an idle callback without actually closing the native window.
+- Added an explicit `SIGINT` handler around the UI event loop that defers the shutdown to the next FLTK idle tick, then closes the browser window cleanly.
+- Added a deterministic unit test for the signal-handler lifecycle so the CLI-launched desktop UI exits cleanly from the terminal without relying on manual verification alone.
+
 ## Digest Helper And Render Split (2026-03-07)
 
 - Moved shared digest utilities out of `src/xs2n/agents/digest/pipeline.py` into `src/xs2n/agents/digest/helpers.py`.
