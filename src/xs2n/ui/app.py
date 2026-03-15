@@ -16,9 +16,9 @@ from xs2n.ui.artifacts import (
     format_run_details,
     format_run_summary,
     list_run_artifacts,
-    load_artifact_text,
     scan_runs,
 )
+from xs2n.ui.viewer import render_artifact_html, render_plain_text_html
 
 
 WINDOW_WIDTH = 1480
@@ -157,17 +157,15 @@ class ArtifactBrowserWindow:
         self.run_details.textfont(fltk.FL_COURIER)
         self.run_details.textsize(13)
 
-        self.viewer = fltk.Fl_Text_Display(
+        self.viewer = fltk.Fl_Help_View(
             right_pane_x,
             viewer_y,
             right_pane_width,
             viewer_height,
             "Viewer",
         )
-        self.viewer_buffer = fltk.Fl_Text_Buffer()
-        self.viewer.buffer(self.viewer_buffer)
         self.viewer.box(fltk.FL_BORDER_BOX)
-        self.viewer.textfont(fltk.FL_COURIER)
+        self.viewer.textfont(fltk.FL_HELVETICA)
         self.viewer.textsize(14)
 
         self.details_group.end()
@@ -206,10 +204,17 @@ class ArtifactBrowserWindow:
                 f"No report runs found under {self.data_dir}.\n"
                 "Run `xs2n report digest` or `xs2n report latest` to create one."
             )
-            self.viewer_buffer.text(
-                "No runs discovered yet.\n\n"
-                "This browser scans every data/report_runs* directory and reads "
-                "whatever artifacts already exist on disk.\n"
+            self._set_viewer_html(
+                render_plain_text_html(
+                    title="No Runs Discovered Yet",
+                    body=(
+                        "This browser scans every data/report_runs* directory "
+                        "and reads whatever artifacts already exist on disk.\n\n"
+                        "Run `xs2n report digest` or `xs2n report latest` to "
+                        "create a run folder."
+                    ),
+                    metadata={"data_dir": str(self.data_dir)},
+                )
             )
             self.status_output.value(
                 f"No run folders found in {self.data_dir}."
@@ -242,8 +247,12 @@ class ArtifactBrowserWindow:
 
         if not self.artifacts:
             self.selected_artifact_name = None
-            self.viewer_buffer.text(
-                f"{run.run_id} has no visible artifacts yet.\n"
+            self._set_viewer_html(
+                render_plain_text_html(
+                    title=f"{run.run_id} Has No Visible Artifacts Yet",
+                    body="This run folder exists, but no inspectable artifacts were found.",
+                    metadata={"run_id": run.run_id},
+                )
             )
             return
 
@@ -264,15 +273,7 @@ class ArtifactBrowserWindow:
     def _apply_selected_artifact(self, index: int) -> None:
         artifact = self.artifacts[index]
         self.selected_artifact_name = artifact.name
-        content = load_artifact_text(artifact.path)
-        header = [
-            f"path: {artifact.path}",
-            f"kind: {artifact.kind}",
-        ]
-        if artifact.phase_name is not None:
-            header.append(f"phase: {artifact.phase_name}")
-        header.append("")
-        self.viewer_buffer.text("\n".join(header) + content)
+        self._set_viewer_html(render_artifact_html(artifact))
         self.status_output.value(f"Viewing {artifact.name}.")
 
     def _start_command(self, *, label: str, args: list[str]) -> None:
@@ -285,8 +286,12 @@ class ArtifactBrowserWindow:
         command = [self.cli_executable, *args]
         self.running_label = label
         self.status_output.value(f"Running {label}...")
-        self.viewer_buffer.text(
-            f"$ {' '.join(command)}\n\nStarting background command...\n"
+        self._set_viewer_html(
+            render_plain_text_html(
+                title=f"Running {label}",
+                body=f"$ {' '.join(command)}\n\nStarting background command...\n",
+                metadata={"cwd": str(self.repo_root)},
+            )
         )
 
         def worker() -> None:
@@ -322,7 +327,13 @@ class ArtifactBrowserWindow:
             except Empty:
                 break
 
-            self.viewer_buffer.text(result.output)
+            self._set_viewer_html(
+                render_plain_text_html(
+                    title=result.label,
+                    body=result.output,
+                    metadata={"exit_code": str(result.returncode)},
+                )
+            )
             if result.returncode == 0:
                 self.status_output.value(f"{result.label} finished successfully.")
             else:
@@ -366,6 +377,11 @@ class ArtifactBrowserWindow:
         if argv0.exists():
             return str(argv0.resolve())
         return "xs2n"
+
+    def _set_viewer_html(self, html: str) -> None:
+        self.viewer.value(html)
+        self.viewer.topline(0)
+        self.viewer.leftline(0)
 
     @staticmethod
     def _style_browser(browser) -> None:  # noqa: ANN001

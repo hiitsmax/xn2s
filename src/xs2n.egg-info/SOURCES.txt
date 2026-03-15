@@ -46,6 +46,7 @@ src/xs2n/storage/timeline.py
 src/xs2n/ui/__init__.py
 src/xs2n/ui/app.py
 src/xs2n/ui/artifacts.py
+src/xs2n/ui/viewer.py
 tests/test_auth.py
 tests/test_auth_recovery.py
 tests/test_browser_cookies.py
@@ -59,3 +60,6 @@ tests/test_report_llm.py
 tests/test_timeline_cli.py
 tests/test_timeline_fetching.py
 tests/test_timeline_storage.py
+tests/test_ui_artifacts.py
+tests/test_ui_cli.py
+tests/test_ui_viewer.py

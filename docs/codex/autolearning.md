@@ -239,6 +239,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - treat the filesystem as the source of truth,
   - use `run.json` and `phases.json` when present,
   - tolerate old or interrupted runs that only contain a subset of files.
+- Kept the viewer FLTK-native by switching the right-hand pane to `Fl_Help_View` and converting `.md` artifacts to HTML at load time instead of embedding a browser engine.
 - Discovered a concrete macOS caveat during packaging research: `pyfltk` needs the native FLTK shared libraries from Homebrew, or imports fail with a missing `libfltk*.dylib` error.
 - Updated the user-facing docs to make the install path explicit:
   - `uv sync --extra gui`

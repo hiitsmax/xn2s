@@ -208,6 +208,8 @@ uv run xs2n ui --data-dir data
 
 The desktop browser is intentionally simple. It scans every `data/report_runs*` directory, shows the discovered run folders on the left, the available artifacts in the middle, and the selected file content on the right. It is read-only for artifact inspection, but it can stay aligned with the existing CLI by exposing refresh and run actions through the same command surface.
 
+Markdown artifacts such as `digest.md` now render as formatted documents in the right-hand pane instead of raw source text. JSON, logs, directories, and command output still render in a preformatted inspector view.
+
 If `pyfltk` fails to import on macOS with a missing `libfltk*.dylib` error, install Homebrew FLTK and retry:
 
 ```bash

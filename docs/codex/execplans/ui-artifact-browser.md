@@ -26,6 +26,7 @@ The visible proof is:
 - [x] (2026-03-15 23:22Z) Added focused tests in `tests/test_ui_cli.py` and `tests/test_ui_artifacts.py`.
 - [x] (2026-03-15 23:24Z) Updated `README.md` and `docs/codex/autolearning.md` with install and usage notes.
 - [x] (2026-03-15 23:26Z) Ran focused tests, the full pytest suite, a real pyFLTK import/bootstrap smoke, and an end-to-end `uv run xs2n ui` launch check.
+- [x] (2026-03-15 23:48Z) Upgraded the viewer pane from raw text-only output to FLTK-native HTML rendering for Markdown artifacts, while keeping JSON/log inspection preformatted and read-only.
 
 ## Surprises & Discoveries
 
@@ -55,8 +56,12 @@ The visible proof is:
   Rationale: the repository already stores real runs in `report_runs`, `report_runs_fake`, `report_runs_subset`, `report_runs_last24h`, and `report_runs_last24h_limit100`.
   Date/Author: 2026-03-15 / Codex
 
-- Decision: keep the GUI file-oriented and text-first in version one.
-  Rationale: rendering markdown and JSON as readable text is enough to inspect the pipeline output, while a richer document system would add complexity without helping the first milestone.
+- Decision: keep the GUI file-oriented and lightweight in version one.
+  Rationale: the browser should stay close to the artifacts on disk and avoid a heavier document system, while still rendering the highest-value artifact type, `digest.md`, in a friendlier way.
+  Date/Author: 2026-03-15 / Codex
+
+- Decision: render `.md` artifacts through `Fl_Help_View` using a lightweight Markdown-to-HTML conversion instead of embedding a browser widget.
+  Rationale: the GUI already depends on FLTK, and `Fl_Help_View` gives formatted digest rendering without adding Electron-style runtime weight or a second rendering stack.
   Date/Author: 2026-03-15 / Codex
 
 - Decision: use multiple focused subagents during implementation.
@@ -65,7 +70,7 @@ The visible proof is:
 
 ## Outcomes & Retrospective
 
-The feature is implemented and working. `xs2n ui` now opens a small desktop artifact browser, the optional dependency path is explicit, the scanner handles the messy real-world run history already present in the repository, and the GUI can trigger the existing CLI actions without inventing a second orchestration layer. The most important lesson was environmental rather than architectural: on macOS, the native FLTK runtime matters just as much as the Python wheel, so the docs and import error path had to make that obvious.
+The feature is implemented and working. `xs2n ui` now opens a small desktop artifact browser, the optional dependency path is explicit, the scanner handles the messy real-world run history already present in the repository, and the GUI can trigger the existing CLI actions without inventing a second orchestration layer. The newest refinement is that Markdown artifacts such as `digest.md` now render as formatted documents inside the same FLTK window instead of appearing as raw source text. The most important lesson was environmental rather than architectural: on macOS, the native FLTK runtime matters just as much as the Python wheel, so the docs and import error path had to make that obvious.
 
 ## Context and Orientation
 

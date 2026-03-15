@@ -14,6 +14,7 @@ Requires-Dist: pydantic>=2.10.6
 Provides-Extra: dev
 Requires-Dist: pytest>=8.3.0; extra == "dev"
 Provides-Extra: gui
+Requires-Dist: markdown>=3.8; extra == "gui"
 Requires-Dist: pyfltk>=1.4.4.0; extra == "gui"
 
 # xs2n
