@@ -55,6 +55,8 @@ def test_render_artifact_html_formats_markdown(
 
     assert "<h1>Digest</h1>" in html
     assert "<p>Body paragraph.</p>" in html
+    assert 'width="98%"' in html
+    assert 'cellpadding="12"' in html
     assert "render_digest" in html
     assert str(markdown_path) in html
 

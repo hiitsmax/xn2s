@@ -15,6 +15,8 @@ MARKDOWN_EXTENSIONS = [
     "fenced_code",
     "tables",
 ]
+MARKDOWN_BODY_WIDTH = "98%"
+MARKDOWN_BODY_PADDING = 12
 
 
 def render_artifact_html(artifact: ArtifactRecord) -> str:
@@ -107,7 +109,17 @@ def _render_markdown_html(markdown_text: str) -> str:
         extensions=MARKDOWN_EXTENSIONS,
         output_format="html",
     )
-    return rendered or _render_plain_text_block(markdown_text)
+    if not rendered:
+        return _render_plain_text_block(markdown_text)
+
+    return (
+        f"<table width=\"{MARKDOWN_BODY_WIDTH}\" align=\"center\" "
+        f"cellspacing=\"0\" cellpadding=\"{MARKDOWN_BODY_PADDING}\">"
+        "<tr>"
+        f"<td>{rendered}</td>"
+        "</tr>"
+        "</table>"
+    )
 
 
 def _render_plain_text_block(text: str) -> str:
