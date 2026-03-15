@@ -5,7 +5,7 @@ import re
 from typing import Mapping
 
 from xs2n.ui.artifacts import ArtifactRecord, load_artifact_text
-from xs2n.ui.openstep import OPENSTEP_FONT_FAMILY
+from xs2n.ui.fonts import DEFAULT_UI_FONT_FAMILY
 
 try:
     import markdown as markdown_lib
@@ -19,7 +19,7 @@ MARKDOWN_EXTENSIONS = [
 ]
 MARKDOWN_BODY_WIDTH = "98%"
 MARKDOWN_BODY_PADDING = 12
-OPENSTEP_FONT_BLOCK_TAGS = (
+DEFAULT_UI_FONT_BLOCK_TAGS = (
     "blockquote",
     "dd",
     "dt",
@@ -82,8 +82,8 @@ def _wrap_html_document(
         metadata_rows = "".join(
             (
                 "<tr>"
-                f"<td width=\"96\"><b>{_wrap_openstep_face(html.escape(label))}:</b></td>"
-                f"<td>{_wrap_openstep_face(html.escape(value))}</td>"
+                f"<td width=\"96\"><b>{_wrap_default_ui_face(html.escape(label))}:</b></td>"
+                f"<td>{_wrap_default_ui_face(html.escape(value))}</td>"
                 "</tr>"
             )
             for label, value in metadata.items()
@@ -102,11 +102,11 @@ def _wrap_html_document(
     return (
         "<html>"
         "<body bgcolor=\"#ece8dc\" text=\"#111111\">"
-        f"<font face=\"{OPENSTEP_FONT_FAMILY}\" size=\"3\">"
+        f"<font face=\"{DEFAULT_UI_FONT_FAMILY}\" size=\"3\">"
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"8\" "
         "bgcolor=\"#cfc8b6\">"
         "<tr>"
-        f"<td><b>{_wrap_openstep_face(html.escape(title))}</b></td>"
+        f"<td><b>{_wrap_default_ui_face(html.escape(title))}</b></td>"
         "</tr>"
         "</table>"
         "<p></p>"
@@ -130,7 +130,7 @@ def _render_markdown_html(markdown_text: str) -> str:
     if not rendered:
         return _render_plain_text_block(markdown_text)
 
-    rendered = _apply_openstep_font_family(rendered)
+    rendered = _apply_default_ui_font_family(rendered)
 
     return (
         f"<table width=\"{MARKDOWN_BODY_WIDTH}\" align=\"center\" "
@@ -148,7 +148,7 @@ def _render_plain_text_block(text: str) -> str:
         "bgcolor=\"#f6f4ed\">"
         "<tr>"
         "<td>"
-        f"<pre><font face=\"{OPENSTEP_FONT_FAMILY}\" size=\"3\">"
+        f"<pre><font face=\"{DEFAULT_UI_FONT_FAMILY}\" size=\"3\">"
         f"{html.escape(text)}"
         "</font></pre>"
         "</td>"
@@ -157,8 +157,8 @@ def _render_plain_text_block(text: str) -> str:
     )
 
 
-def _apply_openstep_font_family(rendered_html: str) -> str:
-    tag_pattern = "|".join(OPENSTEP_FONT_BLOCK_TAGS)
+def _apply_default_ui_font_family(rendered_html: str) -> str:
+    tag_pattern = "|".join(DEFAULT_UI_FONT_BLOCK_TAGS)
     opening_pattern = re.compile(
         rf"<({tag_pattern})(\s[^>]*)?>",
         flags=re.IGNORECASE,
@@ -168,15 +168,15 @@ def _apply_openstep_font_family(rendered_html: str) -> str:
         flags=re.IGNORECASE,
     )
     rendered_html = opening_pattern.sub(
-        lambda match: f"{match.group(0)}{_openstep_face_tag()}",
+        lambda match: f"{match.group(0)}{_default_ui_face_tag()}",
         rendered_html,
     )
     return closing_pattern.sub("</font></\\1>", rendered_html)
 
 
-def _openstep_face_tag() -> str:
-    return f'<font face="{OPENSTEP_FONT_FAMILY}">'
+def _default_ui_face_tag() -> str:
+    return f'<font face="{DEFAULT_UI_FONT_FAMILY}">'
 
 
-def _wrap_openstep_face(text: str) -> str:
-    return f"{_openstep_face_tag()}{text}</font>"
+def _wrap_default_ui_face(text: str) -> str:
+    return f"{_default_ui_face_tag()}{text}</font>"

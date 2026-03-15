@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from xs2n.ui.openstep import OPENSTEP_FONT_FAMILY
 from xs2n.ui.artifacts import ArtifactRecord
+from xs2n.ui.fonts import DEFAULT_UI_FONT_FAMILY
 from xs2n.ui.viewer import render_artifact_html, render_plain_text_html
 
 
@@ -16,11 +16,14 @@ def test_render_plain_text_html_escapes_markup() -> None:
         metadata={"cwd": "/tmp/demo"},
     )
 
-    assert '<b><font face="Helvetica">command output</font></b>' in html
+    assert (
+        f'<b><font face="{DEFAULT_UI_FONT_FAMILY}">command output</font></b>'
+        in html
+    )
     assert "&lt;h1&gt;unsafe&lt;/h1&gt;" in html
     assert "<pre>" in html
-    assert f'face="{OPENSTEP_FONT_FAMILY}"' in html
-    assert '<font face="Helvetica">/tmp/demo</font>' in html
+    assert f'face="{DEFAULT_UI_FONT_FAMILY}"' in html
+    assert f'<font face="{DEFAULT_UI_FONT_FAMILY}">/tmp/demo</font>' in html
 
 
 def test_render_artifact_html_formats_markdown(
@@ -55,11 +58,14 @@ def test_render_artifact_html_formats_markdown(
 
     html = render_artifact_html(artifact)
 
-    assert '<h1><font face="Helvetica">Digest</font></h1>' in html
-    assert '<p><font face="Helvetica">Body paragraph.</font></p>' in html
+    assert f'<h1><font face="{DEFAULT_UI_FONT_FAMILY}">Digest</font></h1>' in html
+    assert (
+        f'<p><font face="{DEFAULT_UI_FONT_FAMILY}">Body paragraph.</font></p>'
+        in html
+    )
     assert 'width="98%"' in html
     assert 'cellpadding="12"' in html
-    assert f'face="{OPENSTEP_FONT_FAMILY}"' in html
+    assert f'face="{DEFAULT_UI_FONT_FAMILY}"' in html
     assert "render_digest" in html
     assert str(markdown_path) in html
 

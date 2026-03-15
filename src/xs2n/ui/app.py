@@ -20,8 +20,8 @@ from xs2n.ui.artifacts import (
     list_run_artifacts,
     scan_runs,
 )
+from xs2n.ui.fonts import apply_default_ui_font_defaults
 from xs2n.ui.macos import APP_NAME, apply_macos_app_menu, prepare_macos_app_menu
-from xs2n.ui.openstep import apply_openstep_font_defaults
 from xs2n.ui.viewer import render_artifact_html, render_plain_text_html
 
 
@@ -460,7 +460,7 @@ def run_artifact_browser(
     data_dir: Path = DEFAULT_UI_DATA_PATH,
     initial_run_id: str | None = None,
 ) -> None:
-    apply_openstep_font_defaults(fltk)
+    apply_default_ui_font_defaults(fltk)
     browser = ArtifactBrowserWindow(
         data_dir=data_dir,
         initial_run_id=initial_run_id,

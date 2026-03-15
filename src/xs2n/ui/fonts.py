@@ -3,17 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 
-OPENSTEP_FONT_FAMILY = "Helvetica"
+DEFAULT_UI_FONT_FAMILY = "Microsoft Sans Serif"
 
-_OPENSTEP_FONT_VARIANTS = (
-    ("FL_HELVETICA", 0, "Helvetica"),
-    ("FL_HELVETICA_BOLD", 1, "Helvetica Bold"),
-    ("FL_HELVETICA_ITALIC", 2, "Helvetica Oblique"),
-    ("FL_HELVETICA_BOLD_ITALIC", 3, "Helvetica Bold Oblique"),
+_DEFAULT_UI_FONT_VARIANTS = (
+    ("FL_HELVETICA", 0, ("Microsoft Sans Serif", "Tahoma")),
+    ("FL_HELVETICA_BOLD", 1, ("Tahoma Bold", "Tahoma", "Microsoft Sans Serif")),
+    ("FL_HELVETICA_ITALIC", 2, ("Tahoma", "Microsoft Sans Serif")),
+    ("FL_HELVETICA_BOLD_ITALIC", 3, ("Tahoma Bold", "Tahoma", "Microsoft Sans Serif")),
 )
 
 
-def apply_openstep_font_defaults(fltk_module: Any) -> None:
+def apply_default_ui_font_defaults(fltk_module: Any) -> None:
     fl_namespace = getattr(fltk_module, "Fl", None)
     if fl_namespace is None:
         return
@@ -30,11 +30,26 @@ def apply_openstep_font_defaults(fltk_module: Any) -> None:
         fl_namespace=fl_namespace,
         font_count=font_count,
     )
-    for constant_name, fallback_index, font_name in _OPENSTEP_FONT_VARIANTS:
-        if font_name not in available_names:
+    for constant_name, fallback_index, candidate_names in _DEFAULT_UI_FONT_VARIANTS:
+        font_name = _resolve_first_available_font_name(
+            candidate_names=candidate_names,
+            available_names=available_names,
+        )
+        if font_name is None:
             continue
         font_index = getattr(fltk_module, constant_name, fallback_index)
         fl_namespace.set_font(font_index, font_name)
+
+
+def _resolve_first_available_font_name(
+    *,
+    candidate_names: tuple[str, ...],
+    available_names: set[str],
+) -> str | None:
+    for font_name in candidate_names:
+        if font_name in available_names:
+            return font_name
+    return None
 
 
 def _available_font_names(*, fl_namespace: Any, font_count: int) -> set[str]:
