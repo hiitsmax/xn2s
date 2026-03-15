@@ -35,6 +35,7 @@ Working now:
 - `xs2n report auth` (delegates ChatGPT/Codex authentication)
 - `xs2n report digest` (traceable markdown issue scaffold with per-step artifacts)
 - `xs2n report latest` (one command: ingest latest from onboarded sources, then render digest)
+- `xs2n ui` (optional native desktop artifact browser for digest runs)
 - Interactive mode selection when no onboarding mode is provided
 - Local-browser cookie preflight (with profile selection) before Twikit login prompts
 - Cloudflare block detection + local-browser cookie refresh + Playwright fallback + retry
@@ -51,6 +52,18 @@ Known gaps / WIP:
 ```bash
 uv sync --extra dev
 uv run xs2n --help
+```
+
+Optional desktop GUI setup:
+
+```bash
+uv sync --extra gui
+```
+
+On macOS, `pyfltk` also expects the native FLTK shared libraries from Homebrew:
+
+```bash
+brew install fltk
 ```
 
 If you prefer one command bootstrap (including Playwright Chromium used for browser cookie recovery):
@@ -186,6 +199,23 @@ uv run xs2n report digest --parallel-workers 6
 
 `xs2n report latest` first runs timeline ingestion (from `data/sources.json` by default, or Home -> Following when `--home-latest` is enabled), then runs `xs2n report digest` on the updated `data/timeline.json`.
 
+Browse run artifacts in a native desktop app:
+
+```bash
+uv run xs2n ui
+uv run xs2n ui --data-dir data
+```
+
+The desktop browser is intentionally simple. It scans every `data/report_runs*` directory, shows the discovered run folders on the left, the available artifacts in the middle, and the selected file content on the right. It is read-only for artifact inspection, but it can stay aligned with the existing CLI by exposing refresh and run actions through the same command surface.
+
+If `pyfltk` fails to import on macOS with a missing `libfltk*.dylib` error, install Homebrew FLTK and retry:
+
+```bash
+brew install fltk
+uv sync --extra gui
+uv run xs2n ui
+```
+
 Output files:
 
 ```text
@@ -214,6 +244,7 @@ uv run pytest
 
 - Autolearning and milestone notes: `docs/codex/autolearning.md`
 - Execution plans: `docs/codex/execplans/`
+- Desktop artifact browser plan: `docs/codex/execplans/ui-artifact-browser.md`
 - Digest taxonomy starter file: `docs/codex/report_taxonomy.json`
 
 ## Legacy Install (pip)

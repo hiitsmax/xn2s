@@ -22,6 +22,9 @@ dependencies = [
 dev = [
   "pytest>=8.3.0",
 ]
+gui = [
+  "pyfltk>=1.4.4.0",
+]
 
 [project.scripts]
 xs2n = "xs2n.cli:app"

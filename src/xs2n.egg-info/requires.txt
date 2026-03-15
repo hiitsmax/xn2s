@@ -8,3 +8,6 @@ pydantic>=2.10.6
 
 [dev]
 pytest>=8.3.0
+
+[gui]
+pyfltk>=1.4.4.0

@@ -720,6 +720,23 @@ wheels = [
 ]
 
 [[package]]
+name = "pyfltk"
+version = "1.4.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c2/66/ae67bdad2eb53c85c3552842379613d7e67b4a845b7d0453d07a0d75ef7e/pyfltk-1.4.4.0.tar.gz", hash = "sha256:97c0cf2ec8a5954226f5cd01b8ae1d0dc911526f1a0962d1204930a894df78b1", size = 773274, upload-time = "2025-08-11T05:59:32.172Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b6/5a/6701a782bc5963249c336e607eeec7a4f3d5ed130dfd72de0dec114069b2/pyfltk-1.4.4.0-cp311-cp311-macosx_14_0_x86_64.whl", hash = "sha256:5751e3a81a3640be7915b36cc3c2c844705bad0bb3ecc3e549ff5edb52f3cd20", size = 2035676, upload-time = "2025-09-17T04:27:47.227Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/1e/15290104b01d28c36a699d796810620fd08ae83a94c5d6237ddea031042d/pyfltk-1.4.4.0-cp311-cp311-macosx_15_0_arm64.whl", hash = "sha256:2a801702319d1cb25e51aee855a353f0611986e37561f4596c1af9f015e44c5e", size = 1910854, upload-time = "2025-09-13T21:00:16.951Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/68/c0998d6d1c00a2a8b157ed4f2ee30b42033995f721117e46261e41a2dd1f/pyfltk-1.4.4.0-cp311-cp311-win_amd64.whl", hash = "sha256:cdb0c7b17a54025f66c7396c9f20498effa0da0f30b557bd1f7e9d3756039bc0", size = 2510706, upload-time = "2025-08-11T06:02:48.942Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/cc/d998f9b093ff5cf96dea518ecbb2c379e43c5ff09493e9b31d89f46bd072/pyfltk-1.4.4.0-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:86a57c4ca49ba780c8b10a11acf1ebf90de63c237bf037ce0070b31fc1c93835", size = 1900315, upload-time = "2025-09-13T21:00:18.736Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/9e/f549a5b0ddd916a87c3ac1e432a806333d7c98a8b77b1fd62b0b58a78fb4/pyfltk-1.4.4.0-cp312-cp312-macosx_15_0_x86_64.whl", hash = "sha256:d5fbabee4f9c2f26547d624c7184b389c899aa988178783ec4c86f3a7e658443", size = 2035984, upload-time = "2025-09-17T04:27:49.246Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/02/1d2c248d2fde243fdb58e9b81a83547a50fc1ed5eb6bbda29ab86c13bda6/pyfltk-1.4.4.0-cp312-cp312-win_amd64.whl", hash = "sha256:ce5fd8ca51fbb6fed873a3e5fd803d26e7afd3789564dc223c3727c0947bc298", size = 2513851, upload-time = "2025-08-11T06:03:10.263Z" },
+    { url = "https://files.pythonhosted.org/packages/19/f4/b888f59efb455e0006dde75a82ac8011a2b0f5b7c3aeeaa4594bed3899ee/pyfltk-1.4.4.0-cp313-cp313-macosx_15_0_arm64.whl", hash = "sha256:ce4dc545ffeab1e15546a68b0ec562b7207ff94a1e215b49d13fe199368e9765", size = 1900212, upload-time = "2025-09-13T21:00:20.671Z" },
+    { url = "https://files.pythonhosted.org/packages/28/d6/8acb27f5f2127748cfd521a1666a5cf9abb3dcddf42939549dc650a48427/pyfltk-1.4.4.0-cp313-cp313-macosx_15_0_x86_64.whl", hash = "sha256:b907cb283df95f605e8b4f8bad6adbfacdf1861310a24315444d38eed3368fcf", size = 2036074, upload-time = "2025-09-17T04:27:50.975Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/0d/8117fded43780a004cd739f4512b4078dec411f3f3960aacbfd015c7af2f/pyfltk-1.4.4.0-cp313-cp313-win_amd64.whl", hash = "sha256:3c83e5b2e00b29929fed90cf54ea37d0abf16ab73c4497406ec1f9a3b5a4496a", size = 2514110, upload-time = "2025-08-11T06:03:29.942Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -984,6 +1001,9 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
+gui = [
+    { name = "pyfltk" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -991,9 +1011,10 @@ requires-dist = [
     { name = "openai", specifier = ">=1.68.0" },
     { name = "playwright", specifier = ">=1.58.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
+    { name = "pyfltk", marker = "extra == 'gui'", specifier = ">=1.4.4.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
     { name = "tenacity", specifier = ">=9.1.4" },
     { name = "twikit", specifier = ">=2.3.3" },
     { name = "typer", specifier = ">=0.12.3" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "gui"]

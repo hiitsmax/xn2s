@@ -230,6 +230,20 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Recorded the configured worker count in each run's `run.json` so artifact review explains the execution mode.
 - Locked the fake LLM trace writer in tests and added ordering assertions so concurrency changes preserve deterministic stage outputs.
 
+## Desktop Artifact Browser (2026-03-15)
+
+- Chose `pyfltk` for the optional desktop artifact browser because it matches the desired lightweight NeXT/OpenStep-style feel better than a heavier Qt stack.
+- Kept the GUI as an optional extra instead of a core dependency so the CLI-first and cron-first workflows stay unaffected.
+- Locked the UI data model to the existing run artifacts rather than inventing a new backend:
+  - scan every `data/report_runs*` root,
+  - treat the filesystem as the source of truth,
+  - use `run.json` and `phases.json` when present,
+  - tolerate old or interrupted runs that only contain a subset of files.
+- Discovered a concrete macOS caveat during packaging research: `pyfltk` needs the native FLTK shared libraries from Homebrew, or imports fail with a missing `libfltk*.dylib` error.
+- Updated the user-facing docs to make the install path explicit:
+  - `uv sync --extra gui`
+  - `brew install fltk` on macOS
+
 ## Digest Helper And Render Split (2026-03-07)
 
 - Moved shared digest utilities out of `src/xs2n/agents/digest/pipeline.py` into `src/xs2n/agents/digest/helpers.py`.
