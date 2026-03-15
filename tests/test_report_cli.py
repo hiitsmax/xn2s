@@ -127,9 +127,11 @@ def test_report_digest_runs_pipeline(
         output_dir=tmp_path / "report_runs",
         taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
+        parallel_workers=6,
     )
 
     assert captured["model"] == "gpt-5.4"
+    assert captured["parallel_workers"] == 6
     out = capsys.readouterr().out
     assert "loaded 3 threads" in out
     assert "produced 1 issues" in out
@@ -220,6 +222,7 @@ def test_report_latest_runs_timeline_then_digest(
         output_dir=tmp_path / "report_runs",
         taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
+        parallel_workers=5,
     )
 
     assert len(timeline_calls) == 1
@@ -229,6 +232,7 @@ def test_report_latest_runs_timeline_then_digest(
     assert timeline_calls[0]["since"] == "2026-03-08T00:00:00+00:00"
     assert len(digest_calls) == 1
     assert digest_calls[0]["model"] == "gpt-5.4"
+    assert digest_calls[0]["parallel_workers"] == 5
     out = capsys.readouterr().out
     assert "Ingesting source timelines before digest generation" in out
     assert "Latest digest run 20260308T120000Z" in out
@@ -269,6 +273,7 @@ def test_report_latest_routes_home_latest_mode(
         output_dir=tmp_path / "report_runs",
         taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
+        parallel_workers=3,
     )
 
     assert len(timeline_calls) == 1
@@ -276,6 +281,7 @@ def test_report_latest_routes_home_latest_mode(
     assert timeline_calls[0]["home_latest"] is True
     assert timeline_calls[0]["account"] is None
     assert len(digest_calls) == 1
+    assert digest_calls[0]["parallel_workers"] == 3
     out = capsys.readouterr().out
     assert "Ingesting Home->Following latest timeline before digest generation" in out
 

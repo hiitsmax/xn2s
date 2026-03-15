@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 import json
 import math
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Callable, TypeVar, cast
 
 from pydantic import BaseModel
 
@@ -83,6 +84,9 @@ DEFAULT_TAXONOMY_DOC = {
     "drop_categories": ["promo", "personal_update", "ai_slop"],
 }
 
+InputT = TypeVar("InputT")
+OutputT = TypeVar("OutputT")
+
 
 def to_jsonable(value: Any) -> Any:
     if isinstance(value, BaseModel):
@@ -110,6 +114,35 @@ def load_taxonomy(path: Path) -> TaxonomyConfig:
     if path.exists():
         return TaxonomyConfig.model_validate_json(path.read_text(encoding="utf-8"))
     return TaxonomyConfig.model_validate(DEFAULT_TAXONOMY_DOC)
+
+
+def map_in_thread_pool(
+    *,
+    items: list[InputT],
+    worker: Callable[[InputT], OutputT],
+    max_workers: int,
+) -> list[OutputT]:
+    if max_workers <= 1 or len(items) <= 1:
+        return [worker(item) for item in items]
+
+    executor = ThreadPoolExecutor(max_workers=min(max_workers, len(items)))
+    futures: dict[Future[OutputT], int] = {}
+
+    try:
+        for index, item in enumerate(items):
+            futures[executor.submit(worker, item)] = index
+
+        results: list[OutputT | None] = [None] * len(items)
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+
+        return [cast(OutputT, result) for result in results]
+    except Exception:
+        for future in futures:
+            future.cancel()
+        raise
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 def virality_score(record: TimelineRecord) -> float:

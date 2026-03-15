@@ -219,6 +219,17 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added a root-level `src/xs2n/schemas/` package with `src/xs2n/schemas/digest.py` as the source of truth for digest schemas.
 - Kept `pipeline.py` focused on orchestration, rendering, and deterministic helpers while the step files now import their schemas from `xs2n.schemas.digest`.
 
+## Digest Parallel Worker Pool (2026-03-15)
+
+- Added bounded per-stage parallelism for the three thread-local digest phases:
+  - `categorize_threads`
+  - `filter_threads`
+  - `process_threads`
+- Kept the orchestration shape the same: the stages still run in order, but each stage can fan out across multiple threads.
+- Added `--parallel-workers` to both `xs2n report digest` and `xs2n report latest`.
+- Recorded the configured worker count in each run's `run.json` so artifact review explains the execution mode.
+- Locked the fake LLM trace writer in tests and added ordering assertions so concurrency changes preserve deterministic stage outputs.
+
 ## Digest Helper And Render Split (2026-03-07)
 
 - Moved shared digest utilities out of `src/xs2n/agents/digest/pipeline.py` into `src/xs2n/agents/digest/helpers.py`.
@@ -238,6 +249,13 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added `docs/codex/coding-preferences.md` to preserve the coding-style lessons learned during the digest refactor in a reusable form.
 - Kept the rules general and portable, while grounding each one with a concrete example taken from the same refactor session.
 - Captured a few strong preferences explicitly: name modules by real responsibility, keep pipelines visually direct, avoid meaningless indirection, and prefer responsibility-based file boundaries over speculative abstraction.
+
+## Digest Worker-Pool Parallelism (2026-03-15)
+
+- Added bounded parallel execution for the three high-volume digest steps: `categorize_threads`, `filter_threads`, and `process_threads`.
+- Exposed `--parallel-workers` on `xs2n report digest` and `xs2n report latest` so throughput can be tuned per run instead of being hard-coded.
+- Hardened `DigestLLM` trace writing for concurrent requests and kept artifact ordering stable even when individual model calls finish out of order.
+- Learned that concurrency in this pipeline is mostly an observability problem, not just a performance problem: trace IDs and artifact ordering must stay deterministic or the faster run becomes harder to debug.
 
 ## Report Latest End-To-End Command (2026-03-08)
 

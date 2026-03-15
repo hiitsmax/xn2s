@@ -8,6 +8,7 @@ import typer
 
 from xs2n.agents import (
     DEFAULT_REPORT_MODEL,
+    DEFAULT_REPORT_PARALLEL_WORKERS,
     DEFAULT_REPORT_RUNS_PATH,
     DEFAULT_TAXONOMY_PATH,
     run_digest_report,
@@ -123,6 +124,12 @@ def digest(
         "--model",
         help="OpenAI model name used for structured digest steps.",
     ),
+    parallel_workers: int = typer.Option(
+        DEFAULT_REPORT_PARALLEL_WORKERS,
+        "--parallel-workers",
+        min=1,
+        help="Worker count for parallel categorize/filter/process digest steps.",
+    ),
 ) -> None:
     """Generate a traceable markdown digest from timeline data."""
 
@@ -132,6 +139,7 @@ def digest(
             output_dir=output_dir,
             taxonomy_file=taxonomy_file,
             model=model,
+            parallel_workers=parallel_workers,
         )
     except RuntimeError as error:
         typer.echo(str(error), err=True)
@@ -199,6 +207,12 @@ def latest(
         "--model",
         help="OpenAI model name used for structured digest steps.",
     ),
+    parallel_workers: int = typer.Option(
+        DEFAULT_REPORT_PARALLEL_WORKERS,
+        "--parallel-workers",
+        min=1,
+        help="Worker count for parallel categorize/filter/process digest steps.",
+    ),
 ) -> None:
     """Ingest latest timeline data and render one digest."""
 
@@ -234,6 +248,7 @@ def latest(
             output_dir=output_dir,
             taxonomy_file=taxonomy_file,
             model=model,
+            parallel_workers=parallel_workers,
         )
     except RuntimeError as error:
         typer.echo(str(error), err=True)

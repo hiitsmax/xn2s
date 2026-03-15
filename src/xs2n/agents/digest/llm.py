@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
+import threading
 from typing import Any, TypeVar, cast
 
 from openai import BadRequestError, OpenAI
@@ -83,12 +84,14 @@ class DigestLLM:
         credentials = resolve_digest_credentials(api_key)
         self._model = model
         self._source = credentials.source
-        self._client = OpenAI(
-            api_key=credentials.token,
-            base_url=credentials.base_url,
-        )
+        self._client_options = {
+            "api_key": credentials.token,
+            "base_url": credentials.base_url,
+        }
+        self._thread_local = threading.local()
         self._trace_dir: Path | None = None
         self._call_index = 0
+        self._trace_lock = threading.Lock()
 
     @property
     def source(self) -> str:
@@ -97,7 +100,20 @@ class DigestLLM:
     def configure_run_logging(self, *, run_dir: Path) -> None:
         self._trace_dir = run_dir / "llm_calls"
         self._trace_dir.mkdir(parents=True, exist_ok=True)
-        self._call_index = 0
+        with self._trace_lock:
+            self._call_index = 0
+
+    def _get_client(self) -> OpenAI:
+        client = getattr(self._thread_local, "client", None)
+        if client is None:
+            client = OpenAI(**self._client_options)
+            self._thread_local.client = client
+        return cast(OpenAI, client)
+
+    def _next_call_id(self) -> int:
+        with self._trace_lock:
+            self._call_index += 1
+            return self._call_index
 
     def _write_call_trace(
         self,
@@ -117,9 +133,9 @@ class DigestLLM:
         if self._trace_dir is None:
             return
 
-        self._call_index += 1
+        call_id = self._next_call_id()
         trace = LLMCallTrace(
-            call_id=self._call_index,
+            call_id=call_id,
             phase=_phase_name(schema),
             item_id=_item_id(payload),
             schema_name=schema.__name__,
@@ -144,9 +160,9 @@ class DigestLLM:
         item_suffix = re.sub(
             r"[^a-zA-Z0-9_.-]+",
             "_",
-            trace.item_id or f"call_{self._call_index:03d}",
+            trace.item_id or f"call_{call_id:03d}",
         ).strip("_")
-        filename = f"{self._call_index:03d}_{trace.phase}_{item_suffix}.json"
+        filename = f"{call_id:03d}_{trace.phase}_{item_suffix}.json"
         self._trace_dir.joinpath(filename).write_text(
             f"{trace.model_dump_json(indent=2)}\n",
             encoding="utf-8",
@@ -166,11 +182,12 @@ class DigestLLM:
         response_id: str | None = None
         request_id: str | None = None
         usage: Any = None
+        final_response: Any = None
         parsed_result: SchemaT | None = None
         runtime_error: RuntimeError | None = None
 
         try:
-            with self._client.responses.stream(
+            with self._get_client().responses.stream(
                 model=self._model,
                 store=False,
                 instructions=prompt,

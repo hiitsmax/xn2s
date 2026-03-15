@@ -12,6 +12,7 @@ from .helpers import load_taxonomy, write_json
 DEFAULT_REPORT_RUNS_PATH = Path("data/report_runs")
 DEFAULT_TAXONOMY_PATH = Path("docs/codex/report_taxonomy.json")
 DEFAULT_REPORT_MODEL = "gpt-5.4"
+DEFAULT_REPORT_PARALLEL_WORKERS = 4
 
 
 def _duration_ms(started_at: datetime, finished_at: datetime) -> int:
@@ -24,8 +25,12 @@ def run_digest_report(
     output_dir: Path = DEFAULT_REPORT_RUNS_PATH,
     taxonomy_file: Path = DEFAULT_TAXONOMY_PATH,
     model: str = DEFAULT_REPORT_MODEL,
+    parallel_workers: int = DEFAULT_REPORT_PARALLEL_WORKERS,
     llm: Any | None = None,
 ) -> DigestRunResult:
+    if parallel_workers < 1:
+        raise ValueError("parallel_workers must be at least 1.")
+
     from .llm import DigestLLM
     from .steps.categorize_threads import run as categorize_threads
     from .steps.filter_threads import run as filter_threads
@@ -82,6 +87,7 @@ def run_digest_report(
                 else None
             ),
             "model": model,
+            "parallel_workers": parallel_workers,
             "credential_source": credential_source,
             "thread_count": len(threads),
             "kept_count": len(processed_threads),
@@ -174,6 +180,7 @@ def run_digest_report(
             llm=digest_llm,
             taxonomy=taxonomy,
             threads=threads,
+            parallel_workers=parallel_workers,
         )
         categorized_threads_path = run_dir / "categorized_threads.json"
         write_json(categorized_threads_path, categorized_threads)
@@ -192,6 +199,7 @@ def run_digest_report(
             llm=digest_llm,
             taxonomy=taxonomy,
             threads=categorized_threads,
+            parallel_workers=parallel_workers,
         )
         filtered_threads_path = run_dir / "filtered_threads.json"
         write_json(filtered_threads_path, filtered_threads)
@@ -213,6 +221,7 @@ def run_digest_report(
         processed_threads = process_threads(
             llm=digest_llm,
             threads=filtered_threads,
+            parallel_workers=parallel_workers,
         )
         processed_threads_path = run_dir / "processed_threads.json"
         write_json(processed_threads_path, processed_threads)

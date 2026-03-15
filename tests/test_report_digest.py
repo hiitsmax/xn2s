@@ -4,6 +4,8 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import threading
+import time
 
 import pytest
 
@@ -21,15 +23,23 @@ from xs2n.agents.digest import (
 
 
 class _FakeLLM:
-    def __init__(self, *, fail_schema=None) -> None:  # noqa: ANN001
+    def __init__(
+        self,
+        *,
+        fail_schema=None,
+        delay_by_thread_id: dict[str, float] | None = None,
+    ) -> None:  # noqa: ANN001
         self._fail_schema = fail_schema
+        self._delay_by_thread_id = delay_by_thread_id or {}
         self._trace_dir: Path | None = None
         self._call_index = 0
+        self._trace_lock = threading.Lock()
 
     def configure_run_logging(self, *, run_dir: Path) -> None:
         self._trace_dir = run_dir / "llm_calls"
         self._trace_dir.mkdir(parents=True, exist_ok=True)
-        self._call_index = 0
+        with self._trace_lock:
+            self._call_index = 0
 
     def _phase_name(self, schema) -> str:  # noqa: ANN001, ANN201
         if schema is CategorizationResult:
@@ -57,7 +67,9 @@ class _FakeLLM:
     ) -> None:  # noqa: ANN001, ANN201
         if self._trace_dir is None:
             return
-        self._call_index += 1
+        with self._trace_lock:
+            self._call_index += 1
+            call_id = self._call_index
         if hasattr(payload, "model_dump"):
             payload_doc = payload.model_dump(mode="json")
         elif isinstance(payload, dict):
@@ -68,7 +80,7 @@ class _FakeLLM:
         else:
             payload_doc = payload
         trace = {
-            "call_id": self._call_index,
+            "call_id": call_id,
             "phase": self._phase_name(schema),
             "item_id": self._item_id(payload),
             "schema_name": schema.__name__,
@@ -80,14 +92,19 @@ class _FakeLLM:
         item_suffix = re.sub(
             r"[^a-zA-Z0-9_.-]+",
             "_",
-            trace["item_id"] or f"call_{self._call_index:03d}",
+            trace["item_id"] or f"call_{call_id:03d}",
         ).strip("_")
         path = self._trace_dir / (
-            f"{self._call_index:03d}_{trace['phase']}_{item_suffix}.json"
+            f"{call_id:03d}_{trace['phase']}_{item_suffix}.json"
         )
         path.write_text(f"{json.dumps(trace, indent=2)}\n", encoding="utf-8")
 
     def run(self, *, prompt, payload, schema):  # noqa: ANN001, ANN201
+        thread_id = self._item_id(payload)
+        delay_seconds = self._delay_by_thread_id.get(thread_id or "", 0.0)
+        if delay_seconds > 0:
+            time.sleep(delay_seconds)
+
         if schema is self._fail_schema:
             self._write_trace(
                 prompt=prompt,
@@ -322,6 +339,20 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
                         "quote_count": 0,
                         "view_count": 200,
                     },
+                    {
+                        "tweet_id": "analysis-1",
+                        "account_handle": "mx",
+                        "author_handle": "mx",
+                        "kind": "post",
+                        "created_at": (now - timedelta(minutes=2)).isoformat(),
+                        "text": "Interesting market analysis thread",
+                        "conversation_id": "conv-analysis",
+                        "favorite_count": 20,
+                        "retweet_count": 3,
+                        "reply_count": 2,
+                        "quote_count": 1,
+                        "view_count": 1500,
+                    },
                 ]
             }
         ),
@@ -337,7 +368,8 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
         output_dir=output_dir,
         taxonomy_file=taxonomy_file,
         model="fake-model",
-        llm=_FakeLLM(),
+        parallel_workers=2,
+        llm=_FakeLLM(delay_by_thread_id={"conv-promo": 0.02, "conv-analysis": 0.01}),
     )
 
     expected_files = {
@@ -356,8 +388,8 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
     produced_files = {path.name for path in result.run_dir.iterdir()}
 
     assert expected_files.issubset(produced_files)
-    assert result.thread_count == 2
-    assert result.kept_count == 1
+    assert result.thread_count == 3
+    assert result.kept_count == 2
     assert result.issue_count == 1
 
     digest_text = result.digest_path.read_text(encoding="utf-8")
@@ -370,16 +402,25 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
     taxonomy_snapshot = json.loads(
         (result.run_dir / "taxonomy.json").read_text(encoding="utf-8")
     )
+    categorized_threads = json.loads(
+        (result.run_dir / "categorized_threads.json").read_text(encoding="utf-8")
+    )
     llm_call_paths = sorted((result.run_dir / "llm_calls").iterdir())
 
     assert run_doc["status"] == "completed"
-    assert run_doc["thread_count"] == 2
-    assert run_doc["kept_count"] == 1
+    assert run_doc["thread_count"] == 3
+    assert run_doc["kept_count"] == 2
     assert run_doc["issue_count"] == 1
-    assert run_doc["phase_counts"]["categorized_threads"] == 2
+    assert run_doc["parallel_workers"] == 2
+    assert run_doc["phase_counts"]["categorized_threads"] == 3
     assert run_doc["phase_counts"]["issues"] == 1
     assert run_doc["taxonomy_snapshot_path"].endswith("taxonomy.json")
     assert run_doc["llm_calls_dir"].endswith("llm_calls")
+    assert [thread["thread_id"] for thread in categorized_threads] == [
+        "conv-analysis",
+        "conv-promo",
+        "conv-fresh",
+    ]
     assert [phase["name"] for phase in phases_doc] == [
         "load_taxonomy",
         "load_threads",
@@ -391,16 +432,37 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
     ]
     assert all(phase["status"] == "completed" for phase in phases_doc)
     assert taxonomy_snapshot == DEFAULT_TAXONOMY_DOC
-    assert len(llm_call_paths) == 6
+    assert len(llm_call_paths) == 10
 
     categorize_call_docs = [
         json.loads(path.read_text(encoding="utf-8"))
         for path in llm_call_paths
         if "categorize_threads" in path.name
     ]
-    assert len(categorize_call_docs) == 2
+    assert len(categorize_call_docs) == 3
     assert all(doc["schema_name"] == "CategorizationResult" for doc in categorize_call_docs)
-    assert {doc["result"]["category"] for doc in categorize_call_docs} == {"debate", "promo"}
+    assert {doc["result"]["category"] for doc in categorize_call_docs} == {
+        "analysis",
+        "debate",
+        "promo",
+    }
+    llm_call_docs = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in llm_call_paths
+    ]
+    assert len({doc["call_id"] for doc in llm_call_docs}) == 10
+
+
+def test_run_digest_report_rejects_invalid_parallel_workers(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="parallel_workers must be at least 1"):
+        run_digest_report(
+            timeline_file=tmp_path / "timeline.json",
+            output_dir=tmp_path / "report_runs",
+            taxonomy_file=tmp_path / "taxonomy.json",
+            model="fake-model",
+            parallel_workers=0,
+            llm=_FakeLLM(),
+        )
 
 
 def test_run_digest_report_records_failed_phase_artifacts(tmp_path: Path) -> None:
@@ -438,6 +500,7 @@ def test_run_digest_report_records_failed_phase_artifacts(tmp_path: Path) -> Non
             output_dir=output_dir,
             taxonomy_file=taxonomy_file,
             model="fake-model",
+            parallel_workers=2,
             llm=_FakeLLM(fail_schema=ThreadProcessResult),
         )
 

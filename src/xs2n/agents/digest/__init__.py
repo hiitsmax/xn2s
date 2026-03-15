@@ -18,6 +18,7 @@ from xs2n.schemas.digest import (
 )
 from .pipeline import (
     DEFAULT_REPORT_MODEL,
+    DEFAULT_REPORT_PARALLEL_WORKERS,
     DEFAULT_REPORT_RUNS_PATH,
     DEFAULT_TAXONOMY_PATH,
     run_digest_report,
@@ -29,6 +30,7 @@ __all__ = [
     "CategorizationResult",
     "CategorySpec",
     "DEFAULT_REPORT_MODEL",
+    "DEFAULT_REPORT_PARALLEL_WORKERS",
     "DEFAULT_REPORT_RUNS_PATH",
     "DEFAULT_TAXONOMY_DOC",
     "DEFAULT_TAXONOMY_PATH",

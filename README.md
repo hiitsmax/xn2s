@@ -165,10 +165,15 @@ Useful digest options:
 uv run xs2n report digest \
   --timeline-file data/timeline.json \
   --output-dir data/report_runs \
-  --taxonomy-file docs/codex/report_taxonomy.json
+  --taxonomy-file docs/codex/report_taxonomy.json \
+  --parallel-workers 4
 ```
 
 The digest command reads the thread-aware `timeline.json`, groups it into conversation threads, runs five simple steps, and writes one run folder per execution with intermediate JSON artifacts and a final `digest.md`. Each run folder now also freezes the taxonomy used for that run, records per-phase timing/count metadata in `phases.json`, and writes one JSON file per LLM call under `llm_calls/` so partial failures are easier to debug.
+
+The `categorize_threads`, `filter_threads`, and `process_threads` phases now use a bounded worker pool. Tune it with `--parallel-workers` and set `--parallel-workers 1` if you want the old serial behavior for debugging or rate-limit troubleshooting.
+
+`--parallel-workers` controls the bounded worker pool used by the high-volume `categorize_threads`, `filter_threads`, and `process_threads` steps. Use `1` to force serial execution when debugging or when rate limits are tight.
 
 Run ingestion + digest end-to-end in one cron-friendly command:
 
@@ -176,6 +181,7 @@ Run ingestion + digest end-to-end in one cron-friendly command:
 uv run xs2n report latest --lookback-hours 24
 uv run xs2n report latest --since 2026-03-01T00:00:00Z
 uv run xs2n report latest --home-latest --lookback-hours 24
+uv run xs2n report digest --parallel-workers 6
 ```
 
 `xs2n report latest` first runs timeline ingestion (from `data/sources.json` by default, or Home -> Following when `--home-latest` is enabled), then runs `xs2n report digest` on the updated `data/timeline.json`.
