@@ -4,6 +4,7 @@ import html
 from typing import Mapping
 
 from xs2n.ui.artifacts import ArtifactRecord, load_artifact_text
+from xs2n.ui.openstep import OPENSTEP_FONT_FAMILY
 
 try:
     import markdown as markdown_lib
@@ -65,7 +66,7 @@ def _wrap_html_document(
             (
                 "<tr>"
                 f"<td width=\"96\"><b>{html.escape(label)}:</b></td>"
-                f"<td><tt>{html.escape(value)}</tt></td>"
+                f"<td>{html.escape(value)}</td>"
                 "</tr>"
             )
             for label, value in metadata.items()
@@ -84,7 +85,7 @@ def _wrap_html_document(
     return (
         "<html>"
         "<body bgcolor=\"#ece8dc\" text=\"#111111\">"
-        "<font face=\"Helvetica\" size=\"3\">"
+        f"<font face=\"{OPENSTEP_FONT_FAMILY}\" size=\"3\">"
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"8\" "
         "bgcolor=\"#cfc8b6\">"
         "<tr>"
@@ -127,7 +128,11 @@ def _render_plain_text_block(text: str) -> str:
         "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"8\" "
         "bgcolor=\"#f6f4ed\">"
         "<tr>"
-        f"<td><pre>{html.escape(text)}</pre></td>"
+        "<td>"
+        f"<pre><font face=\"{OPENSTEP_FONT_FAMILY}\" size=\"3\">"
+        f"{html.escape(text)}"
+        "</font></pre>"
+        "</td>"
         "</tr>"
         "</table>"
     )

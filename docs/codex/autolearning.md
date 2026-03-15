@@ -247,6 +247,13 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - `uv sync --extra gui`
   - `brew install fltk` on macOS
 
+## OpenStep Font Defaults (2026-03-16)
+
+- Verified a concrete FLTK quirk on macOS: after `Fl.set_fonts()`, the default `FL_HELVETICA` slot still resolved to `Arial` in this environment.
+- Added `src/xs2n/ui/openstep.py` so the UI can remap the four built-in Helvetica slots to the real system `Helvetica` family when those faces are available.
+- Kept the HTML viewer on legacy `Fl_Help_View`-friendly markup by using explicit `<font face=\"Helvetica\">` tags instead of relying on modern CSS support.
+- Added regression coverage for both the FLTK font-slot remapping logic and the viewer HTML output.
+
 ## Digest Helper And Render Split (2026-03-07)
 
 - Moved shared digest utilities out of `src/xs2n/agents/digest/pipeline.py` into `src/xs2n/agents/digest/helpers.py`.

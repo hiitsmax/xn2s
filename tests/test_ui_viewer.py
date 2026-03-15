@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from xs2n.ui.openstep import OPENSTEP_FONT_FAMILY
 from xs2n.ui.artifacts import ArtifactRecord
 from xs2n.ui.viewer import render_artifact_html, render_plain_text_html
 
@@ -18,6 +19,7 @@ def test_render_plain_text_html_escapes_markup() -> None:
     assert "<b>command output</b>" in html
     assert "&lt;h1&gt;unsafe&lt;/h1&gt;" in html
     assert "<pre>" in html
+    assert f'face="{OPENSTEP_FONT_FAMILY}"' in html
     assert "/tmp/demo" in html
 
 
@@ -57,6 +59,7 @@ def test_render_artifact_html_formats_markdown(
     assert "<p>Body paragraph.</p>" in html
     assert 'width="98%"' in html
     assert 'cellpadding="12"' in html
+    assert f'face="{OPENSTEP_FONT_FAMILY}"' in html
     assert "render_digest" in html
     assert str(markdown_path) in html
 

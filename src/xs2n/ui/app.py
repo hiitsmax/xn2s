@@ -18,8 +18,9 @@ from xs2n.ui.artifacts import (
     list_run_artifacts,
     scan_runs,
 )
-from xs2n.ui.viewer import render_artifact_html, render_plain_text_html
 from xs2n.ui.macos import APP_NAME, apply_macos_app_menu, prepare_macos_app_menu
+from xs2n.ui.openstep import apply_openstep_font_defaults
+from xs2n.ui.viewer import render_artifact_html, render_plain_text_html
 
 
 WINDOW_WIDTH = 1480
@@ -82,8 +83,10 @@ class ArtifactBrowserWindow:
         viewer_height = tile_height - DETAILS_HEIGHT
 
         self.window.begin()
+        self._style_widget(self.window, label_size=14)
 
         self.menu_bar = fltk.Fl_Menu_Bar(0, 0, WINDOW_WIDTH, MENU_HEIGHT)
+        self._style_widget(self.menu_bar, label_size=13, text_size=13)
         self.menu_bar.add("&File/&Refresh", 0, self._on_refresh_clicked, None)
         self.menu_bar.add("&Run/&Digest", 0, self._on_run_digest_clicked, None)
         self.menu_bar.add(
@@ -95,6 +98,7 @@ class ArtifactBrowserWindow:
         self.menu_bar.add("&File/&Quit", 0, self._on_quit_clicked, None)
 
         self.refresh_button = fltk.Fl_Button(12, 36, 120, 28, "Refresh")
+        self._style_button(self.refresh_button)
         self.refresh_button.callback(self._on_refresh_clicked, None)
         self.refresh_button.box(fltk.FL_THIN_UP_BOX)
 
@@ -105,6 +109,7 @@ class ArtifactBrowserWindow:
             28,
             "Run Digest",
         )
+        self._style_button(self.run_digest_button)
         self.run_digest_button.callback(self._on_run_digest_clicked, None)
         self.run_digest_button.box(fltk.FL_THIN_UP_BOX)
 
@@ -115,6 +120,7 @@ class ArtifactBrowserWindow:
             28,
             "Run Latest 24h",
         )
+        self._style_button(self.run_latest_button)
         self.run_latest_button.callback(self._on_run_latest_clicked, None)
         self.run_latest_button.box(fltk.FL_THIN_UP_BOX)
 
@@ -157,8 +163,7 @@ class ArtifactBrowserWindow:
             "Run Details",
         )
         self.run_details.box(fltk.FL_BORDER_BOX)
-        self.run_details.textfont(fltk.FL_COURIER)
-        self.run_details.textsize(13)
+        self._style_widget(self.run_details, label_size=13, text_size=13)
 
         self.viewer = fltk.Fl_Help_View(
             right_pane_x,
@@ -168,8 +173,7 @@ class ArtifactBrowserWindow:
             "Viewer",
         )
         self.viewer.box(fltk.FL_BORDER_BOX)
-        self.viewer.textfont(fltk.FL_HELVETICA)
-        self.viewer.textsize(14)
+        self._style_widget(self.viewer, label_size=13, text_size=14)
 
         self.details_group.end()
         self.details_group.resizable(self.viewer)
@@ -183,8 +187,7 @@ class ArtifactBrowserWindow:
             STATUS_HEIGHT,
         )
         self.status_output.box(fltk.FL_FLAT_BOX)
-        self.status_output.textfont(fltk.FL_HELVETICA)
-        self.status_output.textsize(12)
+        self._style_widget(self.status_output, text_size=12)
         self.status_output.value(
             f"Ready. Browsing run artifacts under {self.data_dir}."
         )
@@ -389,8 +392,36 @@ class ArtifactBrowserWindow:
     @staticmethod
     def _style_browser(browser) -> None:  # noqa: ANN001
         browser.box(fltk.FL_BORDER_BOX)
-        browser.textfont(fltk.FL_HELVETICA)
-        browser.textsize(14)
+        ArtifactBrowserWindow._style_widget(
+            browser,
+            label_size=13,
+            text_size=14,
+        )
+
+    @staticmethod
+    def _style_button(button) -> None:  # noqa: ANN001
+        ArtifactBrowserWindow._style_widget(
+            button,
+            label_size=13,
+            bold=True,
+        )
+
+    @staticmethod
+    def _style_widget(  # noqa: ANN001
+        widget,
+        *,
+        label_size: int | None = None,
+        text_size: int | None = None,
+        bold: bool = False,
+    ) -> None:
+        font = fltk.FL_HELVETICA_BOLD if bold else fltk.FL_HELVETICA
+        if hasattr(widget, "labelfont"):
+            widget.labelfont(font)
+        if label_size is not None and hasattr(widget, "labelsize"):
+            widget.labelsize(label_size)
+        if text_size is not None and hasattr(widget, "textfont"):
+            widget.textfont(font)
+            widget.textsize(text_size)
 
 
 def run_artifact_browser(
@@ -398,6 +429,7 @@ def run_artifact_browser(
     data_dir: Path = DEFAULT_UI_DATA_PATH,
     initial_run_id: str | None = None,
 ) -> None:
+    apply_openstep_font_defaults(fltk)
     browser = ArtifactBrowserWindow(
         data_dir=data_dir,
         initial_run_id=initial_run_id,
