@@ -46,6 +46,8 @@ src/xs2n/storage/timeline.py
 src/xs2n/ui/__init__.py
 src/xs2n/ui/app.py
 src/xs2n/ui/artifacts.py
+src/xs2n/ui/macos/__init__.py
+src/xs2n/ui/macos/app_menu.py
 src/xs2n/ui/viewer.py
 tests/test_auth.py
 tests/test_auth_recovery.py
@@ -62,4 +64,5 @@ tests/test_timeline_fetching.py
 tests/test_timeline_storage.py
 tests/test_ui_artifacts.py
 tests/test_ui_cli.py
+tests/test_ui_macos_app_menu.py
 tests/test_ui_viewer.py

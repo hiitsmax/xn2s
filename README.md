@@ -210,6 +210,8 @@ The desktop browser is intentionally simple. It scans every `data/report_runs*` 
 
 Markdown artifacts such as `digest.md` now render as formatted documents in the right-hand pane instead of raw source text. JSON, logs, directories, and command output still render in a preformatted inspector view.
 
+On macOS, the native app menu is also trimmed down to `xn2s` with only `About xn2s` and `Quit xn2s`, so the desktop tool feels more like a small utility app than a generic Python host window.
+
 If `pyfltk` fails to import on macOS with a missing `libfltk*.dylib` error, install Homebrew FLTK and retry:
 
 ```bash

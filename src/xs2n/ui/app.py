@@ -19,6 +19,7 @@ from xs2n.ui.artifacts import (
     scan_runs,
 )
 from xs2n.ui.viewer import render_artifact_html, render_plain_text_html
+from xs2n.ui.macos import APP_NAME, apply_macos_app_menu, prepare_macos_app_menu
 
 
 WINDOW_WIDTH = 1480
@@ -61,14 +62,16 @@ class ArtifactBrowserWindow:
         self.window = fltk.Fl_Double_Window(
             WINDOW_WIDTH,
             WINDOW_HEIGHT,
-            "xs2n Artifact Browser",
+            f"{APP_NAME} Artifact Browser",
         )
         self._build_window()
         self.refresh_runs()
         fltk.Fl.add_idle(self._drain_command_results)
 
     def show(self) -> None:
+        prepare_macos_app_menu()
         self.window.show()
+        apply_macos_app_menu(APP_NAME)
 
     def _build_window(self) -> None:
         tile_y = MENU_HEIGHT + COMMAND_HEIGHT

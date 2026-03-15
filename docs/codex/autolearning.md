@@ -241,6 +241,8 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - tolerate old or interrupted runs that only contain a subset of files.
 - Kept the viewer FLTK-native by switching the right-hand pane to `Fl_Help_View` and converting `.md` artifacts to HTML at load time instead of embedding a browser engine.
 - Discovered a concrete macOS caveat during packaging research: `pyfltk` needs the native FLTK shared libraries from Homebrew, or imports fail with a missing `libfltk*.dylib` error.
+- Split the macOS-specific native menu override into `src/xs2n/ui/macos/` so the main FLTK app stays readable and the Cocoa bridge stays isolated to the platform that needs it.
+- Used FLTK's `Fl_Sys_Menu_Bar.window_menu_style(no_window_menu)` before first show, then a tiny Cocoa/AppKit bridge after show to rename the app to `xn2s` and replace the default macOS menu with only `About xn2s` and `Quit xn2s`.
 - Updated the user-facing docs to make the install path explicit:
   - `uv sync --extra gui`
   - `brew install fltk` on macOS

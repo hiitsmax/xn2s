@@ -27,6 +27,7 @@ The visible proof is:
 - [x] (2026-03-15 23:24Z) Updated `README.md` and `docs/codex/autolearning.md` with install and usage notes.
 - [x] (2026-03-15 23:26Z) Ran focused tests, the full pytest suite, a real pyFLTK import/bootstrap smoke, and an end-to-end `uv run xs2n ui` launch check.
 - [x] (2026-03-15 23:48Z) Upgraded the viewer pane from raw text-only output to FLTK-native HTML rendering for Markdown artifacts, while keeping JSON/log inspection preformatted and read-only.
+- [x] (2026-03-16 00:33Z) Added a dedicated `src/xs2n/ui/macos/` helper that renames the native macOS app menu to `xn2s`, suppresses FLTK's default Window menu, and leaves only `About xn2s` and `Quit xn2s` in the system menu bar.
 
 ## Surprises & Discoveries
 
@@ -41,6 +42,9 @@ The visible proof is:
 
 - Observation: Typer defaults can still leak `OptionInfo` objects when command functions are called directly in tests.
   Evidence: `tests/test_ui_cli.py::test_ui_command_uses_default_data_dir` initially failed until `src/xs2n/cli/ui.py` normalized `OptionInfo` to real defaults.
+
+- Observation: on macOS, FLTK can suppress its automatic Window menu, but the visible application name in the native menu bar still belongs to Cocoa rather than to the FLTK widget tree.
+  Evidence: fresh FLTK docs exposed `Fl_Sys_Menu_Bar.window_menu_style(no_window_menu)` for the Window menu, while Apple docs and live runtime testing showed the app label followed the process name and needed a separate AppKit-level override.
 
 ## Decision Log
 
@@ -64,13 +68,17 @@ The visible proof is:
   Rationale: the GUI already depends on FLTK, and `Fl_Help_View` gives formatted digest rendering without adding Electron-style runtime weight or a second rendering stack.
   Date/Author: 2026-03-15 / Codex
 
+- Decision: keep the macOS native-menu override in its own `ui/macos/` helper and use a tiny Cocoa bridge instead of adding PyObjC as a new dependency.
+  Rationale: FLTK handles most of the desktop UI, but exact macOS menu-bar control belongs to AppKit. A small isolated bridge keeps the dependency footprint low and avoids polluting `app.py` with platform-specific Objective-C details.
+  Date/Author: 2026-03-16 / Codex
+
 - Decision: use multiple focused subagents during implementation.
   Rationale: the user explicitly asked to avoid context rot. In this task, that meant keeping the CLI integration, artifact-model audit, tests, and docs as separate focused work streams rather than one overloaded thread.
   Date/Author: 2026-03-15 / Codex
 
 ## Outcomes & Retrospective
 
-The feature is implemented and working. `xs2n ui` now opens a small desktop artifact browser, the optional dependency path is explicit, the scanner handles the messy real-world run history already present in the repository, and the GUI can trigger the existing CLI actions without inventing a second orchestration layer. The newest refinement is that Markdown artifacts such as `digest.md` now render as formatted documents inside the same FLTK window instead of appearing as raw source text. The most important lesson was environmental rather than architectural: on macOS, the native FLTK runtime matters just as much as the Python wheel, so the docs and import error path had to make that obvious.
+The feature is implemented and working. `xs2n ui` now opens a small desktop artifact browser, the optional dependency path is explicit, the scanner handles the messy real-world run history already present in the repository, and the GUI can trigger the existing CLI actions without inventing a second orchestration layer. The newest refinements are that Markdown artifacts such as `digest.md` now render as formatted documents inside the same FLTK window and the macOS app menu now presents itself as `xn2s` with only `About xn2s` and `Quit xn2s`, which makes the tool feel much less like a generic Python host window. The most important lesson was environmental rather than architectural: on macOS, the native FLTK runtime matters just as much as the Python wheel, so the docs and import error path had to make that obvious.
 
 ## Context and Orientation
 
