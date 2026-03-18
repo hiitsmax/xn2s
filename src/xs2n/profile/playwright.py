@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import typer
+
+_REQUIRED_X_COOKIES = {"auth_token", "ct0"}
 
 
 def is_missing_playwright_browser_error(error: Exception) -> bool:
@@ -38,6 +41,32 @@ def install_playwright_chromium() -> None:
     )
 
 
+def _extract_cookies(raw_cookies: list[dict[str, Any]]) -> dict[str, str]:
+    cookies: dict[str, str] = {}
+    for cookie in raw_cookies:
+        name = cookie.get("name")
+        value = cookie.get("value")
+        if isinstance(name, str) and isinstance(value, str):
+            cookies[name] = value
+    return cookies
+
+
+def _wait_for_x_session_cookies(
+    *,
+    context: Any,
+    page: Any,
+    timeout_seconds: int = 300,
+    poll_interval_ms: int = 1000,
+) -> dict[str, str]:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        cookies = _extract_cookies(context.cookies("https://x.com"))
+        if _REQUIRED_X_COOKIES.issubset(cookies.keys()):
+            return cookies
+        page.wait_for_timeout(poll_interval_ms)
+    return _extract_cookies(context.cookies("https://x.com"))
+
+
 def bootstrap_cookies_via_browser(cookies_file: Path) -> Path:
     try:
         from playwright.sync_api import sync_playwright
@@ -51,7 +80,10 @@ def bootstrap_cookies_via_browser(cookies_file: Path) -> Path:
     cookies_path.parent.mkdir(parents=True, exist_ok=True)
 
     typer.echo("Opening browser for X login...")
-    typer.echo("After login completes in the browser, come back here and confirm.")
+    typer.echo(
+        "Complete the X login in the browser window. "
+        "Cookies will be saved automatically once the session is ready."
+    )
 
     cookies: dict[str, str] = {}
     for attempt in range(2):
@@ -62,10 +94,10 @@ def bootstrap_cookies_via_browser(cookies_file: Path) -> Path:
                 context = browser.new_context()
                 page = context.new_page()
                 page.goto("https://x.com/i/flow/login", wait_until="domcontentloaded")
-                typer.prompt("Press Enter after you are fully logged in", default="", show_default=False)
-
-                raw_cookies = context.cookies("https://x.com")
-                cookies = {item["name"]: item["value"] for item in raw_cookies}
+                cookies = _wait_for_x_session_cookies(
+                    context=context,
+                    page=page,
+                )
                 break
         except Exception as exc:
             if attempt == 0 and is_missing_playwright_browser_error(exc):
@@ -81,11 +113,10 @@ def bootstrap_cookies_via_browser(cookies_file: Path) -> Path:
             if browser is not None:
                 browser.close()
 
-    required = {"auth_token", "ct0"}
-    if not required.issubset(cookies.keys()):
+    if not _REQUIRED_X_COOKIES.issubset(cookies.keys()):
         raise RuntimeError(
             "Login appears incomplete: required X session cookies were not found. "
-            "Confirm you are fully logged in and retry."
+            "Confirm the browser completed login and retry."
         )
 
     cookies_path.write_text(json.dumps(cookies, indent=2), encoding="utf-8")
