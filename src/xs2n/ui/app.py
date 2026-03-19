@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import threading
+import webbrowser
 
 import fltk
 
@@ -34,6 +35,7 @@ from xs2n.ui.auth_commands import (
 from xs2n.ui.auth_window import AuthWindow
 from xs2n.ui.fonts import apply_default_ui_font_defaults
 from xs2n.ui.macos import APP_NAME, apply_macos_app_menu, prepare_macos_app_menu
+from xs2n.ui.saved_digest import find_saved_issue_thread, load_saved_digest_preview
 from xs2n.ui.run_list import (
     RUN_LIST_COLUMNS,
     compute_run_list_widths,
@@ -48,6 +50,11 @@ from xs2n.ui.run_list_browser import (
 )
 from xs2n.ui.run_arguments import RunCommand
 from xs2n.ui.run_preferences import RunPreferencesWindow
+from xs2n.ui.source_preview import (
+    INTERNAL_DIGEST_URI,
+    parse_thread_source_uri,
+    render_saved_thread_source_html,
+)
 from xs2n.ui.theme import (
     CLASSIC_LIGHT_THEME,
     UiTheme,
@@ -432,6 +439,7 @@ class ArtifactBrowserWindow:
         )
         self.viewer.box(fltk.FL_BORDER_BOX)
         self._style_widget(self.viewer, label_size=13, text_size=14)
+        self._configure_viewer_links()
 
         self.tile.end()
 
@@ -1426,6 +1434,71 @@ class ArtifactBrowserWindow:
         self.viewer.value(html)
         self.viewer.topline(0)
         self.viewer.leftline(0)
+
+    def _configure_viewer_links(self) -> None:
+        link_method = getattr(self.viewer, "link", None)
+        if not callable(link_method):
+            return
+        self._viewer_link_handler = self._handle_viewer_link
+        try:
+            link_method(self._viewer_link_handler)
+        except Exception:
+            return
+
+    def _handle_viewer_link(self, *args) -> str | None:  # noqa: ANN001
+        uri = next(
+            (arg for arg in reversed(args) if isinstance(arg, str)),
+            None,
+        )
+        if uri is None:
+            return None
+        thread_id = parse_thread_source_uri(uri)
+        if thread_id is not None:
+            artifact = self._find_artifact(self.selected_artifact_name or "")
+            if artifact is None:
+                return None
+            html = render_saved_thread_source_html(
+                artifact_path=artifact.path,
+                thread_id=thread_id,
+                theme=self._current_theme(),
+            )
+            if html is None:
+                return None
+            issue_thread_title = self._source_snapshot_title(
+                artifact=artifact,
+                thread_id=thread_id,
+            )
+            self._set_viewer_html(html)
+            self.status_output.value(
+                f"Viewing source snapshot for {issue_thread_title}."
+            )
+            return None
+
+        if uri == INTERNAL_DIGEST_URI:
+            artifact = self._find_artifact(self.selected_artifact_name or "")
+            if artifact is None:
+                return None
+            self._set_viewer_html(
+                render_artifact_html(artifact, theme=self._current_theme())
+            )
+            self.status_output.value(f"Viewing {artifact.name}.")
+            return None
+
+        if uri.startswith("https://") or uri.startswith("http://"):
+            webbrowser.open(uri)
+            self.status_output.value("Opened source in your browser.")
+            return None
+
+        return uri
+
+    def _source_snapshot_title(self, *, artifact: ArtifactRecord, thread_id: str) -> str:
+        preview = load_saved_digest_preview(run_dir=artifact.path.parent)
+        if preview is None:
+            return thread_id
+        _issue, thread = find_saved_issue_thread(preview, thread_id=thread_id)
+        if thread is None:
+            return thread_id
+        return thread.thread_title
 
     def _apply_theme_to_widgets(self) -> None:
         theme = self._current_theme()

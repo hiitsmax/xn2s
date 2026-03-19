@@ -12,6 +12,22 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 4. Add one operational hardening step in the next milestone.
 5. Repeat.
 
+## UI Digest Source Snapshot (2026-03-19)
+
+- Extended the saved-digest desktop preview so `source` now opens an internal snapshot page instead of leaving the UI immediately.
+- Split the old single-file preview logic into two honest responsibilities:
+  - `src/xs2n/ui/saved_digest.py` loads and validates saved digest artifacts,
+  - `src/xs2n/ui/source_preview.py` renders the compact thread/source page.
+- Refreshed `src/xs2n/ui/digest_preview.py` into a more structured Windows-classic layout with issue panels, clearer thread summaries, and internal `xs2n://thread/...` links.
+- Wired `fltk.Fl_Help_View.link(...)` inside `src/xs2n/ui/app.py` so internal links render new HTML in place while external `https://x.com/...` links open through the system browser.
+- Verified the milestone with:
+  - `uv run pytest tests/test_ui_viewer.py tests/test_ui_app_rendering.py -q`
+  - `uv run pytest tests/test_render_digest_html.py tests/test_ui_viewer.py tests/test_ui_app_rendering.py tests/test_ui_app.py -q`
+- Current repository status after the change:
+  - focused verification reached `14 passed`
+  - broader regression verification reached `35 passed`
+  - one runtime hardening detail was captured: `pyFLTK` passes extra callback args to `Fl_Help_View.link(...)`, so the handler now resolves the clicked URI from `*args` instead of assuming a rigid callback signature
+
 ## UI Digest Help View Simplification (2026-03-19)
 
 - Root-caused the digest freeze to `Fl_Help_View.value(...)` parsing the saved browser-oriented `digest.html`, not to worker-thread preview generation or JSON preview loading.

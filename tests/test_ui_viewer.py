@@ -332,7 +332,9 @@ def test_render_artifact_html_rebuilds_saved_digest_html_for_help_view(
     assert "Chip Race" in rendered
     assert "Supply constraints keep shaping AI infra." in rendered
     assert "Foundry capacity is still the gating factor" in rendered
-    assert "source 1" in rendered
+    assert ">source</font></a>" in rendered
+    assert "xs2n://thread/2032245601216389324" in rendered
+    assert "Thread summary" in rendered
     assert "Browser Shell" not in rendered
     assert "<style>" not in rendered
     assert "<main class=" not in rendered
