@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from queue import Queue
 from types import SimpleNamespace
 
@@ -26,6 +25,7 @@ class FakeViewer:
         self.html = ""
         self.top = None
         self.left = None
+        self.visible = True
 
     def value(self, html: str) -> None:
         self.html = html
@@ -36,6 +36,12 @@ class FakeViewer:
     def leftline(self, line: int) -> None:
         self.left = line
 
+    def show(self) -> None:
+        self.visible = True
+
+    def hide(self) -> None:
+        self.visible = False
+
 
 class FakeStatus:
     def __init__(self) -> None:
@@ -45,48 +51,39 @@ class FakeStatus:
         self.text = text
 
 
-def _write_json(path: app.Path, payload: object) -> None:
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+class FakeDigestViewer:
+    def __init__(self, *, load_result: bool = True) -> None:
+        self.load_result = load_result
+        self.loaded_run_dirs: list[app.Path] = []
+        self.visible = False
+        self.shown_overview = 0
+        self.shown_threads: list[str] = []
+        self.back_calls = 0
 
+    def load_run(self, run_dir: app.Path) -> bool:
+        self.loaded_run_dirs.append(run_dir)
+        return self.load_result
 
-def _issue_thread_payload() -> dict[str, object]:
-    tweet = {
-        "tweet_id": "2032245601216389324",
-        "account_handle": "realmcore_",
-        "author_handle": "realmcore_",
-        "kind": "retweet",
-        "created_at": "2026-03-13T00:01:23Z",
-        "text": "Foundry capacity is still the gating factor for every major roadmap shift.",
-        "conversation_id": "2032245601216389324",
-        "favorite_count": 0,
-        "retweet_count": 2,
-        "reply_count": 0,
-        "quote_count": 0,
-        "view_count": None,
-        "media": [],
-    }
-    return {
-        "thread_id": "2032245601216389324",
-        "conversation_id": "2032245601216389324",
-        "account_handle": "realmcore_",
-        "tweets": [tweet],
-        "source_tweet_ids": ["2032245601216389324"],
-        "context_tweet_ids": [],
-        "latest_created_at": "2026-03-13T00:01:23Z",
-        "primary_tweet_id": "2032245601216389324",
-        "primary_tweet": tweet,
-        "keep": True,
-        "filter_reason": "High-signal infrastructure thread.",
-        "issue_slug": "chip_race",
-        "issue_title": "Chip Race",
-        "issue_summary": "Supply constraints keep shaping AI infra.",
-        "thread_title": "Foundry capacity is still the gating factor",
-        "thread_summary": "A short report on why foundry capacity still drives the roadmap.",
-        "why_this_thread_belongs": "It adds concrete evidence to the chip-capacity issue.",
-    }
+    def show_overview(self) -> None:
+        self.shown_overview += 1
+
+    def show_thread(self, thread_id: str) -> None:
+        self.shown_threads.append(thread_id)
+
+    def go_back(self) -> None:
+        self.back_calls += 1
+
+    def show(self) -> None:
+        self.visible = True
+
+    def hide(self) -> None:
+        self.visible = False
+
+    def resize(self, *_args) -> None:  # noqa: ANN001
+        return None
+
+    def apply_theme(self, _theme) -> None:  # noqa: ANN001
+        return None
 
 
 def test_apply_selected_artifact_name_schedules_preview_render(
@@ -164,6 +161,97 @@ def test_apply_selected_artifact_name_schedules_preview_render(
     assert scheduled_artifacts == ["run.json"]
 
 
+def test_apply_selected_artifact_name_routes_digest_html_to_native_viewer() -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    browser.artifacts = [
+        ArtifactRecord(
+            name="digest.html",
+            path=app.Path("data/report_runs/demo/digest.html"),
+            kind="html",
+            exists=True,
+        )
+    ]
+    browser.sections = [
+        ArtifactSectionRecord(
+            icon="◆",
+            label="Digest",
+            artifact_name="digest.html",
+        )
+    ]
+    browser.sections_browser = FakeBrowser()
+    browser.raw_files_browser = FakeBrowser()
+    browser.viewer = FakeViewer()
+    browser.digest_viewer = FakeDigestViewer(load_result=True)
+    browser.status_output = FakeStatus()
+    browser.viewer_render_results = Queue()
+    browser.selected_artifact_name = None
+    browser.pending_viewer_artifact_name = None
+    browser.rendered_viewer_artifact_name = None
+    browser.pending_viewer_request_id = 0
+    browser.viewer_render_future = None
+    browser._schedule_artifact_preview_render = lambda artifact: (_ for _ in ()).throw(
+        AssertionError("digest viewer should not schedule generic preview render")
+    )
+
+    app.ArtifactBrowserWindow._apply_selected_artifact_name(browser, "digest.html")
+
+    assert browser.selected_artifact_name == "digest.html"
+    assert browser.digest_viewer.loaded_run_dirs == [app.Path("data/report_runs/demo")]
+    assert browser.digest_viewer.shown_overview == 1
+    assert browser.digest_viewer.visible is True
+    assert browser.viewer.visible is False
+    assert browser.pending_viewer_artifact_name is None
+    assert browser.status_output.text == "Viewing digest overview."
+
+
+def test_apply_selected_artifact_name_falls_back_when_digest_viewer_cannot_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    browser.artifacts = [
+        ArtifactRecord(
+            name="digest.html",
+            path=app.Path("data/report_runs/demo/digest.html"),
+            kind="html",
+            exists=True,
+        )
+    ]
+    browser.sections = []
+    browser.sections_browser = FakeBrowser()
+    browser.raw_files_browser = FakeBrowser()
+    browser.viewer = FakeViewer()
+    browser.digest_viewer = FakeDigestViewer(load_result=False)
+    browser.status_output = FakeStatus()
+    browser.viewer_render_results = Queue()
+    browser.selected_artifact_name = None
+    browser.pending_viewer_artifact_name = None
+    browser.rendered_viewer_artifact_name = None
+    browser.pending_viewer_request_id = 0
+    browser.viewer_render_future = None
+    scheduled_artifacts: list[str] = []
+    browser._schedule_artifact_preview_render = lambda artifact: (
+        scheduled_artifacts.append(artifact.name),
+        setattr(
+            browser,
+            "pending_viewer_request_id",
+            browser.pending_viewer_request_id + 1,
+        ),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_loading_artifact_html",
+        lambda artifact: f"<loading>{artifact.name}</loading>",
+    )
+
+    app.ArtifactBrowserWindow._apply_selected_artifact_name(browser, "digest.html")
+
+    assert browser.digest_viewer.loaded_run_dirs == [app.Path("data/report_runs/demo")]
+    assert browser.viewer.visible is True
+    assert browser.digest_viewer.visible is False
+    assert browser.viewer.html == "<loading>digest.html</loading>"
+    assert scheduled_artifacts == ["digest.html"]
+
+
 def test_drain_pending_viewer_render_uses_latest_completed_result() -> None:
     browser = object.__new__(app.ArtifactBrowserWindow)
     browser.viewer = FakeViewer()
@@ -229,91 +317,3 @@ def test_viewer_render_future_done_queues_result_and_wakes_ui(
     queued_result = browser.viewer_render_results.get_nowait()
     assert queued_result == result
     assert awake_calls == ["awake"]
-
-
-def test_handle_viewer_link_renders_internal_source_snapshot(
-    tmp_path: app.Path,
-) -> None:
-    assert hasattr(app.ArtifactBrowserWindow, "_handle_viewer_link")
-
-    run_dir = tmp_path / "20260318T225654Z"
-    run_dir.mkdir()
-    html_path = run_dir / "digest.html"
-    html_path.write_text("<html><body>Digest</body></html>\n", encoding="utf-8")
-    _write_json(
-        run_dir / "run.json",
-        {
-            "run_id": "20260318T225654Z",
-            "digest_title": "Chip Race",
-        },
-    )
-    _write_json(
-        run_dir / "issues.json",
-        [
-            {
-                "slug": "chip_race",
-                "title": "Chip Race",
-                "summary": "Supply constraints keep shaping AI infra.",
-                "thread_ids": ["2032245601216389324"],
-                "thread_count": 1,
-            }
-        ],
-    )
-    _write_json(run_dir / "issue_assignments.json", [_issue_thread_payload()])
-
-    browser = object.__new__(app.ArtifactBrowserWindow)
-    browser.viewer = FakeViewer()
-    browser.status_output = FakeStatus()
-    browser.selected_artifact_name = "digest.html"
-    browser.artifacts = [
-        ArtifactRecord(
-            name="digest.html",
-            path=html_path,
-            kind="html",
-            exists=True,
-        )
-    ]
-    browser._current_theme = lambda: app.CLASSIC_LIGHT_THEME
-    browser._set_viewer_html = lambda html: (
-        browser.viewer.value(html),
-        browser.viewer.topline(0),
-        browser.viewer.leftline(0),
-    )
-
-    result = app.ArtifactBrowserWindow._handle_viewer_link(
-        browser,
-        browser.viewer,
-        "xs2n://thread/2032245601216389324",
-    )
-
-    assert result is None
-    assert "Digest / Chip Race / Foundry capacity is still the gating factor" in browser.viewer.html
-    assert "Open on X" in browser.viewer.html
-    assert browser.status_output.text == "Viewing source snapshot for Foundry capacity is still the gating factor."
-
-
-def test_handle_viewer_link_opens_external_url_in_browser(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    assert hasattr(app.ArtifactBrowserWindow, "_handle_viewer_link")
-
-    opened_urls: list[str] = []
-    monkeypatch.setattr(
-        app.webbrowser,
-        "open",
-        lambda url: opened_urls.append(url) or True,
-    )
-
-    browser = object.__new__(app.ArtifactBrowserWindow)
-    browser.viewer = FakeViewer()
-    browser.status_output = FakeStatus()
-
-    result = app.ArtifactBrowserWindow._handle_viewer_link(
-        browser,
-        browser.viewer,
-        "https://x.com/realmcore_/status/2032245601216389324",
-    )
-
-    assert result is None
-    assert opened_urls == ["https://x.com/realmcore_/status/2032245601216389324"]
-    assert browser.status_output.text == "Opened source in your browser."

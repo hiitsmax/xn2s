@@ -5,7 +5,6 @@ import re
 from typing import Mapping
 
 from xs2n.ui.artifacts import ArtifactPreview, ArtifactRecord, load_artifact_preview
-from xs2n.ui.digest_preview import render_saved_digest_preview_html
 from xs2n.ui.fonts import DEFAULT_UI_FONT_FAMILY, DEFAULT_UI_HTML_FONT_FAMILY
 from xs2n.ui.theme import CLASSIC_LIGHT_THEME, UiTheme
 
@@ -53,14 +52,6 @@ def render_artifact_html(
     *,
     theme: UiTheme = CLASSIC_LIGHT_THEME,
 ) -> str:
-    if artifact.name == "digest.html":
-        saved_digest_preview_html = render_saved_digest_preview_html(
-            artifact_path=artifact.path,
-            theme=theme,
-        )
-        if saved_digest_preview_html is not None:
-            return saved_digest_preview_html
-
     preview = load_artifact_preview(artifact)
     metadata = _artifact_metadata(artifact, preview)
 

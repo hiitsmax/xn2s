@@ -34,9 +34,9 @@ from xs2n.ui.auth_commands import (
     build_x_reset_command,
 )
 from xs2n.ui.auth_window import AuthWindow
+from xs2n.ui.digest_browser import DigestBrowser
 from xs2n.ui.fonts import apply_default_ui_font_defaults
 from xs2n.ui.macos import APP_NAME, apply_macos_app_menu, prepare_macos_app_menu
-from xs2n.ui.saved_digest import find_saved_issue_thread, load_saved_digest_preview
 from xs2n.ui.run_list import (
     RUN_LIST_COLUMNS,
     compute_run_list_widths,
@@ -51,11 +51,6 @@ from xs2n.ui.run_list_browser import (
 )
 from xs2n.ui.run_arguments import RunCommand
 from xs2n.ui.run_preferences import RunPreferencesWindow
-from xs2n.ui.source_preview import (
-    INTERNAL_DIGEST_URI,
-    parse_thread_source_uri,
-    render_saved_thread_source_html,
-)
 from xs2n.ui.theme import (
     CLASSIC_LIGHT_THEME,
     UiTheme,
@@ -447,7 +442,14 @@ class ArtifactBrowserWindow:
         )
         self.viewer.box(fltk.FL_BORDER_BOX)
         self._style_widget(self.viewer, label_size=13, text_size=14)
-        self._configure_viewer_links()
+        self.digest_viewer = DigestBrowser(
+            x=right_pane_x,
+            y=tile_y,
+            width=right_pane_width,
+            height=tile_height,
+            on_open_url=self._open_external_url,
+        )
+        self.digest_viewer.hide()
 
         self.tile.end()
 
@@ -623,12 +625,15 @@ class ArtifactBrowserWindow:
             )
             self.run_list_group.hide()
             self.navigation_group.hide()
-            self.viewer.resize(
-                self.tile.x(),
-                self.tile.y(),
-                self.tile.w(),
-                self.tile.h(),
-            )
+            self.viewer.resize(self.tile.x(), self.tile.y(), self.tile.w(), self.tile.h())
+            digest_viewer = getattr(self, "digest_viewer", None)
+            if digest_viewer is not None:
+                digest_viewer.resize(
+                    self.tile.x(),
+                    self.tile.y(),
+                    self.tile.w(),
+                    self.tile.h(),
+                )
             self.focus_mode_enabled = True
             self.tile.init_sizes()
             self.tile.redraw()
@@ -740,12 +745,15 @@ class ArtifactBrowserWindow:
             raw_files_height,
         )
 
-        self.viewer.resize(
-            right_pane_x,
-            tile_y,
-            right_pane_width,
-            tile_height,
-        )
+        self.viewer.resize(right_pane_x, tile_y, right_pane_width, tile_height)
+        digest_viewer = getattr(self, "digest_viewer", None)
+        if digest_viewer is not None:
+            digest_viewer.resize(
+                right_pane_x,
+                tile_y,
+                right_pane_width,
+                tile_height,
+            )
 
     @staticmethod
     def _resolve_standard_pane_widths(
@@ -905,6 +913,18 @@ class ArtifactBrowserWindow:
             return
         self.selected_artifact_name = artifact.name
         self._sync_navigation_selection(artifact.name)
+        digest_viewer = getattr(self, "digest_viewer", None)
+        if (
+            artifact.name == "digest.html"
+            and digest_viewer is not None
+            and digest_viewer.load_run(artifact.path.parent)
+        ):
+            self._clear_artifact_viewer_state()
+            digest_viewer.show_overview()
+            self._show_digest_viewer()
+            self.status_output.value("Viewing digest overview.")
+            return
+
         self.pending_viewer_artifact_name = artifact.name
         self.rendered_viewer_artifact_name = None
         try:
@@ -1534,74 +1554,28 @@ class ArtifactBrowserWindow:
         return "xs2n"
 
     def _set_viewer_html(self, html: str) -> None:
+        self._show_file_viewer()
         self.viewer.value(html)
         self.viewer.topline(0)
         self.viewer.leftline(0)
 
-    def _configure_viewer_links(self) -> None:
-        link_method = getattr(self.viewer, "link", None)
-        if not callable(link_method):
-            return
-        self._viewer_link_handler = self._handle_viewer_link
-        try:
-            link_method(self._viewer_link_handler)
-        except Exception:
-            return
+    def _show_file_viewer(self) -> None:
+        digest_viewer = getattr(self, "digest_viewer", None)
+        if digest_viewer is not None:
+            digest_viewer.hide()
+        if hasattr(self.viewer, "show"):
+            self.viewer.show()
 
-    def _handle_viewer_link(self, *args) -> str | None:  # noqa: ANN001
-        uri = next(
-            (arg for arg in reversed(args) if isinstance(arg, str)),
-            None,
-        )
-        if uri is None:
-            return None
-        thread_id = parse_thread_source_uri(uri)
-        if thread_id is not None:
-            artifact = self._find_artifact(self.selected_artifact_name or "")
-            if artifact is None:
-                return None
-            html = render_saved_thread_source_html(
-                artifact_path=artifact.path,
-                thread_id=thread_id,
-                theme=self._current_theme(),
-            )
-            if html is None:
-                return None
-            issue_thread_title = self._source_snapshot_title(
-                artifact=artifact,
-                thread_id=thread_id,
-            )
-            self._set_viewer_html(html)
-            self.status_output.value(
-                f"Viewing source snapshot for {issue_thread_title}."
-            )
-            return None
+    def _show_digest_viewer(self) -> None:
+        if hasattr(self.viewer, "hide"):
+            self.viewer.hide()
+        digest_viewer = getattr(self, "digest_viewer", None)
+        if digest_viewer is not None:
+            digest_viewer.show()
 
-        if uri == INTERNAL_DIGEST_URI:
-            artifact = self._find_artifact(self.selected_artifact_name or "")
-            if artifact is None:
-                return None
-            self._set_viewer_html(
-                render_artifact_html(artifact, theme=self._current_theme())
-            )
-            self.status_output.value(f"Viewing {artifact.name}.")
-            return None
-
-        if uri.startswith("https://") or uri.startswith("http://"):
-            webbrowser.open(uri)
-            self.status_output.value("Opened source in your browser.")
-            return None
-
-        return uri
-
-    def _source_snapshot_title(self, *, artifact: ArtifactRecord, thread_id: str) -> str:
-        preview = load_saved_digest_preview(run_dir=artifact.path.parent)
-        if preview is None:
-            return thread_id
-        _issue, thread = find_saved_issue_thread(preview, thread_id=thread_id)
-        if thread is None:
-            return thread_id
-        return thread.thread_title
+    def _open_external_url(self, url: str) -> None:
+        webbrowser.open(url)
+        self.status_output.value("Opened source in your browser.")
 
     def _apply_theme_to_widgets(self) -> None:
         theme = self._current_theme()
@@ -1651,6 +1625,9 @@ class ArtifactBrowserWindow:
             self.viewer.textcolor(text_color)
         if hasattr(self.viewer, "labelcolor"):
             self.viewer.labelcolor(text_color)
+        digest_viewer = getattr(self, "digest_viewer", None)
+        if digest_viewer is not None:
+            digest_viewer.apply_theme(theme)
 
         if hasattr(self.status_output, "color"):
             self.status_output.color(panel_color)
