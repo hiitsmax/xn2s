@@ -12,6 +12,26 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 4. Add one operational hardening step in the next milestone.
 5. Repeat.
 
+## UI Digest Issue Reading Surface (2026-03-19)
+
+- Reframed the native digest viewer around issue-level reading instead of thread-level drilling:
+  - the issue navigator is now ranked by signal density using current saved data (`thread_count`, `tweet_count`),
+  - selecting an issue immediately opens one issue canvas with all thread cards and posts already expanded,
+  - the intermediate thread list inside the digest viewer is gone.
+- Kept the visual language inside the existing classic desktop theme instead of introducing a new UI vocabulary:
+  - compact ranked navigator on the left,
+  - editorial issue summary header on the right,
+  - one continuous issue canvas below for thread cards.
+- Added coverage in `tests/test_digest_browser_state.py` for:
+  - ranked issue ordering,
+  - issue-level expanded preview defaults,
+  - multi-thread issue rendering output.
+- Verified with:
+  - `uv run pytest tests/test_digest_browser_state.py -q`
+  - `uv run pytest tests/test_digest_browser_state.py tests/test_ui_app.py tests/test_ui_app_rendering.py -q`
+  - a real-run probe against `data/report_runs/20260318T225654Z` that confirmed the top navigator rows reorder to `17/17`, `8/8`, `5/5` issue clusters and that rendering the top issue stays around `20k` HTML characters.
+- The reusable lesson here is that this UI does not need more stored ranking metadata to feel prioritized. Deriving hierarchy locally from saved artifact density is enough, as long as the viewer stops mirroring raw storage structure one-to-one.
+
 ## UI Native Digest Viewer (2026-03-19)
 
 - Split the digest presentation contract in two:

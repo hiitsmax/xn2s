@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from xs2n.schemas.digest import Issue, IssueThread
+from xs2n.ui.digest_browser_preview import (
+    render_issue_placeholder_html,
+    render_issue_preview_html,
+)
 from xs2n.ui.digest_browser_state import DigestBrowserState
 from xs2n.ui.saved_digest import SavedDigestPreview
+from xs2n.ui.theme import CLASSIC_LIGHT_THEME
 
 
 def _preview() -> SavedDigestPreview:
@@ -108,6 +113,57 @@ def _preview() -> SavedDigestPreview:
             "why_this_thread_belongs": "It frames the architectural shift behind the issue.",
         }
     )
+    followup_issue_thread = IssueThread.model_validate(
+        {
+            "thread_id": "2032245601216389399",
+            "conversation_id": "2032245601216389399",
+            "account_handle": "realmcore_",
+            "tweets": [
+                {
+                    "tweet_id": "2032245601216389399",
+                    "account_handle": "realmcore_",
+                    "author_handle": "realmcore_",
+                    "kind": "post",
+                    "created_at": "2026-03-13T00:21:23Z",
+                    "text": "Packaging constraints are now spilling directly into cloud roadmap timing.",
+                    "conversation_id": "2032245601216389399",
+                    "favorite_count": 3,
+                    "retweet_count": 2,
+                    "reply_count": 0,
+                    "quote_count": 0,
+                    "view_count": None,
+                    "media": [],
+                }
+            ],
+            "source_tweet_ids": ["2032245601216389399"],
+            "context_tweet_ids": [],
+            "latest_created_at": "2026-03-13T00:21:23Z",
+            "primary_tweet_id": "2032245601216389399",
+            "primary_tweet": {
+                "tweet_id": "2032245601216389399",
+                "account_handle": "realmcore_",
+                "author_handle": "realmcore_",
+                "kind": "post",
+                "created_at": "2026-03-13T00:21:23Z",
+                "text": "Packaging constraints are now spilling directly into cloud roadmap timing.",
+                "conversation_id": "2032245601216389399",
+                "favorite_count": 3,
+                "retweet_count": 2,
+                "reply_count": 0,
+                "quote_count": 0,
+                "view_count": None,
+                "media": [],
+            },
+            "keep": True,
+            "filter_reason": "Adds more evidence to the same supply-side issue.",
+            "issue_slug": "chip_race",
+            "issue_title": "Chip Race",
+            "issue_summary": "Supply constraints keep shaping AI infra.",
+            "thread_title": "Advanced packaging is turning into the next schedule risk",
+            "thread_summary": "A follow-up note on why packaging now shifts deployment timing, not just manufacturing.",
+            "why_this_thread_belongs": "It expands the issue from foundry supply to packaging bottlenecks.",
+        }
+    )
     return SavedDigestPreview(
         run_id="20260318T225654Z",
         digest_title="Context Management for Agentic Systems",
@@ -117,8 +173,11 @@ def _preview() -> SavedDigestPreview:
                     "slug": "chip_race",
                     "title": "Chip Race",
                     "summary": "Supply constraints keep shaping AI infra.",
-                    "thread_ids": ["2032245601216389324"],
-                    "thread_count": 1,
+                    "thread_ids": [
+                        "2032245601216389324",
+                        "2032245601216389399",
+                    ],
+                    "thread_count": 2,
                 }
             ),
             Issue.model_validate(
@@ -131,33 +190,71 @@ def _preview() -> SavedDigestPreview:
                 }
             ),
         ],
-        issue_threads=[issue_thread, second_issue_thread],
+        issue_threads=[
+            issue_thread,
+            second_issue_thread,
+            followup_issue_thread,
+        ],
     )
 
 
-def test_digest_browser_state_defaults_to_first_issue_without_thread_preview() -> None:
+def test_digest_browser_state_defaults_to_ranked_issue_preview() -> None:
     state = DigestBrowserState(_preview())
+    issue_rows = state.issue_rows()
+    preview = state.selected_issue_preview()
 
-    assert state.issue_rows()[0].slug == "chip_race"
+    assert [row.slug for row in issue_rows] == ["chip_race", "context_systems"]
+    assert issue_rows[0].rank == 1
+    assert issue_rows[0].thread_count == 2
+    assert issue_rows[0].tweet_count == 3
     assert state.selected_issue().title == "Chip Race"
-    assert state.selected_thread() is None
-    assert [row.thread_id for row in state.thread_rows()] == ["2032245601216389324"]
-    assert state.thread_preview() is None
+    assert preview is not None
+    assert preview.priority_rank == 1
+    assert preview.thread_count == 2
+    assert preview.tweet_count == 3
+    assert len(preview.threads) == 2
+    assert preview.threads[0].thread_id == "2032245601216389324"
+    assert preview.threads[1].thread_id == "2032245601216389399"
 
 
-def test_digest_browser_state_switches_issue_and_thread_preview() -> None:
+def test_digest_browser_state_switches_issue_preview() -> None:
     state = DigestBrowserState(_preview())
 
     state.select_issue("context_systems")
 
+    preview = state.selected_issue_preview()
+
     assert state.selected_issue().title == "Context Systems"
-    assert [row.thread_id for row in state.thread_rows()] == ["3032245601216389324"]
-    assert state.thread_preview() is None
-
-    state.select_thread("3032245601216389324")
-    preview = state.thread_preview()
-
     assert preview is not None
-    assert preview.open_url == "https://x.com/agentic/status/3032245601216389324"
+    assert preview.priority_rank == 2
+    assert preview.lead_open_url == "https://x.com/agentic/status/3032245601216389324"
     assert preview.issue_title == "Context Systems"
-    assert len(preview.tweets) == 1
+    assert preview.thread_count == 1
+    assert len(preview.threads) == 1
+    assert preview.threads[0].tweet_count == 1
+
+
+def test_render_issue_preview_html_shows_all_threads_for_selected_issue() -> None:
+    state = DigestBrowserState(_preview())
+
+    rendered = render_issue_preview_html(
+        state.selected_issue_preview(),
+        CLASSIC_LIGHT_THEME,
+    )
+
+    assert "Chip Race" in rendered
+    assert "Foundry capacity is still the gating factor" in rendered
+    assert "Advanced packaging is turning into the next schedule risk" in rendered
+    assert "Packaging constraints are now spilling directly into cloud roadmap timing." in rendered
+    assert "@realmcore_" in rendered
+    assert "Priority #01" in rendered
+
+
+def test_render_issue_placeholder_html_guides_the_user() -> None:
+    rendered = render_issue_placeholder_html(
+        issue_title="Chip Race",
+        theme=CLASSIC_LIGHT_THEME,
+    )
+
+    assert "Chip Race" in rendered
+    assert "Issue overview" in rendered
