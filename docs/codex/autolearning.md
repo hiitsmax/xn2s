@@ -45,6 +45,10 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - `load_run_ms: 11.78`
   - `issue_timings_ms: [0.97, 1.01, 1.65]`
   - screenshot saved successfully to `/tmp/xs2n-digest-browser-probe.png`
+- Follow-up visual refinement after human review:
+  - the secondary summary column now carries only title, compact meta, and one blurb line instead of reprinting timestamps and verbose metadata,
+  - the lower viewer drops repeated issue-level headers and heavy field labels such as `Summary:` and `Why this matters:`,
+  - `Fl_Text_Display` now uses a cleaner proportional text face and slightly larger body size so the digest reads more like an editorial surface than a terminal dump.
 - The reusable lesson here is twofold:
   - this UI does not need more stored ranking metadata to feel prioritized,
   - once `Fl_Help_View` starts parsing richer, repeated structures, the correct fix is often to stop feeding it HTML and move that surface to native FLTK widgets.

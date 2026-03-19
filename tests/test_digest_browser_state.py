@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from xs2n.schemas.digest import Issue, IssueThread
 from xs2n.ui.digest_browser_preview import (
+    build_issue_summary_panel,
     render_issue_canvas_text,
     render_issue_placeholder_text,
 )
@@ -238,12 +239,15 @@ def test_render_issue_canvas_text_shows_all_threads_for_selected_issue() -> None
 
     rendered = render_issue_canvas_text(state.selected_issue_preview())
 
-    assert "ISSUE: Chip Race" in rendered
+    assert "ISSUE:" not in rendered
+    assert "Priority #01" not in rendered
+    assert "Summary:" not in rendered
+    assert "Why this matters:" not in rendered
     assert "Foundry capacity is still the gating factor" in rendered
     assert "Advanced packaging is turning into the next schedule risk" in rendered
     assert "Packaging constraints are now spilling directly into cloud roadmap timing." in rendered
     assert "@realmcore_" in rendered
-    assert "Priority #01" in rendered
+    assert "It adds concrete evidence to the chip-capacity issue." in rendered
 
 
 def test_render_issue_placeholder_text_guides_the_user() -> None:
@@ -253,3 +257,13 @@ def test_render_issue_placeholder_text_guides_the_user() -> None:
 
     assert "Chip Race" in rendered
     assert "Issue overview" in rendered
+
+
+def test_build_issue_summary_panel_keeps_secondary_column_compact() -> None:
+    state = DigestBrowserState(_preview())
+
+    panel = build_issue_summary_panel(state.selected_issue_preview())
+
+    assert panel.title == "Chip Race"
+    assert panel.meta == "#01 Track | 2 threads | 3 posts"
+    assert panel.blurb == "Supply constraints keep shaping AI infra."

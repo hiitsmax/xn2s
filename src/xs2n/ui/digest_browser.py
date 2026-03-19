@@ -6,6 +6,7 @@ from typing import Callable
 import fltk
 
 from xs2n.ui.digest_browser_preview import (
+    build_issue_summary_panel,
     render_issue_canvas_text,
     render_issue_placeholder_text,
 )
@@ -19,6 +20,8 @@ SUMMARY_HEIGHT = 126
 TOOLBAR_HEIGHT = 30
 ISSUE_LIST_WIDTH = 320
 PADDING = 8
+SUMMARY_TITLE_HEIGHT = 34
+SUMMARY_META_HEIGHT = 22
 
 
 class DigestBrowser:
@@ -40,7 +43,9 @@ class DigestBrowser:
         self.header = fltk.Fl_Box(x, y, width, HEADER_HEIGHT, "")
         self.subtitle = fltk.Fl_Box(x, y + HEADER_HEIGHT, width, SUBTITLE_HEIGHT, "")
         self.issue_list = fltk.Fl_Hold_Browser(x, y, ISSUE_LIST_WIDTH, height)
-        self.issue_summary = fltk.Fl_Box(x, y, width, SUMMARY_HEIGHT, "")
+        self.issue_title = fltk.Fl_Box(x, y, width, SUMMARY_TITLE_HEIGHT, "")
+        self.issue_meta = fltk.Fl_Box(x, y, width, SUMMARY_META_HEIGHT, "")
+        self.issue_blurb = fltk.Fl_Box(x, y, width, SUMMARY_HEIGHT - SUMMARY_TITLE_HEIGHT - SUMMARY_META_HEIGHT, "")
         self.open_button = fltk.Fl_Button(x, y, 132, TOOLBAR_HEIGHT, "Open lead thread")
         self.issue_canvas = fltk.Fl_Text_Display(x, y, width, height)
         self.issue_canvas_buffer = fltk.Fl_Text_Buffer()
@@ -49,7 +54,13 @@ class DigestBrowser:
         self.group.resizable(self.issue_canvas)
         self.group.hide()
 
-        for box in (self.header, self.subtitle, self.issue_summary):
+        for box in (
+            self.header,
+            self.subtitle,
+            self.issue_title,
+            self.issue_meta,
+            self.issue_blurb,
+        ):
             box.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE | fltk.FL_ALIGN_WRAP)
         self.issue_list.callback(self._on_issue_selected, None)
         self.open_button.callback(self._on_open_clicked, None)
@@ -86,35 +97,53 @@ class DigestBrowser:
         self.header.color(to_fltk_color(fltk, theme.viewer_panel_bg))
         self.subtitle.box(fltk.FL_FLAT_BOX)
         self.subtitle.color(to_fltk_color(fltk, theme.header_bg))
-        self.issue_summary.box(fltk.FL_DOWN_BOX)
-        self.issue_summary.color(to_fltk_color(fltk, theme.viewer_plain_bg))
+        self.issue_title.box(fltk.FL_DOWN_BOX)
+        self.issue_title.color(to_fltk_color(fltk, theme.viewer_plain_bg))
+        self.issue_meta.box(fltk.FL_FLAT_BOX)
+        self.issue_meta.color(to_fltk_color(fltk, theme.viewer_plain_bg))
+        self.issue_blurb.box(fltk.FL_FLAT_BOX)
+        self.issue_blurb.color(to_fltk_color(fltk, theme.viewer_plain_bg))
         self.issue_canvas.box(fltk.FL_BORDER_BOX)
         self.issue_canvas.color(to_fltk_color(fltk, theme.viewer_bg))
         if hasattr(self.issue_canvas, "textcolor"):
             self.issue_canvas.textcolor(text_color)
         if hasattr(self.issue_canvas, "textsize"):
-            self.issue_canvas.textsize(14)
+            self.issue_canvas.textsize(16)
         if hasattr(self.issue_canvas, "textfont"):
-            self.issue_canvas.textfont(fltk.FL_COURIER)
+            self.issue_canvas.textfont(fltk.FL_HELVETICA)
         for widget in (
             self.header,
             self.subtitle,
-            self.issue_summary,
+            self.issue_title,
+            self.issue_meta,
+            self.issue_blurb,
             self.issue_list,
         ):
             if hasattr(widget, "labelcolor"):
                 widget.labelcolor(text_color)
             if hasattr(widget, "textcolor"):
                 widget.textcolor(text_color)
-        if hasattr(self.issue_summary, "labelsize"):
-            self.issue_summary.labelsize(13)
+        if hasattr(self.issue_title, "labelsize"):
+            self.issue_title.labelsize(20)
+        if hasattr(self.issue_title, "labelfont"):
+            self.issue_title.labelfont(fltk.FL_HELVETICA_BOLD)
+        if hasattr(self.issue_meta, "labelsize"):
+            self.issue_meta.labelsize(12)
+        if hasattr(self.issue_meta, "labelcolor"):
+            self.issue_meta.labelcolor(to_fltk_color(fltk, theme.muted_text))
+        if hasattr(self.issue_blurb, "labelsize"):
+            self.issue_blurb.labelsize(14)
         self.issue_list.color(to_fltk_color(fltk, theme.panel_bg2))
         self.issue_list.selection_color(to_fltk_color(fltk, theme.selection_bg))
+        if hasattr(self.issue_list, "textsize"):
+            self.issue_list.textsize(15)
         self.open_button.color(to_fltk_color(fltk, theme.control_bg))
         self.open_button.selection_color(
             to_fltk_color(fltk, theme.control_pressed_bg)
         )
         self.open_button.labelcolor(text_color)
+        if hasattr(self.open_button, "labelsize"):
+            self.open_button.labelsize(12)
         self.group.redraw()
 
     def load_run(self, run_dir: Path) -> bool:
@@ -148,7 +177,19 @@ class DigestBrowser:
             ISSUE_LIST_WIDTH,
             height - HEADER_HEIGHT - SUBTITLE_HEIGHT,
         )
-        self.issue_summary.resize(right_x, summary_y, right_width, SUMMARY_HEIGHT)
+        self.issue_title.resize(right_x, summary_y, right_width, SUMMARY_TITLE_HEIGHT)
+        self.issue_meta.resize(
+            right_x,
+            summary_y + SUMMARY_TITLE_HEIGHT,
+            right_width,
+            SUMMARY_META_HEIGHT,
+        )
+        self.issue_blurb.resize(
+            right_x,
+            summary_y + SUMMARY_TITLE_HEIGHT + SUMMARY_META_HEIGHT,
+            right_width,
+            SUMMARY_HEIGHT - SUMMARY_TITLE_HEIGHT - SUMMARY_META_HEIGHT,
+        )
         self.open_button.resize(right_x, button_y, 132, TOOLBAR_HEIGHT)
         self.issue_canvas.resize(right_x, canvas_y, right_width, canvas_height)
         self._configure_issue_list_columns()
@@ -177,7 +218,10 @@ class DigestBrowser:
 
         issue_preview = self._state.selected_issue_preview()
         if issue_preview is None:
-            self.issue_summary.label(" No issue selected")
+            panel = build_issue_summary_panel(issue_preview)
+            self.issue_title.label(f" {panel.title}")
+            self.issue_meta.label("")
+            self.issue_blurb.label("")
             self.issue_canvas_buffer.text(
                 render_issue_placeholder_text(
                     issue_title="Selected issue",
@@ -185,7 +229,10 @@ class DigestBrowser:
             )
             self.open_button.deactivate()
         else:
-            self.issue_summary.label(_format_issue_summary_label(issue_preview))
+            panel = build_issue_summary_panel(issue_preview)
+            self.issue_title.label(f" {panel.title}")
+            self.issue_meta.label(f" {panel.meta}")
+            self.issue_blurb.label(f" {panel.blurb}")
             self.issue_canvas_buffer.text(
                 render_issue_canvas_text(issue_preview)
             )
@@ -235,29 +282,12 @@ class DigestBrowser:
 
 def _format_issue_row_label(issue_row) -> str:  # noqa: ANN001
     density = f"{issue_row.thread_count}T/{issue_row.tweet_count}P"
-    title = _truncate_text(issue_row.title, limit=38)
+    title = _truncate_text(issue_row.title, limit=34)
     return (
         f"{issue_row.rank:02d}\t"
         f"{issue_row.priority_label}\t"
         f"{density}\t"
         f"{title}"
-    )
-
-
-def _format_issue_summary_label(issue_preview) -> str:  # noqa: ANN001
-    latest_label = (
-        issue_preview.latest_created_at.strftime("%Y-%m-%d %H:%M UTC")
-        if issue_preview.latest_created_at is not None
-        else "n/a"
-    )
-    return (
-        f" {issue_preview.issue_title}\n"
-        f" Priority #{issue_preview.priority_rank:02d} | "
-        f"{issue_preview.priority_label} | "
-        f"{issue_preview.thread_count} threads | "
-        f"{issue_preview.tweet_count} posts\n"
-        f" Latest signal: {latest_label}\n\n"
-        f"{issue_preview.issue_summary}"
     )
 
 

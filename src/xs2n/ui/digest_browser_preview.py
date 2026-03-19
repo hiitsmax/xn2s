@@ -1,9 +1,37 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class IssueSummaryPanel:
+    title: str
+    meta: str
+    blurb: str
+
+
+def build_issue_summary_panel(preview) -> IssueSummaryPanel:  # noqa: ANN001
+    if preview is None:
+        return IssueSummaryPanel(
+            title="Selected issue",
+            meta="",
+            blurb="",
+        )
+
+    return IssueSummaryPanel(
+        title=preview.issue_title,
+        meta=(
+            f"#{preview.priority_rank:02d} {preview.priority_label} | "
+            f"{preview.thread_count} threads | "
+            f"{preview.tweet_count} posts"
+        ),
+        blurb=preview.issue_summary,
+    )
+
 
 def render_issue_placeholder_text(*, issue_title: str) -> str:
     return (
-        f"ISSUE: {issue_title}\n"
+        f"{issue_title}\n"
         "\n"
         "Issue overview will appear here as soon as the selected issue has thread data.\n"
     )
@@ -13,17 +41,7 @@ def render_issue_canvas_text(preview) -> str:  # noqa: ANN001
     if preview is None:
         return render_issue_placeholder_text(issue_title="Selected issue")
 
-    lines = [
-        f"ISSUE: {preview.issue_title}",
-        (
-            f"Priority #{preview.priority_rank:02d} | {preview.priority_label} | "
-            f"{preview.thread_count} threads | {preview.tweet_count} posts | "
-            f"latest {_format_timestamp(preview.latest_created_at)}"
-        ),
-        "",
-        preview.issue_summary,
-        "",
-    ]
+    lines = [preview.issue_summary, ""]
 
     if not preview.threads:
         lines.extend(
@@ -36,13 +54,9 @@ def render_issue_canvas_text(preview) -> str:  # noqa: ANN001
     for index, thread_card in enumerate(preview.threads, start=1):
         lines.extend(
             [
-                f"THREAD {index:02d}: {thread_card.title}",
-                f"Summary: {thread_card.summary}",
-                f"Why this matters: {thread_card.why_it_matters}",
-                (
-                    f"Posts: {thread_card.tweet_count} | "
-                    f"latest {_format_timestamp(thread_card.latest_created_at)}"
-                ),
+                _format_thread_heading(index=index, title=thread_card.title),
+                thread_card.summary,
+                thread_card.why_it_matters,
                 "",
             ]
         )
@@ -57,10 +71,13 @@ def render_issue_canvas_text(preview) -> str:  # noqa: ANN001
                     "",
                 ]
             )
-        lines.append("-" * 72)
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _format_thread_heading(*, index: int, title: str) -> str:
+    return f"{index:02d}. {title}"
 
 
 def _format_timestamp(value) -> str:  # noqa: ANN001
