@@ -6,8 +6,8 @@ from typing import Callable
 import fltk
 
 from xs2n.ui.digest_browser_preview import (
-    render_issue_placeholder_html,
-    render_issue_preview_html,
+    render_issue_canvas_text,
+    render_issue_placeholder_text,
 )
 from xs2n.ui.digest_browser_state import DigestBrowserState
 from xs2n.ui.saved_digest import load_saved_digest_preview
@@ -42,7 +42,9 @@ class DigestBrowser:
         self.issue_list = fltk.Fl_Hold_Browser(x, y, ISSUE_LIST_WIDTH, height)
         self.issue_summary = fltk.Fl_Box(x, y, width, SUMMARY_HEIGHT, "")
         self.open_button = fltk.Fl_Button(x, y, 132, TOOLBAR_HEIGHT, "Open lead thread")
-        self.issue_canvas = fltk.Fl_Help_View(x, y, width, height, "Issue Canvas")
+        self.issue_canvas = fltk.Fl_Text_Display(x, y, width, height)
+        self.issue_canvas_buffer = fltk.Fl_Text_Buffer()
+        self.issue_canvas.buffer(self.issue_canvas_buffer)
         self.group.end()
         self.group.resizable(self.issue_canvas)
         self.group.hide()
@@ -57,6 +59,13 @@ class DigestBrowser:
             self.open_button.tooltip(
                 "Open the lead thread for the selected issue on X."
             )
+        if hasattr(self.issue_canvas, "wrap_mode"):
+            self.issue_canvas.wrap_mode(
+                fltk.Fl_Text_Display.WRAP_AT_BOUNDS,
+                0,
+            )
+        if hasattr(self.issue_canvas, "linenumber_width"):
+            self.issue_canvas.linenumber_width(0)
         self._layout()
         self.apply_theme(self._theme)
 
@@ -80,13 +89,18 @@ class DigestBrowser:
         self.issue_summary.box(fltk.FL_DOWN_BOX)
         self.issue_summary.color(to_fltk_color(fltk, theme.viewer_plain_bg))
         self.issue_canvas.box(fltk.FL_BORDER_BOX)
-        self.issue_canvas.color(to_fltk_color(fltk, theme.viewer_plain_bg))
+        self.issue_canvas.color(to_fltk_color(fltk, theme.viewer_bg))
+        if hasattr(self.issue_canvas, "textcolor"):
+            self.issue_canvas.textcolor(text_color)
+        if hasattr(self.issue_canvas, "textsize"):
+            self.issue_canvas.textsize(14)
+        if hasattr(self.issue_canvas, "textfont"):
+            self.issue_canvas.textfont(fltk.FL_COURIER)
         for widget in (
             self.header,
             self.subtitle,
             self.issue_summary,
             self.issue_list,
-            self.issue_canvas,
         ):
             if hasattr(widget, "labelcolor"):
                 widget.labelcolor(text_color)
@@ -108,7 +122,7 @@ class DigestBrowser:
         if preview is None:
             self._state = None
             self.issue_list.clear()
-            self.issue_canvas.value("")
+            self.issue_canvas_buffer.text("")
             return False
         self._state = DigestBrowserState(preview)
         self._render()
@@ -164,18 +178,19 @@ class DigestBrowser:
         issue_preview = self._state.selected_issue_preview()
         if issue_preview is None:
             self.issue_summary.label(" No issue selected")
-            self.issue_canvas.value(
-                render_issue_placeholder_html(
+            self.issue_canvas_buffer.text(
+                render_issue_placeholder_text(
                     issue_title="Selected issue",
-                    theme=self._theme,
                 )
             )
             self.open_button.deactivate()
         else:
             self.issue_summary.label(_format_issue_summary_label(issue_preview))
-            self.issue_canvas.value(
-                render_issue_preview_html(issue_preview, self._theme)
+            self.issue_canvas_buffer.text(
+                render_issue_canvas_text(issue_preview)
             )
+            self.issue_canvas.insert_position(0)
+            self.issue_canvas.show_insert_position()
             if issue_preview.lead_open_url:
                 self.open_button.activate()
             else:

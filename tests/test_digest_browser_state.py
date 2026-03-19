@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from xs2n.schemas.digest import Issue, IssueThread
 from xs2n.ui.digest_browser_preview import (
-    render_issue_placeholder_html,
-    render_issue_preview_html,
+    render_issue_canvas_text,
+    render_issue_placeholder_text,
 )
 from xs2n.ui.digest_browser_state import DigestBrowserState
 from xs2n.ui.saved_digest import SavedDigestPreview
-from xs2n.ui.theme import CLASSIC_LIGHT_THEME
 
 
 def _preview() -> SavedDigestPreview:
@@ -234,15 +233,12 @@ def test_digest_browser_state_switches_issue_preview() -> None:
     assert preview.threads[0].tweet_count == 1
 
 
-def test_render_issue_preview_html_shows_all_threads_for_selected_issue() -> None:
+def test_render_issue_canvas_text_shows_all_threads_for_selected_issue() -> None:
     state = DigestBrowserState(_preview())
 
-    rendered = render_issue_preview_html(
-        state.selected_issue_preview(),
-        CLASSIC_LIGHT_THEME,
-    )
+    rendered = render_issue_canvas_text(state.selected_issue_preview())
 
-    assert "Chip Race" in rendered
+    assert "ISSUE: Chip Race" in rendered
     assert "Foundry capacity is still the gating factor" in rendered
     assert "Advanced packaging is turning into the next schedule risk" in rendered
     assert "Packaging constraints are now spilling directly into cloud roadmap timing." in rendered
@@ -250,10 +246,9 @@ def test_render_issue_preview_html_shows_all_threads_for_selected_issue() -> Non
     assert "Priority #01" in rendered
 
 
-def test_render_issue_placeholder_html_guides_the_user() -> None:
-    rendered = render_issue_placeholder_html(
+def test_render_issue_placeholder_text_guides_the_user() -> None:
+    rendered = render_issue_placeholder_text(
         issue_title="Chip Race",
-        theme=CLASSIC_LIGHT_THEME,
     )
 
     assert "Chip Race" in rendered

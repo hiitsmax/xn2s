@@ -18,19 +18,36 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - the issue navigator is now ranked by signal density using current saved data (`thread_count`, `tweet_count`),
   - selecting an issue immediately opens one issue canvas with all thread cards and posts already expanded,
   - the intermediate thread list inside the digest viewer is gone.
+- Follow-up debugging showed that the remaining freeze did not come from loading data or building the issue text:
+  - `load_saved_digest_preview(...)`, `DigestBrowserState(...)`, and issue rendering were all sub-5ms,
+  - the stall was specifically `Fl_Help_View.value(...)` on the issue canvas, even with only about `20k` characters of HTML.
+- Replaced the issue canvas transport from `Fl_Help_View` HTML to `Fl_Text_Display` + `Fl_Text_Buffer`, keeping the ranked issue navigator and summary header but moving the expanded issue body to native wrapped text.
+- Added a real UI probe module at `src/xs2n/ui/digest_browser_probe.py` that:
+  - opens the real native digest viewer,
+  - measures `load_run` and per-issue selection timings,
+  - captures a PNG screenshot using `fl_capture_window(...)` and `fl_write_png(...)`.
 - Kept the visual language inside the existing classic desktop theme instead of introducing a new UI vocabulary:
   - compact ranked navigator on the left,
   - editorial issue summary header on the right,
-  - one continuous issue canvas below for thread cards.
+  - one continuous native text canvas below for thread cards.
 - Added coverage in `tests/test_digest_browser_state.py` for:
   - ranked issue ordering,
   - issue-level expanded preview defaults,
   - multi-thread issue rendering output.
+- Added `tests/test_digest_browser_probe.py` to run the real probe module with a timeout and assert that it both stays responsive and writes a screenshot.
 - Verified with:
   - `uv run pytest tests/test_digest_browser_state.py -q`
+  - `uv run pytest tests/test_digest_browser_state.py tests/test_digest_browser_probe.py -q`
   - `uv run pytest tests/test_digest_browser_state.py tests/test_ui_app.py tests/test_ui_app_rendering.py -q`
   - a real-run probe against `data/report_runs/20260318T225654Z` that confirmed the top navigator rows reorder to `17/17`, `8/8`, `5/5` issue clusters and that rendering the top issue stays around `20k` HTML characters.
-- The reusable lesson here is that this UI does not need more stored ranking metadata to feel prioritized. Deriving hierarchy locally from saved artifact density is enough, as long as the viewer stops mirroring raw storage structure one-to-one.
+  - `uv run python -m xs2n.ui.digest_browser_probe --run-dir data/report_runs/20260318T225654Z --screenshot /tmp/xs2n-digest-browser-probe.png --issue-limit 3`
+- Current measured probe output on that run:
+  - `load_run_ms: 11.78`
+  - `issue_timings_ms: [0.97, 1.01, 1.65]`
+  - screenshot saved successfully to `/tmp/xs2n-digest-browser-probe.png`
+- The reusable lesson here is twofold:
+  - this UI does not need more stored ranking metadata to feel prioritized,
+  - once `Fl_Help_View` starts parsing richer, repeated structures, the correct fix is often to stop feeding it HTML and move that surface to native FLTK widgets.
 
 ## UI Native Digest Viewer (2026-03-19)
 
