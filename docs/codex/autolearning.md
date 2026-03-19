@@ -37,6 +37,18 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - the most robust anti-freeze lesson here is architectural: when the desktop UI needs interaction, stop encoding that interaction as HTML for `Fl_Help_View` and give the right pane a native widget path instead
   - the most useful “self-test the UI” lesson here is pragmatic: for FLTK, widget introspection from a real `ArtifactBrowserWindow` instance is more reliable and scriptable than trying to infer behavior from HTML output alone
 
+## UI Digest Auto-Selection Hardening (2026-03-19)
+
+- Root-caused the “middle navigation still visible” regression to sticky fallback artifact selection, not to preference persistence or FLTK visibility state.
+- The concrete failure mode was: the UI booted into a newer run without `digest.html`, auto-selected `run.json`, and then carried that fallback into an older run that did have `digest.html`, which prevented the digest viewer from activating and therefore kept the middle pane open.
+- Added a small distinction in `src/xs2n/ui/app.py` between automatic artifact selection and explicit user-pinned selection:
+  - automatic selection now re-prefers `digest.html` and `digest.md` whenever a run provides them,
+  - explicit clicks in the middle pane still stay sticky across runs when the artifact exists.
+- Added focused coverage in `tests/test_ui_app_rendering.py` for the new selection-resolution rule.
+- Verified with:
+  - `uv run pytest tests/test_ui_app.py tests/test_ui_app_rendering.py tests/test_ui_run_preferences.py tests/test_ui_state_storage.py -q`
+  - a live widget probe that opened `ArtifactBrowserWindow`, switched to run `20260318T225654Z`, and confirmed `selected_artifact_name == 'digest.html'` plus `navigation_visible == False`
+
 ## UI Digest Source Snapshot (2026-03-19)
 
 - Extended the saved-digest desktop preview so `source` now opens an internal snapshot page instead of leaving the UI immediately.

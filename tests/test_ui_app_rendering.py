@@ -112,6 +112,55 @@ class FakeDigestViewer:
         return None
 
 
+def test_resolve_selected_artifact_name_prefers_digest_when_selection_is_not_pinned(
+) -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    browser.artifacts = [
+        ArtifactRecord(
+            name="digest.html",
+            path=app.Path("data/report_runs/demo/digest.html"),
+            kind="html",
+            exists=True,
+        ),
+        ArtifactRecord(
+            name="run.json",
+            path=app.Path("data/report_runs/demo/run.json"),
+            kind="json",
+            exists=True,
+        ),
+    ]
+    browser.selected_artifact_name = "run.json"
+    browser.artifact_selection_pinned = False
+
+    assert app.ArtifactBrowserWindow._resolve_selected_artifact_name(browser) == (
+        "digest.html"
+    )
+
+
+def test_resolve_selected_artifact_name_preserves_pinned_selection() -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    browser.artifacts = [
+        ArtifactRecord(
+            name="digest.html",
+            path=app.Path("data/report_runs/demo/digest.html"),
+            kind="html",
+            exists=True,
+        ),
+        ArtifactRecord(
+            name="run.json",
+            path=app.Path("data/report_runs/demo/run.json"),
+            kind="json",
+            exists=True,
+        ),
+    ]
+    browser.selected_artifact_name = "run.json"
+    browser.artifact_selection_pinned = True
+
+    assert app.ArtifactBrowserWindow._resolve_selected_artifact_name(browser) == (
+        "run.json"
+    )
+
+
 def test_apply_selected_artifact_name_schedules_preview_render(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

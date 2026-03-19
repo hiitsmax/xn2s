@@ -205,6 +205,7 @@ class ArtifactBrowserWindow:
         )
         self.focus_mode_enabled = False
         self.standard_pane_widths = (LEFT_PANE_WIDTH, MIDDLE_PANE_WIDTH)
+        self.artifact_selection_pinned = False
         self.running_label: str | None = None
         self.running_thread: threading.Thread | None = None
         self.selected_run_id: str | None = initial_run_id
@@ -889,6 +890,11 @@ class ArtifactBrowserWindow:
         self._apply_selected_artifact_name(preferred_artifact_name)
 
     def _resolve_selected_artifact_name(self) -> str | None:
+        if not getattr(self, "artifact_selection_pinned", False):
+            for artifact_name in ("digest.html", "digest.md"):
+                artifact = self._find_artifact(artifact_name)
+                if artifact is not None:
+                    return artifact.name
         if self.selected_artifact_name is not None:
             artifact = self._find_artifact(self.selected_artifact_name)
             if artifact is not None:
@@ -928,10 +934,16 @@ class ArtifactBrowserWindow:
             0 if raw_file_index is None else raw_file_index + 1
         )
 
-    def _apply_selected_artifact_name(self, artifact_name: str) -> None:
+    def _apply_selected_artifact_name(
+        self,
+        artifact_name: str,
+        *,
+        user_selected: bool = False,
+    ) -> None:
         artifact = self._find_artifact(artifact_name)
         if artifact is None:
             return
+        self.artifact_selection_pinned = bool(user_selected)
         self.selected_artifact_name = artifact.name
         self._sync_navigation_selection(artifact.name)
         digest_viewer = getattr(self, "digest_viewer", None)
@@ -1559,14 +1571,18 @@ class ArtifactBrowserWindow:
         if selection < 1 or selection > len(self.sections):
             return
         self._apply_selected_artifact_name(
-            self.sections[selection - 1].artifact_name
+            self.sections[selection - 1].artifact_name,
+            user_selected=True,
         )
 
     def _on_raw_file_selected(self, widget, data=None) -> None:  # noqa: ANN001
         selection = widget.value()
         if selection < 1 or selection > len(self.artifacts):
             return
-        self._apply_selected_artifact_name(self.artifacts[selection - 1].name)
+        self._apply_selected_artifact_name(
+            self.artifacts[selection - 1].name,
+            user_selected=True,
+        )
 
     def _resolve_cli_executable(self) -> str:
         argv0 = Path(sys.argv[0])
