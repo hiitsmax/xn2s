@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,50 @@ from xs2n.ui.viewer import (
     render_loading_artifact_html,
     render_plain_text_html,
 )
+
+
+def _write_json(path: Path, payload: object) -> None:
+    path.write_text(
+        f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n",
+        encoding="utf-8",
+    )
+
+
+def _issue_thread_payload() -> dict[str, object]:
+    tweet = {
+        "tweet_id": "2032245601216389324",
+        "account_handle": "realmcore_",
+        "author_handle": "realmcore_",
+        "kind": "retweet",
+        "created_at": "2026-03-13T00:01:23Z",
+        "text": "Foundry capacity is still the gating factor.",
+        "conversation_id": "2032245601216389324",
+        "favorite_count": 0,
+        "retweet_count": 2,
+        "reply_count": 0,
+        "quote_count": 0,
+        "view_count": None,
+        "media": [],
+    }
+    return {
+        "thread_id": "2032245601216389324",
+        "conversation_id": "2032245601216389324",
+        "account_handle": "realmcore_",
+        "tweets": [tweet],
+        "source_tweet_ids": ["2032245601216389324"],
+        "context_tweet_ids": [],
+        "latest_created_at": "2026-03-13T00:01:23Z",
+        "primary_tweet_id": "2032245601216389324",
+        "primary_tweet": tweet,
+        "keep": True,
+        "filter_reason": "High-signal infrastructure thread.",
+        "issue_slug": "chip_race",
+        "issue_title": "Chip Race",
+        "issue_summary": "Supply constraints keep shaping AI infra.",
+        "thread_title": "Foundry capacity is still the gating factor",
+        "thread_summary": "A short report on why foundry capacity still drives the roadmap.",
+        "why_this_thread_belongs": "It adds concrete evidence to the chip-capacity issue.",
+    }
 
 
 def test_render_plain_text_html_escapes_markup() -> None:
@@ -232,3 +277,62 @@ def test_render_artifact_html_themes_html_artifact_when_dark(
     assert "#1F1D19" in rendered
     assert "#DDD7C8" in rendered
     assert "#26241F" in rendered
+
+
+def test_render_artifact_html_rebuilds_saved_digest_html_for_help_view(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "20260318T225654Z"
+    run_dir.mkdir()
+
+    html_path = run_dir / "digest.html"
+    html_path.write_text(
+        (
+            "<!doctype html><html><head><style>"
+            "body{background:#f7f3ea;color:#1f1a15;}"
+            "</style></head><body><main class=\"page\">"
+            "<h1>Browser Shell</h1>"
+            "</main></body></html>\n"
+        ),
+        encoding="utf-8",
+    )
+    _write_json(
+        run_dir / "run.json",
+        {
+            "run_id": "20260318T225654Z",
+            "digest_title": "Chip Race",
+        },
+    )
+    _write_json(
+        run_dir / "issues.json",
+        [
+            {
+                "slug": "chip_race",
+                "title": "Chip Race",
+                "summary": "Supply constraints keep shaping AI infra.",
+                "thread_ids": ["2032245601216389324"],
+                "thread_count": 1,
+            }
+        ],
+    )
+    _write_json(
+        run_dir / "issue_assignments.json",
+        [_issue_thread_payload()],
+    )
+
+    artifact = ArtifactRecord(
+        name="digest.html",
+        path=html_path,
+        kind="html",
+        exists=True,
+    )
+
+    rendered = render_artifact_html(artifact)
+
+    assert "Chip Race" in rendered
+    assert "Supply constraints keep shaping AI infra." in rendered
+    assert "Foundry capacity is still the gating factor" in rendered
+    assert "source 1" in rendered
+    assert "Browser Shell" not in rendered
+    assert "<style>" not in rendered
+    assert "<main class=" not in rendered

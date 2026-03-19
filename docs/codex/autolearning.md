@@ -12,6 +12,20 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 4. Add one operational hardening step in the next milestone.
 5. Repeat.
 
+## UI Digest Help View Simplification (2026-03-19)
+
+- Root-caused the digest freeze to `Fl_Help_View.value(...)` parsing the saved browser-oriented `digest.html`, not to worker-thread preview generation or JSON preview loading.
+- Re-checked fresh FLTK guidance through Context7 and aligned the UI with the documented reality that `Fl_Help_View` understands a subset of HTML, so the desktop app now avoids handing it the full browser digest markup.
+- Kept the saved `digest.html` file untouched for browser use, but taught the desktop viewer to rebuild that artifact from `run.json`, `issues.json`, and `issue_assignments.json` into a simpler FLTK-friendly document with only basic headings, paragraphs, and links.
+- Left generic HTML artifacts on the previous path so non-digest HTML still renders verbatim in light mode and with the existing dark-theme override in dark mode.
+- Verified the milestone with:
+  - `uv run pytest tests/test_ui_app_rendering.py tests/test_ui_viewer.py -q`
+  - a live timing probe against `data/report_runs/20260318T225654Z/digest.html`
+- Current repository status after the change:
+  - focused verification reached `12 passed`
+  - measured `digest.html` apply time dropped from about `13.8s` to about `9.7ms`
+  - measured end-to-end digest selection-to-render time dropped to about `122ms`
+
 ## UI Latest Primary And Saved-Run HTML Alias (2026-03-19)
 
 - Promoted `xs2n report latest` to the primary run action in the desktop UI by removing the peer `Issues` launcher from the main menu/toolbar instead of keeping two equally prominent run buttons.
