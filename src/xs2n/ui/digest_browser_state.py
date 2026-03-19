@@ -1,130 +1,124 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
-from xs2n.schemas.digest import Issue, IssueThread
+from xs2n.schemas.digest import Issue, IssueThread, TimelineRecord
 from xs2n.ui.saved_digest import SavedDigestPreview, find_saved_issue_thread
 
 
-ScreenMode = Literal["overview", "thread"]
-RowKind = Literal["issue", "thread", "tweet"]
-
-
 @dataclass(slots=True)
-class DigestBrowserRow:
-    kind: RowKind
-    label: str
-    detail: str
-    thread_id: str | None = None
-
-
-@dataclass(slots=True)
-class DigestBrowserScreen:
-    mode: ScreenMode
+class DigestIssueRow:
+    slug: str
     title: str
-    subtitle: str
     summary: str
-    rows: list[DigestBrowserRow]
-    can_go_back: bool
-    open_url: str | None = None
+    thread_count: int
+
+
+@dataclass(slots=True)
+class DigestThreadRow:
+    thread_id: str
+    title: str
+    summary: str
+    issue_slug: str
+
+
+@dataclass(slots=True)
+class DigestThreadPreview:
+    issue_title: str
+    title: str
+    summary: str
+    why_it_matters: str
+    tweets: list[TimelineRecord]
+    open_url: str
 
 
 class DigestBrowserState:
     def __init__(self, preview: SavedDigestPreview) -> None:
         self.preview = preview
-        self._selected_thread_id: str | None = None
-        self._thread_by_id = {
+        self._issues_by_slug = {issue.slug: issue for issue in preview.issues}
+        self._threads_by_id = {
             thread.thread_id: thread for thread in preview.issue_threads
         }
-        self._issue_by_thread_id: dict[str, Issue] = {}
-        for issue in preview.issues:
-            for thread_id in issue.thread_ids:
-                self._issue_by_thread_id[thread_id] = issue
+        self._selected_issue_slug = preview.issues[0].slug if preview.issues else None
+        self._selected_thread_id: str | None = None
 
-    def show_overview(self) -> None:
-        self._selected_thread_id = None
+    @property
+    def digest_title(self) -> str:
+        return self.preview.digest_title
 
-    def show_thread(self, thread_id: str) -> None:
-        if thread_id in self._thread_by_id:
-            self._selected_thread_id = thread_id
-
-    def go_back(self) -> None:
-        self.show_overview()
-
-    def current_screen(self) -> DigestBrowserScreen:
-        if self._selected_thread_id is None:
-            return self._overview_screen()
-        return self._thread_screen(self._selected_thread_id)
-
-    def _overview_screen(self) -> DigestBrowserScreen:
-        rows: list[DigestBrowserRow] = []
-        for issue in self.preview.issues:
-            rows.append(
-                DigestBrowserRow(
-                    kind="issue",
-                    label=issue.title,
-                    detail=issue.summary,
-                )
-            )
-            for thread_id in issue.thread_ids:
-                thread = self._thread_by_id.get(thread_id)
-                if thread is None:
-                    continue
-                rows.append(
-                    DigestBrowserRow(
-                        kind="thread",
-                        label=f"  {thread.thread_title}",
-                        detail=thread.thread_summary,
-                        thread_id=thread.thread_id,
-                    )
-                )
-
-        return DigestBrowserScreen(
-            mode="overview",
-            title=self.preview.digest_title,
-            subtitle=(
-                f"Run {self.preview.run_id} | "
-                f"{len(self.preview.issues)} issues | "
-                f"{len(self.preview.issue_threads)} threads"
-            ),
-            summary=(
-                "Select a thread to inspect the saved source snapshot inside the viewer."
-            ),
-            rows=rows,
-            can_go_back=False,
-            open_url=None,
+    @property
+    def run_summary(self) -> str:
+        return (
+            f"Run {self.preview.run_id} | "
+            f"{len(self.preview.issues)} issues | "
+            f"{len(self.preview.issue_threads)} threads"
         )
 
-    def _thread_screen(self, thread_id: str) -> DigestBrowserScreen:
-        issue, thread = find_saved_issue_thread(self.preview, thread_id=thread_id)
-        if thread is None:
-            self.show_overview()
-            return self._overview_screen()
-
-        breadcrumb_parts = [
-            "Digest",
-            issue.title if issue is not None else "Unassigned issue",
-            thread.thread_title,
-        ]
-        rows = [
-            DigestBrowserRow(
-                kind="tweet",
-                label=f"{index + 1}/{len(thread.tweets)} {tweet.author_handle}",
-                detail=tweet.text,
-                thread_id=thread.thread_id,
+    def issue_rows(self) -> list[DigestIssueRow]:
+        return [
+            DigestIssueRow(
+                slug=issue.slug,
+                title=issue.title,
+                summary=issue.summary,
+                thread_count=issue.thread_count or len(issue.thread_ids),
             )
-            for index, tweet in enumerate(thread.tweets)
+            for issue in self.preview.issues
         ]
-        return DigestBrowserScreen(
-            mode="thread",
-            title=thread.thread_title,
-            subtitle=" / ".join(breadcrumb_parts),
-            summary=(
-                f"{thread.thread_summary}\n\n"
-                f"{thread.why_this_thread_belongs}"
-            ),
-            rows=rows,
-            can_go_back=True,
-            open_url=thread.primary_tweet.source_url,
+
+    def select_issue(self, slug: str) -> None:
+        if slug in self._issues_by_slug:
+            self._selected_issue_slug = slug
+            self._selected_thread_id = None
+
+    def selected_issue(self) -> Issue:
+        if self._selected_issue_slug is None:
+            raise RuntimeError("No issues available.")
+        return self._issues_by_slug[self._selected_issue_slug]
+
+    def thread_rows(self) -> list[DigestThreadRow]:
+        issue = self.selected_issue()
+        rows: list[DigestThreadRow] = []
+        for thread_id in issue.thread_ids:
+            thread = self._threads_by_id.get(thread_id)
+            if thread is None:
+                continue
+            rows.append(
+                DigestThreadRow(
+                    thread_id=thread.thread_id,
+                    title=thread.thread_title,
+                    summary=thread.thread_summary,
+                    issue_slug=issue.slug,
+                )
+            )
+        return rows
+
+    def select_thread(self, thread_id: str) -> None:
+        issue, thread = find_saved_issue_thread(self.preview, thread_id=thread_id)
+        if issue is None or thread is None:
+            return
+        self._selected_issue_slug = issue.slug
+        self._selected_thread_id = thread_id
+
+    def selected_thread(self) -> IssueThread | None:
+        if self._selected_thread_id is None:
+            return None
+        return self._threads_by_id.get(self._selected_thread_id)
+
+    def thread_preview(self) -> DigestThreadPreview | None:
+        thread = self.selected_thread()
+        if thread is None:
+            return None
+        issue, resolved_thread = find_saved_issue_thread(
+            self.preview,
+            thread_id=thread.thread_id,
+        )
+        if issue is None or resolved_thread is None:
+            return None
+        return DigestThreadPreview(
+            issue_title=issue.title,
+            title=resolved_thread.thread_title,
+            summary=resolved_thread.thread_summary,
+            why_it_matters=resolved_thread.why_this_thread_belongs,
+            tweets=resolved_thread.tweets,
+            open_url=resolved_thread.primary_tweet.source_url,
         )

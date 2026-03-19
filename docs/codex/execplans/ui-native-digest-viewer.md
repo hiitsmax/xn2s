@@ -17,6 +17,7 @@ The observable result is: run `uv run xs2n ui`, select a run, click `digest.html
 - [x] (2026-03-19 20:22Z) Locked the new product direction with the user: keep the 3-column shell, keep focus mode, move digest interaction into a native right-pane viewer, and keep CLI HTML simple.
 - [x] (2026-03-19 20:31Z) Added failing tests for native digest viewer activation, digest-view navigation, and simple CLI digest HTML.
 - [x] (2026-03-19 20:37Z) Implemented the native digest viewer modules and app-level viewer switching.
+- [x] (2026-03-19 21:12Z) Adjusted the viewer after human review to a mail-client-style split: issue list, thread list, thread preview, and preference-backed hiding of the middle navigation column by default.
 - [x] (2026-03-19 20:39Z) Simplified the CLI/export digest HTML renderer and removed digest-specific HTML preview logic from the generic file viewer path.
 - [x] (2026-03-19 20:43Z) Ran focused verification plus a live callback timing probe and confirmed the digest selection path now stays fast.
 - [ ] Update docs/autolearning and create the final atomic commit.
@@ -29,6 +30,8 @@ The observable result is: run `uv run xs2n ui`, select a run, click `digest.html
   Evidence: current preview metrics were `343474` chars, `1122` `<table>` tags, and `2023` `<tr>` tags; the earlier simpler preview was `153863` chars, `2` `<table>` tags, and `6` `<tr>` tags.
 - Observation: once `digest.html` stopped going through `Fl_Help_View`, selecting it in the real app dropped back to effectively instant callback timing.
   Evidence: live probe on `ArtifactBrowserWindow._apply_selected_artifact_name('digest.html')` for run `20260318T225654Z` reported `{'callback_ms': 5.67, 'selected_artifact': 'digest.html', 'digest_visible': 1}`.
+- Observation: a direct FLTK widget-introspection probe is a practical autonomous verification path for this app.
+  Evidence: instantiating `ArtifactBrowserWindow`, selecting run `20260318T225654Z`, selecting `digest.html`, and reading widget state returned `issue_rows 110`, `thread_rows 3`, and a non-empty preview payload without needing manual clicks.
 
 ## Decision Log
 
@@ -41,7 +44,7 @@ The observable result is: run `uv run xs2n ui`, select a run, click `digest.html
 
 ## Outcomes & Retrospective
 
-This milestone achieved the intended split. The CLI/export path now produces a simple Windows-classic digest HTML again, while the desktop UI no longer tries to synthesize digest interaction through `Fl_Help_View`. Instead, `digest.html` activates a native right-pane digest browser backed by `run.json`, `issues.json`, and `issue_assignments.json`.
+This milestone achieved the intended split. The CLI/export path now produces a simple Windows-classic digest HTML again, while the desktop UI no longer tries to synthesize digest interaction through `Fl_Help_View`. Instead, `digest.html` activates a native right-pane digest browser backed by `run.json`, `issues.json`, and `issue_assignments.json`, with issue list, thread list, and thread preview living together in the right pane.
 
 The biggest outcome is that the original regression class disappears by construction. The app no longer depends on large nested digest HTML to present digest interaction, so the right-pane callback stays fast and the left/middle shell plus focus mode remain unchanged.
 
@@ -83,13 +86,24 @@ Work from `/Users/mx/Documents/Progetti/mine/active/xs2n`.
 
    `uv run pytest tests/test_render_digest_html.py tests/test_ui_app.py tests/test_ui_app_rendering.py tests/test_ui_viewer.py tests/test_ui_artifacts.py -q`
 
+6. Run the expanded preference/state regression set and the live widget-introspection probe.
+
+   `uv run pytest tests/test_render_digest_html.py tests/test_ui_app.py tests/test_ui_app_rendering.py tests/test_ui_viewer.py tests/test_ui_artifacts.py tests/test_ui_run_preferences.py tests/test_ui_state_storage.py tests/test_digest_browser_state.py -q`
+
 Observed results:
 
-   `44 passed, 218 warnings in 0.64s`
+   `56 passed, 218 warnings in 0.86s`
 
 Live callback probe:
 
    `{'callback_ms': 5.67, 'selected_run': '20260318T225654Z', 'selected_artifact': 'digest.html', 'digest_visible': 1}`
+
+Live widget-introspection probe:
+
+   `header  Context Management for Agentic Systems`
+   `issue_rows 110`
+   `thread_rows 3`
+   `preview_len 154`
 
 ## Validation and Acceptance
 

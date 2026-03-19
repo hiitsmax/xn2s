@@ -651,6 +651,7 @@ def test_appearance_mode_change_resolves_theme_saves_state_and_refreshes(
 ) -> None:
     browser = object.__new__(app.ArtifactBrowserWindow)
     browser.appearance_mode = "system"
+    browser.digest_navigation_visible = False
     browser.theme = object()
     browser.preferences_window = SimpleNamespace(
         apply_theme=lambda theme: themed_preferences.append(theme)
@@ -661,7 +662,7 @@ def test_appearance_mode_change_resolves_theme_saves_state_and_refreshes(
     themed_preferences: list[object] = []
     themed_widgets: list[str] = []
     refreshed: list[str] = []
-    saved_states: list[dict[str, str]] = []
+    saved_states: list[dict[str, object]] = []
     applied_defaults: list[object] = []
     dark_theme = SimpleNamespace(name="classic_dark")
 
@@ -688,11 +689,47 @@ def test_appearance_mode_change_resolves_theme_saves_state_and_refreshes(
 
     assert browser.appearance_mode == "classic_dark"
     assert browser.theme == dark_theme
-    assert saved_states == [{"appearance_mode": "classic_dark"}]
+    assert saved_states == [
+        {
+            "appearance_mode": "classic_dark",
+            "digest_navigation_visible": False,
+        }
+    ]
     assert applied_defaults == [dark_theme]
     assert themed_widgets == ["widgets"]
     assert themed_preferences == [dark_theme]
     assert refreshed == ["refresh"]
+
+
+def test_digest_navigation_preference_change_saves_state_and_syncs_layout(
+    monkeypatch,
+) -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    browser.appearance_mode = "classic_light"
+    browser.digest_navigation_visible = False
+    synced: list[str] = []
+    saved_states: list[dict[str, object]] = []
+    browser._sync_digest_navigation_layout = lambda: synced.append("layout")
+
+    monkeypatch.setattr(
+        app,
+        "save_ui_state",
+        lambda state, path=None: saved_states.append(state),
+    )
+
+    app.ArtifactBrowserWindow._on_digest_navigation_preference_changed(
+        browser,
+        True,
+    )
+
+    assert browser.digest_navigation_visible is True
+    assert saved_states == [
+        {
+            "appearance_mode": "classic_light",
+            "digest_navigation_visible": True,
+        }
+    ]
+    assert synced == ["layout"]
 
 
 def test_delete_selected_runs_confirms_refreshes_and_sets_fallback_run(

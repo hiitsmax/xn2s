@@ -36,13 +36,18 @@ class RunPreferencesWindow:
         self,
         *,
         appearance_mode: str = "system",
+        digest_navigation_visible: bool = False,
         theme: UiTheme = CLASSIC_LIGHT_THEME,
         on_appearance_mode_changed: Callable[[str], None] | None = None,
+        on_digest_navigation_preference_changed: Callable[[bool], None] | None = None,
         on_run_list_preferences_changed: Callable[[tuple[str, ...]], None]
         | None = None,
     ) -> None:
         self.theme = theme
         self.on_appearance_mode_changed = on_appearance_mode_changed
+        self.on_digest_navigation_preference_changed = (
+            on_digest_navigation_preference_changed
+        )
         self.on_run_list_preferences_changed = on_run_list_preferences_changed
         self.run_list_column_toggles: dict[str, object] = {}
         self.form_inputs: list[object] = []
@@ -53,6 +58,7 @@ class RunPreferencesWindow:
         self.applied_latest_arguments = LatestRunArguments()
         self.applied_run_list_column_keys = DEFAULT_RUN_LIST_COLUMN_KEYS
         self.applied_appearance_mode = normalize_appearance_mode(appearance_mode)
+        self.applied_digest_navigation_visible = bool(digest_navigation_visible)
         self.window = fltk.Fl_Double_Window(
             PREFERENCES_WINDOW_WIDTH,
             PREFERENCES_WINDOW_HEIGHT,
@@ -104,6 +110,9 @@ class RunPreferencesWindow:
 
     def current_appearance_mode(self) -> str:
         return self.applied_appearance_mode
+
+    def current_digest_navigation_visible(self) -> bool:
+        return self.applied_digest_navigation_visible
 
     def _build_window(self) -> None:
         self.window.begin()
@@ -247,6 +256,17 @@ class RunPreferencesWindow:
             options=APPEARANCE_MODE_OPTIONS,
             value=self.applied_appearance_mode,
             tooltip="`System` follows the OS appearance at launch. The classic overrides force the app theme immediately.",
+        )
+        self.digest_navigation_toggle = self._create_checkbox_input(
+            x=x,
+            y=y + (FORM_ROW_HEIGHT * 3) + (FORM_ROW_GAP * 2),
+            width=width,
+            label="Keep middle navigation column visible in digest viewer",
+            value=self.applied_digest_navigation_visible,
+            tooltip=(
+                "When disabled, selecting `digest.html` hides the middle column "
+                "and lets the digest viewer take that space."
+            ),
         )
 
     def _build_digest_tab(
@@ -447,21 +467,33 @@ class RunPreferencesWindow:
 
         run_list_column_keys = self._draft_run_list_column_keys()
         appearance_mode = self._draft_appearance_mode()
+        digest_navigation_visible = self._draft_digest_navigation_visible()
 
         run_list_changed = (
             run_list_column_keys != self.applied_run_list_column_keys
         )
         appearance_changed = appearance_mode != self.applied_appearance_mode
+        digest_navigation_changed = (
+            digest_navigation_visible != self.applied_digest_navigation_visible
+        )
         self.applied_digest_arguments = digest_arguments
         self.applied_latest_arguments = latest_arguments
         self.applied_run_list_column_keys = run_list_column_keys
         self.applied_appearance_mode = appearance_mode
+        self.applied_digest_navigation_visible = digest_navigation_visible
         self._reset_draft_to_applied()
 
         if run_list_changed and self.on_run_list_preferences_changed is not None:
             self.on_run_list_preferences_changed(self.applied_run_list_column_keys)
         if appearance_changed and self.on_appearance_mode_changed is not None:
             self.on_appearance_mode_changed(self.applied_appearance_mode)
+        if (
+            digest_navigation_changed
+            and self.on_digest_navigation_preference_changed is not None
+        ):
+            self.on_digest_navigation_preference_changed(
+                self.applied_digest_navigation_visible
+            )
 
     def _on_cancel_clicked(
         self,
@@ -511,11 +543,15 @@ class RunPreferencesWindow:
                 return APPEARANCE_MODE_OPTIONS[raw_value][1]
         return "system"
 
+    def _draft_digest_navigation_visible(self) -> bool:
+        return bool(self.digest_navigation_toggle.value())
+
     def _reset_draft_to_applied(self) -> None:
         self._write_digest_arguments(self.applied_digest_arguments)
         self._write_latest_arguments(self.applied_latest_arguments)
         self._write_run_list_column_keys(self.applied_run_list_column_keys)
         self._write_appearance_mode(self.applied_appearance_mode)
+        self._write_digest_navigation_visible(self.applied_digest_navigation_visible)
 
     def _write_digest_arguments(self, arguments: DigestRunArguments) -> None:
         self.digest_timeline_input.value(str(arguments.timeline_file))
@@ -555,6 +591,9 @@ class RunPreferencesWindow:
             self.appearance_mode_choice.value(index)
             return
         self.appearance_mode_choice.value(normalized_mode)
+
+    def _write_digest_navigation_visible(self, visible: bool) -> None:
+        self.digest_navigation_toggle.value(int(visible))
 
     def _create_text_input(  # noqa: ANN001
         self,

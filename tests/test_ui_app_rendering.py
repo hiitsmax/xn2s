@@ -42,6 +42,9 @@ class FakeViewer:
     def hide(self) -> None:
         self.visible = False
 
+    def resize(self, *_args) -> None:  # noqa: ANN001
+        return None
+
 
 class FakeStatus:
     def __init__(self) -> None:
@@ -51,27 +54,50 @@ class FakeStatus:
         self.text = text
 
 
+class FakePane:
+    def __init__(self, x: int, y: int, width: int, height: int) -> None:
+        self._x = x
+        self._y = y
+        self._w = width
+        self._h = height
+        self.visible = True
+
+    def x(self) -> int:
+        return self._x
+
+    def y(self) -> int:
+        return self._y
+
+    def w(self) -> int:
+        return self._w
+
+    def h(self) -> int:
+        return self._h
+
+    def resize(self, x: int, y: int, width: int, height: int) -> None:
+        self._x = x
+        self._y = y
+        self._w = width
+        self._h = height
+
+    def hide(self) -> None:
+        self.visible = False
+
+    def show(self) -> None:
+        self.visible = True
+
+
 class FakeDigestViewer:
     def __init__(self, *, load_result: bool = True) -> None:
         self.load_result = load_result
         self.loaded_run_dirs: list[app.Path] = []
         self.visible = False
-        self.shown_overview = 0
-        self.shown_threads: list[str] = []
-        self.back_calls = 0
+        self.group = SimpleNamespace(visible=lambda: int(self.visible))
+        self.resize_calls: list[tuple[int, int, int, int]] = []
 
     def load_run(self, run_dir: app.Path) -> bool:
         self.loaded_run_dirs.append(run_dir)
         return self.load_result
-
-    def show_overview(self) -> None:
-        self.shown_overview += 1
-
-    def show_thread(self, thread_id: str) -> None:
-        self.shown_threads.append(thread_id)
-
-    def go_back(self) -> None:
-        self.back_calls += 1
 
     def show(self) -> None:
         self.visible = True
@@ -79,8 +105,8 @@ class FakeDigestViewer:
     def hide(self) -> None:
         self.visible = False
 
-    def resize(self, *_args) -> None:  # noqa: ANN001
-        return None
+    def resize(self, *args) -> None:  # noqa: ANN001
+        self.resize_calls.append(args)
 
     def apply_theme(self, _theme) -> None:  # noqa: ANN001
         return None
@@ -182,6 +208,11 @@ def test_apply_selected_artifact_name_routes_digest_html_to_native_viewer() -> N
     browser.raw_files_browser = FakeBrowser()
     browser.viewer = FakeViewer()
     browser.digest_viewer = FakeDigestViewer(load_result=True)
+    browser.run_list_group = FakePane(0, 0, 380, 800)
+    browser.navigation_group = FakePane(380, 0, 340, 800)
+    browser.tile = FakePane(0, 0, 1200, 800)
+    browser.focus_mode_enabled = False
+    browser.digest_navigation_visible = False
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
@@ -197,11 +228,45 @@ def test_apply_selected_artifact_name_routes_digest_html_to_native_viewer() -> N
 
     assert browser.selected_artifact_name == "digest.html"
     assert browser.digest_viewer.loaded_run_dirs == [app.Path("data/report_runs/demo")]
-    assert browser.digest_viewer.shown_overview == 1
     assert browser.digest_viewer.visible is True
     assert browser.viewer.visible is False
+    assert browser.navigation_group.visible is False
     assert browser.pending_viewer_artifact_name is None
     assert browser.status_output.text == "Viewing digest overview."
+
+
+def test_apply_selected_artifact_name_keeps_navigation_when_preference_enabled() -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    browser.artifacts = [
+        ArtifactRecord(
+            name="digest.html",
+            path=app.Path("data/report_runs/demo/digest.html"),
+            kind="html",
+            exists=True,
+        )
+    ]
+    browser.sections = []
+    browser.sections_browser = FakeBrowser()
+    browser.raw_files_browser = FakeBrowser()
+    browser.viewer = FakeViewer()
+    browser.digest_viewer = FakeDigestViewer(load_result=True)
+    browser.run_list_group = FakePane(0, 0, 380, 800)
+    browser.navigation_group = FakePane(380, 0, 340, 800)
+    browser.tile = FakePane(0, 0, 1200, 800)
+    browser.focus_mode_enabled = False
+    browser.digest_navigation_visible = True
+    browser.status_output = FakeStatus()
+    browser.viewer_render_results = Queue()
+    browser.selected_artifact_name = None
+    browser.pending_viewer_artifact_name = None
+    browser.rendered_viewer_artifact_name = None
+    browser.pending_viewer_request_id = 0
+    browser.viewer_render_future = None
+
+    app.ArtifactBrowserWindow._apply_selected_artifact_name(browser, "digest.html")
+
+    assert browser.digest_viewer.visible is True
+    assert browser.navigation_group.visible is True
 
 
 def test_apply_selected_artifact_name_falls_back_when_digest_viewer_cannot_load(
@@ -221,6 +286,11 @@ def test_apply_selected_artifact_name_falls_back_when_digest_viewer_cannot_load(
     browser.raw_files_browser = FakeBrowser()
     browser.viewer = FakeViewer()
     browser.digest_viewer = FakeDigestViewer(load_result=False)
+    browser.run_list_group = FakePane(0, 0, 380, 800)
+    browser.navigation_group = FakePane(380, 0, 340, 800)
+    browser.tile = FakePane(0, 0, 1200, 800)
+    browser.focus_mode_enabled = False
+    browser.digest_navigation_visible = False
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None

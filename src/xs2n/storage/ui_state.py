@@ -7,11 +7,14 @@ from pathlib import Path
 DEFAULT_UI_STATE_PATH = Path("data/ui_state.json")
 
 
-def _default_doc() -> dict[str, str]:
-    return {"appearance_mode": "system"}
+def _default_doc() -> dict[str, str | bool]:
+    return {
+        "appearance_mode": "system",
+        "digest_navigation_visible": False,
+    }
 
 
-def load_ui_state(path: Path | None = None) -> dict[str, str]:
+def load_ui_state(path: Path | None = None) -> dict[str, str | bool]:
     storage_path = path or DEFAULT_UI_STATE_PATH
     if not storage_path.exists():
         return _default_doc()
@@ -25,12 +28,18 @@ def load_ui_state(path: Path | None = None) -> dict[str, str]:
         return _default_doc()
 
     appearance_mode = payload.get("appearance_mode")
+    digest_navigation_visible = payload.get("digest_navigation_visible")
     if not isinstance(appearance_mode, str):
-        return _default_doc()
-    return {"appearance_mode": appearance_mode}
+        appearance_mode = _default_doc()["appearance_mode"]
+    if not isinstance(digest_navigation_visible, bool):
+        digest_navigation_visible = _default_doc()["digest_navigation_visible"]
+    return {
+        "appearance_mode": appearance_mode,
+        "digest_navigation_visible": digest_navigation_visible,
+    }
 
 
-def save_ui_state(state: dict[str, str], path: Path | None = None) -> None:
+def save_ui_state(state: dict[str, str | bool], path: Path | None = None) -> None:
     storage_path = path or DEFAULT_UI_STATE_PATH
     storage_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = storage_path.with_name(f".{storage_path.name}.tmp")

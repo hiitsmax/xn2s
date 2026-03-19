@@ -163,9 +163,13 @@ class ArtifactBrowserWindow:
         self.data_dir = data_dir
         self.initial_run_id = initial_run_id
         self.ui_state_path = DEFAULT_UI_STATE_PATH
+        ui_state = load_ui_state(self.ui_state_path)
         self.appearance_mode = normalize_appearance_mode(
-            load_ui_state(self.ui_state_path).get("appearance_mode")
+            ui_state.get("appearance_mode") if isinstance(ui_state, dict) else None
         )
+        self.digest_navigation_visible = bool(
+            ui_state.get("digest_navigation_visible", False)
+        ) if isinstance(ui_state, dict) else False
         self.theme: UiTheme = resolve_ui_theme(self.appearance_mode)
         apply_fltk_theme_defaults(fltk, self.theme)
         self.repo_root = Path(__file__).resolve().parents[3]
@@ -186,8 +190,10 @@ class ArtifactBrowserWindow:
         )
         self.preferences_window = RunPreferencesWindow(
             appearance_mode=self.appearance_mode,
+            digest_navigation_visible=self.digest_navigation_visible,
             theme=self.theme,
             on_appearance_mode_changed=self._on_appearance_mode_changed,
+            on_digest_navigation_preference_changed=self._on_digest_navigation_preference_changed,
             on_run_list_preferences_changed=self._on_run_list_preferences_changed,
         )
         self.auth_window = AuthWindow(
@@ -549,7 +555,10 @@ class ArtifactBrowserWindow:
 
         self.appearance_mode = normalized_mode
         save_ui_state(
-            {"appearance_mode": self.appearance_mode},
+            {
+                "appearance_mode": self.appearance_mode,
+                "digest_navigation_visible": self.digest_navigation_visible,
+            },
             getattr(self, "ui_state_path", None),
         )
         self.theme = resolve_ui_theme(self.appearance_mode)
@@ -560,6 +569,17 @@ class ArtifactBrowserWindow:
         if auth_window is not None:
             auth_window.apply_theme(self.theme)
         self.refresh_runs()
+
+    def _on_digest_navigation_preference_changed(self, visible: bool) -> None:
+        self.digest_navigation_visible = bool(visible)
+        save_ui_state(
+            {
+                "appearance_mode": self.appearance_mode,
+                "digest_navigation_visible": self.digest_navigation_visible,
+            },
+            getattr(self, "ui_state_path", None),
+        )
+        self._sync_digest_navigation_layout()
 
     def _sync_run_list_layout(self, *, force: bool = False) -> None:
         layout_signature = (self.runs_browser.w(), self.run_list_column_keys)
@@ -650,6 +670,7 @@ class ArtifactBrowserWindow:
         )
         self.run_list_group.show()
         self.navigation_group.show()
+        self._sync_digest_navigation_layout()
         self._sync_run_list_layout(force=True)
         self.tile.init_sizes()
         self.tile.redraw()
@@ -920,8 +941,8 @@ class ArtifactBrowserWindow:
             and digest_viewer.load_run(artifact.path.parent)
         ):
             self._clear_artifact_viewer_state()
-            digest_viewer.show_overview()
             self._show_digest_viewer()
+            self._sync_digest_navigation_layout()
             self.status_output.value("Viewing digest overview.")
             return
 
@@ -1565,6 +1586,7 @@ class ArtifactBrowserWindow:
             digest_viewer.hide()
         if hasattr(self.viewer, "show"):
             self.viewer.show()
+        self._sync_digest_navigation_layout()
 
     def _show_digest_viewer(self) -> None:
         if hasattr(self.viewer, "hide"):
@@ -1572,10 +1594,60 @@ class ArtifactBrowserWindow:
         digest_viewer = getattr(self, "digest_viewer", None)
         if digest_viewer is not None:
             digest_viewer.show()
+        self._sync_digest_navigation_layout()
 
     def _open_external_url(self, url: str) -> None:
         webbrowser.open(url)
         self.status_output.value("Opened source in your browser.")
+
+    def _sync_digest_navigation_layout(self) -> None:
+        if getattr(self, "focus_mode_enabled", False):
+            return
+        navigation_group = getattr(self, "navigation_group", None)
+        run_list_group = getattr(self, "run_list_group", None)
+        digest_viewer = getattr(self, "digest_viewer", None)
+        tile = getattr(self, "tile", None)
+        if (
+            navigation_group is None
+            or run_list_group is None
+            or digest_viewer is None
+            or tile is None
+        ):
+            return
+        if self._digest_viewer_active() and not self.digest_navigation_visible:
+            navigation_group.hide()
+            right_x = navigation_group.x()
+            right_width = max(1, (tile.x() + tile.w()) - right_x)
+            self.viewer.resize(right_x, tile.y(), right_width, tile.h())
+            digest_viewer.resize(right_x, tile.y(), right_width, tile.h())
+            return
+
+        navigation_group.show()
+        required_layout_attrs = (
+            "run_list_header_background",
+            "runs_browser",
+            "sections_header",
+            "sections_browser",
+            "raw_files_header",
+            "raw_files_browser",
+        )
+        if not all(hasattr(self, attr_name) for attr_name in required_layout_attrs):
+            return
+        self._layout_standard_panes(
+            left_pane_width=run_list_group.w(),
+            middle_pane_width=navigation_group.w(),
+        )
+
+    def _digest_viewer_active(self) -> bool:
+        if self.selected_artifact_name != "digest.html":
+            return False
+        digest_viewer = getattr(self, "digest_viewer", None)
+        if digest_viewer is None:
+            return False
+        group = getattr(digest_viewer, "group", None)
+        if group is not None and hasattr(group, "visible"):
+            return bool(group.visible())
+        return bool(getattr(digest_viewer, "visible", False))
 
     def _apply_theme_to_widgets(self) -> None:
         theme = self._current_theme()

@@ -123,18 +123,30 @@ def test_current_appearance_mode_returns_last_applied_value() -> None:
     assert RunPreferencesWindow.current_appearance_mode(window) == "classic_dark"
 
 
+def test_current_digest_navigation_visible_returns_last_applied_value() -> None:
+    window = object.__new__(RunPreferencesWindow)
+    window.applied_digest_navigation_visible = True
+
+    assert RunPreferencesWindow.current_digest_navigation_visible(window) is True
+
+
 def test_apply_click_commits_draft_values_without_live_updates() -> None:
     window = object.__new__(RunPreferencesWindow)
     changes: list[tuple[str, ...]] = []
     appearance_changes: list[str] = []
+    digest_navigation_changes: list[bool] = []
     window.on_run_list_preferences_changed = lambda keys: changes.append(keys)
     window.on_appearance_mode_changed = (
         lambda mode: appearance_changes.append(mode)
+    )
+    window.on_digest_navigation_preference_changed = (
+        lambda visible: digest_navigation_changes.append(visible)
     )
     window.applied_digest_arguments = IssuesRunArguments()
     window.applied_latest_arguments = LatestRunArguments()
     window.applied_run_list_column_keys = DEFAULT_RUN_LIST_COLUMN_KEYS
     window.applied_appearance_mode = "system"
+    window.applied_digest_navigation_visible = False
     window.digest_timeline_input = FakeValueWidget("tmp/timeline.json")
     window.digest_output_dir_input = FakeValueWidget("tmp/report_runs")
     window.digest_model_input = FakeValueWidget("gpt-5.5")
@@ -148,6 +160,7 @@ def test_apply_click_commits_draft_values_without_live_updates() -> None:
     window.latest_output_dir_input = FakeValueWidget("tmp/report_runs")
     window.latest_model_input = FakeValueWidget("gpt-5.5-mini")
     window.appearance_mode_choice = FakeValueWidget("classic_dark")
+    window.digest_navigation_toggle = FakeValueWidget(1)
     window.run_list_column_toggles = {
         "started_at": FakeValueWidget(1),
         "digest_title": FakeValueWidget(1),
@@ -178,6 +191,7 @@ def test_apply_click_commits_draft_values_without_live_updates() -> None:
 
     assert changes == [("started_at", "digest_title", "model")]
     assert appearance_changes == ["classic_dark"]
+    assert digest_navigation_changes == [True]
     assert RunPreferencesWindow.current_digest_command(window) == RunCommand(
         label="report issues",
         args=[
@@ -202,6 +216,7 @@ def test_apply_click_commits_draft_values_without_live_updates() -> None:
         "model",
     )
     assert RunPreferencesWindow.current_appearance_mode(window) == "classic_dark"
+    assert RunPreferencesWindow.current_digest_navigation_visible(window) is True
 
 
 def test_cancel_discards_unsaved_draft_values() -> None:
@@ -216,6 +231,7 @@ def test_cancel_discards_unsaved_draft_values() -> None:
     window.applied_latest_arguments = LatestRunArguments()
     window.applied_run_list_column_keys = ("started_at", "status")
     window.applied_appearance_mode = "classic_light"
+    window.applied_digest_navigation_visible = False
     window.digest_timeline_input = FakeValueWidget("tmp/timeline.json")
     window.digest_output_dir_input = FakeValueWidget("tmp/report_runs")
     window.digest_model_input = FakeValueWidget("gpt-5.5")
@@ -229,6 +245,7 @@ def test_cancel_discards_unsaved_draft_values() -> None:
     window.latest_output_dir_input = FakeValueWidget("tmp/report_runs")
     window.latest_model_input = FakeValueWidget("gpt-5.5-mini")
     window.appearance_mode_choice = FakeValueWidget("classic_dark")
+    window.digest_navigation_toggle = FakeValueWidget(1)
     window.run_list_column_toggles = {
         "started_at": FakeValueWidget(1),
         "digest_title": FakeValueWidget(1),
@@ -250,3 +267,4 @@ def test_cancel_discards_unsaved_draft_values() -> None:
     assert window.run_list_column_toggles["status"].value() == 1
     assert window.run_list_column_toggles["digest_title"].value() == 0
     assert window.appearance_mode_choice.value() == "classic_light"
+    assert window.digest_navigation_toggle.value() == 0

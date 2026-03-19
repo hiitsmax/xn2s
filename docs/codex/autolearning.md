@@ -18,17 +18,24 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - `src/xs2n/agents/digest/steps/render_digest_html.py` is again just a simple Windows-classic export HTML renderer,
   - `xs2n ui` now treats `digest.html` as a semantic digest artifact and shows a native right-pane viewer instead of piping rebuilt digest HTML into `Fl_Help_View`.
 - Added `src/xs2n/ui/digest_browser_state.py` for the small overview/thread navigation state and `src/xs2n/ui/digest_browser.py` for the native FLTK widget container.
-- Kept the existing three-column shell and focus mode untouched at the product level by swapping only the right-pane implementation in `src/xs2n/ui/app.py`.
+- After user review, reshaped the native viewer into a mail-client-style layout:
+  - issue list on the left inside the right pane,
+  - thread list on the upper right,
+  - thread preview below.
+- Kept the outer three-column shell and focus mode intact, but added a new preference-backed rule: when digest viewer is active, the middle navigation column is hidden by default and its space is given to the right pane; Preferences can turn that column back on.
 - Removed the digest-specific HTML preview path from `src/xs2n/ui/viewer.py`, and deleted the now-dead `src/xs2n/ui/digest_preview.py` and `src/xs2n/ui/source_preview.py` modules.
 - Verified the milestone with:
   - `uv run pytest tests/test_render_digest_html.py tests/test_ui_app_rendering.py tests/test_ui_viewer.py tests/test_digest_browser_state.py -q`
   - `uv run pytest tests/test_render_digest_html.py tests/test_ui_app.py tests/test_ui_app_rendering.py tests/test_ui_viewer.py tests/test_ui_artifacts.py tests/test_digest_browser_state.py -q`
+  - `uv run pytest tests/test_render_digest_html.py tests/test_ui_app.py tests/test_ui_app_rendering.py tests/test_ui_viewer.py tests/test_ui_artifacts.py tests/test_ui_run_preferences.py tests/test_ui_state_storage.py tests/test_digest_browser_state.py -q`
   - a live callback timing probe against `ArtifactBrowserWindow._apply_selected_artifact_name('digest.html')`
+  - a live widget-introspection probe that opened the real `ArtifactBrowserWindow`, selected run `20260318T225654Z`, selected `digest.html`, and read back the FLTK widget state (`header`, issue rows, thread rows, preview length)
 - Current repository status after the change:
   - focused verification reached `14 passed`
-  - broader regression verification reached `44 passed`
+  - broader regression verification reached `56 passed`
   - the live selection probe on run `20260318T225654Z` measured `digest.html` callback time at about `5.67 ms`
   - the most robust anti-freeze lesson here is architectural: when the desktop UI needs interaction, stop encoding that interaction as HTML for `Fl_Help_View` and give the right pane a native widget path instead
+  - the most useful “self-test the UI” lesson here is pragmatic: for FLTK, widget introspection from a real `ArtifactBrowserWindow` instance is more reliable and scriptable than trying to infer behavior from HTML output alone
 
 ## UI Digest Source Snapshot (2026-03-19)
 
