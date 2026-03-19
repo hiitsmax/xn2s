@@ -1,28 +1,45 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import shutil
 from typing import Any, Literal
 
 
 DEFAULT_UI_DATA_PATH = Path("data")
 RUN_ROOT_PREFIX = "report_runs"
 PREFERRED_ARTIFACT_NAMES = [
+    "digest.html",
     "digest.md",
     "run.json",
     "phases.json",
-    "taxonomy.json",
     "issues.json",
     "issue_assignments.json",
-    "processed_threads.json",
     "filtered_threads.json",
-    "categorized_threads.json",
     "threads.json",
+    "timeline_window.json",
     "llm_calls",
 ]
-ArtifactKind = Literal["directory", "json", "markdown", "text", "unknown"]
+SECTION_BY_ARTIFACT_NAME = {
+    "digest.html": ("◆", "Digest"),
+    "digest.md": ("◆", "Digest"),
+    "run.json": ("▣", "Run metadata"),
+    "phases.json": ("↻", "Phase trace"),
+    "issues.json": ("!", "Issues"),
+    "issue_assignments.json": ("⇄", "Issue assignments"),
+    "filtered_threads.json": ("◌", "Filtered threads"),
+    "threads.json": ("☰", "Threads"),
+    "timeline_window.json": ("◫", "Timeline window"),
+    "llm_calls/": ("▸", "LLM calls"),
+}
+ArtifactKind = Literal["directory", "html", "json", "markdown", "text", "unknown"]
+ArtifactRenderKind = Literal["html", "markdown", "text"]
+DIRECTORY_PREVIEW_ENTRY_LIMIT = 200
+TEXT_PREVIEW_BYTE_LIMIT = 64 * 1024
+JSON_PRETTY_PRINT_BYTE_LIMIT = 64 * 1024
 
 
 @dataclass(slots=True)
@@ -49,6 +66,25 @@ class ArtifactRecord:
     phase_name: str | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class ArtifactPreview:
+    body: str
+    render_kind: ArtifactRenderKind
+    truncated: bool = False
+    summary: str | None = None
+
+
+@dataclass(slots=True)
+class ArtifactSectionRecord:
+    icon: str
+    label: str
+    artifact_name: str
+
+    @property
+    def browser_label(self) -> str:
+        return f"{self.icon} {self.label}"
+
+
 @dataclass(slots=True)
 class RunRecord:
     root_name: str
@@ -63,6 +99,7 @@ class RunRecord:
     kept_count: int | None = None
     issue_count: int | None = None
     digest_path: Path | None = None
+    digest_title: str | None = None
     phases_path: Path | None = None
     llm_calls_dir: Path | None = None
     artifact_paths: list[Path] = field(default_factory=list)
@@ -127,7 +164,7 @@ def list_run_artifacts(run: RunRecord) -> list[ArtifactRecord]:
     phase_by_name = _artifact_phase_map(run)
     records: list[ArtifactRecord] = []
 
-    for path in _list_run_entries(run.run_dir):
+    for path in (run.artifact_paths or _list_run_entries(run.run_dir)):
         if path.is_dir():
             records.append(
                 ArtifactRecord(
@@ -139,19 +176,6 @@ def list_run_artifacts(run: RunRecord) -> list[ArtifactRecord]:
                     or phase_by_name.get(path.name),
                 )
             )
-            for child in sorted(path.iterdir()):
-                if child.name.startswith(".") or child.is_dir():
-                    continue
-                relative_name = f"{path.name}/{child.name}"
-                records.append(
-                    ArtifactRecord(
-                        name=relative_name,
-                        path=child,
-                        kind=_artifact_kind(child),
-                        exists=True,
-                        phase_name=phase_by_name.get(relative_name),
-                    )
-                )
             continue
 
         records.append(
@@ -167,64 +191,73 @@ def list_run_artifacts(run: RunRecord) -> list[ArtifactRecord]:
     return sorted(records, key=_artifact_sort_key)
 
 
-def load_artifact_text(path: Path) -> str:
+def load_artifact_preview(artifact: ArtifactRecord) -> ArtifactPreview:
+    path = artifact.path
     if not path.exists():
-        return f"Missing artifact: {path}\n"
+        return ArtifactPreview(
+            body=f"Missing artifact: {path}\n",
+            render_kind="text",
+        )
 
     if path.is_dir():
-        entries = [
-            child.name
-            for child in sorted(path.iterdir())
-            if not child.name.startswith(".")
-        ]
-        lines = [f"{path.name}/", ""]
-        lines.extend(entries or ["(empty directory)"])
-        return "\n".join(lines) + "\n"
+        return _load_directory_preview(path)
 
-    raw_text = path.read_text(encoding="utf-8", errors="replace")
-    if path.suffix.lower() != ".json":
-        return raw_text
+    if artifact.kind == "json":
+        return _load_json_preview(path)
 
-    try:
-        payload = json.loads(raw_text)
-    except json.JSONDecodeError:
-        return raw_text
-    return f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+    render_kind: ArtifactRenderKind = "text"
+    if artifact.kind == "markdown":
+        render_kind = "markdown"
+    elif artifact.kind == "html":
+        render_kind = "html"
+    return _load_text_preview(path, render_kind=render_kind)
 
 
-def format_run_summary(run: RunRecord) -> str:
-    count_triplet = [
-        "-" if value is None else str(value)
-        for value in (run.thread_count, run.kept_count, run.issue_count)
+def list_artifact_sections(
+    artifacts: list[ArtifactRecord],
+) -> list[ArtifactSectionRecord]:
+    sections = [
+        ArtifactSectionRecord(
+            icon=section_icon,
+            label=section_label,
+            artifact_name=artifact.name,
+        )
+        for artifact in artifacts
+        if (
+            section_definition := SECTION_BY_ARTIFACT_NAME.get(artifact.name)
+        ) is not None
+        for section_icon, section_label in [section_definition]
     ]
-    status = run.status or "unknown"
-    model = run.model or "unknown-model"
-    return (
-        f"[{run.root_name}] {run.run_id} | {status} | {model} | "
-        f"threads/kept/issues: {'/'.join(count_triplet)}"
+    if sections or not artifacts:
+        return sections
+
+    fallback_artifact = artifacts[0]
+    return [
+        ArtifactSectionRecord(
+            icon="•",
+            label=fallback_artifact.name.rstrip("/"),
+            artifact_name=fallback_artifact.name,
+        )
+    ]
+
+
+def load_artifact_text(path: Path) -> str:
+    artifact = ArtifactRecord(
+        name=path.name,
+        path=path,
+        kind=_artifact_kind(path) if path.exists() else "unknown",
+        exists=path.exists(),
     )
+    return load_artifact_preview(artifact).body
 
 
-def format_run_details(run: RunRecord) -> str:
-    lines = [
-        f"run_id: {run.run_id}",
-        f"root: {run.root_name}",
-        f"status: {run.status or 'unknown'}",
-        f"model: {run.model or 'unknown'}",
-        f"started_at: {run.started_at or '-'}",
-        f"finished_at: {run.finished_at or '-'}",
-        f"timeline_file: {run.timeline_file or '-'}",
-        f"thread_count: {_format_optional_int(run.thread_count)}",
-        f"kept_count: {_format_optional_int(run.kept_count)}",
-        f"issue_count: {_format_optional_int(run.issue_count)}",
-    ]
-    if run.digest_path is not None:
-        lines.append(f"digest_path: {run.digest_path}")
-    if run.phases_path is not None:
-        lines.append(f"phases_path: {run.phases_path}")
-    if run.llm_calls_dir is not None:
-        lines.append(f"llm_calls_dir: {run.llm_calls_dir}")
-    return "\n".join(lines)
+def delete_runs(runs: Sequence[RunRecord]) -> None:
+    for run in runs:
+        if not run.run_dir.exists():
+            continue
+        if not run.run_dir.is_dir():
+            raise OSError(f"Run path is not a directory: {run.run_dir}")
+        shutil.rmtree(run.run_dir)
 
 
 def _iter_run_roots(data_dir: Path) -> list[Path]:
@@ -241,20 +274,45 @@ def _iter_run_roots(data_dir: Path) -> list[Path]:
 
 def _build_run_record(*, run_root: Path, run_dir: Path) -> RunRecord:
     metadata = _load_json_dict(run_dir / "run.json")
+    digest_path = _resolve_metadata_path(
+        run_dir=run_dir,
+        metadata_value=(
+            metadata.get("primary_artifact_path")
+            if metadata and metadata.get("primary_artifact_path")
+            else metadata.get("digest_path") if metadata else None
+        ),
+        fallback_name="digest.html",
+    )
+    if digest_path is None:
+        digest_path = _resolve_metadata_path(
+            run_dir=run_dir,
+            metadata_value=metadata.get("digest_path") if metadata else None,
+            fallback_name="digest.md",
+        )
     if metadata is None:
         return RunRecord(
             root_name=run_root.name,
             run_id=run_dir.name,
             run_dir=run_dir,
             status="unknown",
+            digest_path=digest_path,
+            digest_title=_extract_digest_title(
+                digest_path,
+                run_id=run_dir.name,
+                status="unknown",
+                stored_digest_title=None,
+            ),
             artifact_paths=_list_run_entries(run_dir),
         )
 
+    run_id = _optional_str(metadata.get("run_id")) or run_dir.name
+    status = _optional_str(metadata.get("status"))
+
     return RunRecord(
         root_name=run_root.name,
-        run_id=_optional_str(metadata.get("run_id")) or run_dir.name,
+        run_id=run_id,
         run_dir=run_dir,
-        status=_optional_str(metadata.get("status")),
+        status=status,
         started_at=_optional_str(metadata.get("started_at")),
         finished_at=_optional_str(metadata.get("finished_at")),
         model=_optional_str(metadata.get("model")),
@@ -262,10 +320,12 @@ def _build_run_record(*, run_root: Path, run_dir: Path) -> RunRecord:
         thread_count=_optional_int(metadata.get("thread_count")),
         kept_count=_optional_int(metadata.get("kept_count")),
         issue_count=_optional_int(metadata.get("issue_count")),
-        digest_path=_resolve_metadata_path(
-            run_dir=run_dir,
-            metadata_value=metadata.get("digest_path"),
-            fallback_name="digest.md",
+        digest_path=digest_path,
+        digest_title=_extract_digest_title(
+            digest_path,
+            run_id=run_id,
+            status=status,
+            stored_digest_title=_optional_str(metadata.get("digest_title")),
         ),
         phases_path=_resolve_metadata_path(
             run_dir=run_dir,
@@ -325,6 +385,108 @@ def _artifact_phase_map(run: RunRecord) -> dict[str, str]:
     return artifact_phase
 
 
+def _load_directory_preview(path: Path) -> ArtifactPreview:
+    entries = _visible_directory_entries(path)
+    visible_entries = entries[:DIRECTORY_PREVIEW_ENTRY_LIMIT]
+    lines = [f"{path.name}/", ""]
+    lines.extend(visible_entries or ["(empty directory)"])
+
+    hidden_count = len(entries) - len(visible_entries)
+    summary = None
+    if hidden_count > 0:
+        summary = (
+            "Truncated preview: "
+            f"showing first {len(visible_entries)} of {len(entries)} entries."
+        )
+        lines.extend(
+            [
+                "",
+                f"... {hidden_count} more entries omitted from the preview ...",
+            ]
+        )
+
+    return ArtifactPreview(
+        body="\n".join(lines) + "\n",
+        render_kind="text",
+        truncated=hidden_count > 0,
+        summary=summary,
+    )
+
+
+def _load_json_preview(path: Path) -> ArtifactPreview:
+    file_size = path.stat().st_size
+    if file_size > JSON_PRETTY_PRINT_BYTE_LIMIT:
+        return _load_truncated_text_preview(path, file_size=file_size)
+
+    raw_text = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return ArtifactPreview(body=raw_text, render_kind="text")
+
+    return ArtifactPreview(
+        body=f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n",
+        render_kind="text",
+    )
+
+
+def _load_text_preview(
+    path: Path,
+    *,
+    render_kind: ArtifactRenderKind,
+) -> ArtifactPreview:
+    file_size = path.stat().st_size
+    if file_size > TEXT_PREVIEW_BYTE_LIMIT:
+        return _load_truncated_text_preview(path, file_size=file_size)
+
+    return ArtifactPreview(
+        body=path.read_text(encoding="utf-8", errors="replace"),
+        render_kind=render_kind,
+    )
+
+
+def _load_truncated_text_preview(
+    path: Path,
+    *,
+    file_size: int,
+) -> ArtifactPreview:
+    preview_text = _read_preview_text(
+        path,
+        byte_limit=TEXT_PREVIEW_BYTE_LIMIT,
+    )
+    if preview_text and not preview_text.endswith("\n"):
+        preview_text = f"{preview_text}\n"
+    preview_lines = [
+        "Preview truncated.",
+        f"File size: {file_size} bytes.",
+        f"Showing first {TEXT_PREVIEW_BYTE_LIMIT} bytes only.",
+        "",
+        preview_text,
+    ]
+    return ArtifactPreview(
+        body="\n".join(preview_lines),
+        render_kind="text",
+        truncated=True,
+        summary=(
+            "Truncated preview: "
+            f"first {TEXT_PREVIEW_BYTE_LIMIT} bytes of {file_size} bytes."
+        ),
+    )
+
+
+def _read_preview_text(path: Path, *, byte_limit: int) -> str:
+    with path.open("rb") as handle:
+        return handle.read(byte_limit).decode("utf-8", errors="replace")
+
+
+def _visible_directory_entries(path: Path) -> list[str]:
+    return [
+        child.name
+        for child in sorted(path.iterdir())
+        if not child.name.startswith(".")
+    ]
+
+
 def _resolve_phase_artifact_path(*, run_dir: Path, artifact_path: str) -> Path:
     candidate = Path(artifact_path)
     if candidate.is_absolute():
@@ -361,6 +523,8 @@ def _artifact_kind(path: Path) -> ArtifactKind:
     if path.is_dir():
         return "directory"
     suffix = path.suffix.lower()
+    if suffix == ".html":
+        return "html"
     if suffix == ".json":
         return "json"
     if suffix == ".md":
@@ -421,7 +585,70 @@ def _optional_int(value: Any) -> int | None:
     return None
 
 
-def _format_optional_int(value: int | None) -> str:
-    if value is None:
-        return "-"
-    return str(value)
+def _extract_digest_title(
+    path: Path | None,
+    *,
+    run_id: str,
+    status: str | None,
+    stored_digest_title: str | None,
+) -> str:
+    if stored_digest_title:
+        return stored_digest_title
+    if path is None or not path.exists() or path.is_dir():
+        return _fallback_digest_title(run_id=run_id, status=status)
+
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return _fallback_digest_title(run_id=run_id, status=status)
+
+    issue_heading = _first_digest_heading(lines)
+    if issue_heading is not None:
+        return issue_heading
+
+    top_issues_line = _first_top_issues_line(lines)
+    if top_issues_line is not None:
+        return top_issues_line
+
+    return _fallback_digest_title(run_id=run_id, status=status)
+
+
+def _first_digest_heading(lines: list[str]) -> str | None:
+    for raw_line in lines[:80]:
+        stripped_line = raw_line.strip()
+        if not stripped_line.startswith("### "):
+            continue
+        normalized = _normalize_digest_title_text(stripped_line[4:])
+        if normalized:
+            return normalized
+    return None
+
+
+def _first_top_issues_line(lines: list[str]) -> str | None:
+    inside_top_issues = False
+    for raw_line in lines[:120]:
+        stripped_line = raw_line.strip()
+        if stripped_line == "## Top Issues":
+            inside_top_issues = True
+            continue
+        if not inside_top_issues or not stripped_line:
+            continue
+        if stripped_line.startswith("## "):
+            return None
+        if stripped_line.startswith("_Generated "):
+            continue
+        normalized = _normalize_digest_title_text(stripped_line)
+        if normalized:
+            return normalized
+    return None
+
+
+def _normalize_digest_title_text(text: str) -> str:
+    normalized = text.strip().strip("*_`")
+    return normalized.rstrip(".")
+
+
+def _fallback_digest_title(*, run_id: str, status: str | None) -> str:
+    if status == "running":
+        return "Digest in progress"
+    return f"Run {run_id}"

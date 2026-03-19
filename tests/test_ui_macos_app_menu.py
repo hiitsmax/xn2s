@@ -5,6 +5,7 @@ import sys
 import pytest
 
 from xs2n.ui.macos.app_menu import (
+    ABOUT_PANEL_MESSAGE,
     APP_NAME,
     apply_macos_app_menu,
     build_app_menu_spec,
@@ -21,7 +22,7 @@ def test_build_app_menu_spec_contains_only_about_and_quit() -> None:
         "Quit xn2s",
     ]
     assert [item.action for item in spec.items] == [
-        "orderFrontStandardAboutPanel:",
+        "showAboutPanel:",
         "terminate:",
     ]
     assert [item.key_equivalent for item in spec.items] == [
@@ -85,3 +86,55 @@ def test_prepare_macos_app_menu_uses_fltk_window_menu_style(
 
     assert prepare_macos_app_menu() is True
     assert captured == {"style": "no-window"}
+
+
+def test_show_about_alert_uses_custom_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xs2n.ui.macos import app_menu
+
+    captured: dict[str, list[tuple[object, ...]]] = {}
+
+    class FakeBridge:
+        def get_class(self, name: str):
+            return f"class:{name}"
+
+        def send_id(self, receiver, selector: str):
+            captured.setdefault("send_id", []).append((receiver, selector))
+            return f"{receiver}:{selector}"
+
+        def send_void_id(self, receiver, selector: str, argument):
+            captured.setdefault("send_void_id", []).append(
+                (receiver, selector, argument)
+            )
+
+        def send_void(self, receiver, selector: str):
+            captured.setdefault("send_void", []).append((receiver, selector))
+
+        def send_id_id(self, receiver, selector: str, argument):
+            captured.setdefault("send_id_id", []).append(
+                (receiver, selector, argument)
+            )
+            return f"{receiver}:{selector}:{argument}"
+
+        def nsstring(self, value: str):
+            return f"ns:{value}"
+
+    monkeypatch.setattr(app_menu, "_ObjectiveCBridge", FakeBridge)
+
+    app_menu._show_about_alert()
+
+    assert ("class:NSAlert", "alloc") in captured["send_id"]
+    assert (
+        "class:NSAlert:alloc:init",
+        "setMessageText:",
+        "ns:xn2s",
+    ) in captured["send_void_id"]
+    assert (
+        "class:NSAlert:alloc:init",
+        "setInformativeText:",
+        f"ns:{ABOUT_PANEL_MESSAGE}",
+    ) in captured["send_void_id"]
+    assert captured["send_void"] == [
+        ("class:NSAlert:alloc:init", "runModal")
+    ]

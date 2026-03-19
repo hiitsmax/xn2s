@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import ctypes
-from ctypes import c_char_p, c_long, c_void_p
+from ctypes import CFUNCTYPE, c_char_p, c_long, c_void_p
 from ctypes.util import find_library
 from dataclasses import dataclass
 import sys
 
 
 APP_NAME = "xn2s"
+ABOUT_PANEL_MESSAGE = "x noise 2 signal\nNative artifact browser for digest runs."
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +16,7 @@ class AppMenuItem:
     title: str
     action: str
     key_equivalent: str = ""
+    target_kind: str = "application"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +31,8 @@ def build_app_menu_spec(app_name: str = APP_NAME) -> AppMenuSpec:
         items=(
             AppMenuItem(
                 title=f"About {app_name}",
-                action="orderFrontStandardAboutPanel:",
+                action="showAboutPanel:",
+                target_kind="about_target",
             ),
             AppMenuItem(
                 title=f"Quit {app_name}",
@@ -44,9 +47,8 @@ def apply_macos_app_menu(app_name: str = APP_NAME) -> bool:
     if sys.platform != "darwin":
         return False
 
-    spec = build_app_menu_spec(app_name)
     try:
-        _install_macos_app_menu(spec)
+        _install_macos_app_menu(build_app_menu_spec(app_name))
     except (OSError, RuntimeError, ValueError):
         return False
     return True
@@ -110,6 +112,9 @@ class _ObjectiveCBridge:
             c_void_p,
             c_void_p,
         )(("objc_msgSend", self._objc))
+        self._send_void = ctypes.CFUNCTYPE(None, c_void_p, c_void_p)(
+            ("objc_msgSend", self._objc)
+        )
 
     def get_class(self, name: str) -> c_void_p:
         class_ref = self._objc.objc_getClass(name.encode("utf-8"))
@@ -162,6 +167,9 @@ class _ObjectiveCBridge:
     ) -> None:
         self._send_void_long(receiver, self.get_selector(selector), argument)
 
+    def send_void(self, receiver: c_void_p, selector: str) -> None:
+        self._send_void(receiver, self.get_selector(selector))
+
     def send_long(self, receiver: c_void_p, selector: str) -> int:
         return int(self._send_long(receiver, self.get_selector(selector)))
 
@@ -190,21 +198,12 @@ class _ObjectiveCBridge:
 def _install_macos_app_menu(spec: AppMenuSpec) -> None:
     bridge = _ObjectiveCBridge()
     app = bridge.send_id(bridge.get_class("NSApplication"), "sharedApplication")
-    process_info = bridge.send_id(
-        bridge.get_class("NSProcessInfo"),
-        "processInfo",
-    )
-    bridge.send_void_id(
-        process_info,
-        "setProcessName:",
-        bridge.nsstring(spec.app_name),
-    )
-
     main_menu = bridge.send_id(app, "mainMenu")
     if not main_menu:
         main_menu = _create_menu(bridge, "Main")
 
     _clear_menu(bridge, main_menu)
+    about_target = _get_about_menu_target()
 
     app_menu_item = _create_menu_item(
         bridge,
@@ -216,12 +215,13 @@ def _install_macos_app_menu(spec: AppMenuSpec) -> None:
     app_submenu = _create_menu(bridge, spec.app_name)
 
     for item in spec.items:
+        target = app if item.target_kind == "application" else about_target
         menu_item = _create_menu_item(
             bridge,
             title=item.title,
             action=item.action,
             key_equivalent=item.key_equivalent,
-            target=app,
+            target=target,
         )
         bridge.send_id_id(app_submenu, "addItem:", menu_item)
 
@@ -265,3 +265,94 @@ def _clear_menu(bridge: _ObjectiveCBridge, menu: c_void_p) -> None:
     count = bridge.send_long(menu, "numberOfItems")
     for index in range(count - 1, -1, -1):
         bridge.send_void_long(menu, "removeItemAtIndex:", index)
+
+
+_ABOUT_TARGET_CLASS_NAME = "Xn2sAboutMenuTarget"
+_ABOUT_TARGET_INSTANCE: c_void_p | None = None
+_ABOUT_TARGET_IMP = None
+
+
+def _get_about_menu_target() -> c_void_p:
+    global _ABOUT_TARGET_INSTANCE
+    if _ABOUT_TARGET_INSTANCE is not None:
+        return _ABOUT_TARGET_INSTANCE
+
+    bridge = _ObjectiveCBridge()
+    target_class = _get_or_create_about_target_class(bridge)
+    allocated = bridge.send_id(target_class, "alloc")
+    _ABOUT_TARGET_INSTANCE = bridge.send_id(allocated, "init")
+    if not _ABOUT_TARGET_INSTANCE:
+        raise RuntimeError("Failed to initialize about target")
+    return _ABOUT_TARGET_INSTANCE
+
+
+def _get_or_create_about_target_class(bridge: _ObjectiveCBridge) -> c_void_p:
+    existing_class = bridge._objc.objc_getClass(
+        _ABOUT_TARGET_CLASS_NAME.encode("utf-8")
+    )
+    if existing_class:
+        return existing_class
+
+    allocate_class_pair = bridge._objc.objc_allocateClassPair
+    allocate_class_pair.argtypes = [c_void_p, c_char_p, ctypes.c_size_t]
+    allocate_class_pair.restype = c_void_p
+
+    class_add_method = bridge._objc.class_addMethod
+    class_add_method.argtypes = [c_void_p, c_void_p, c_void_p, c_char_p]
+    class_add_method.restype = ctypes.c_bool
+
+    register_class_pair = bridge._objc.objc_registerClassPair
+    register_class_pair.argtypes = [c_void_p]
+    register_class_pair.restype = None
+
+    target_class = allocate_class_pair(
+        bridge.get_class("NSObject"),
+        _ABOUT_TARGET_CLASS_NAME.encode("utf-8"),
+        0,
+    )
+    if not target_class:
+        raise RuntimeError("Failed to allocate About target class")
+
+    about_callback = _build_about_callback()
+    added = class_add_method(
+        target_class,
+        bridge.get_selector("showAboutPanel:"),
+        ctypes.cast(about_callback, c_void_p),
+        b"v@:@",
+    )
+    if not added:
+        raise RuntimeError("Failed to add showAboutPanel: method")
+
+    register_class_pair(target_class)
+    return target_class
+
+
+def _build_about_callback():
+    global _ABOUT_TARGET_IMP
+    if _ABOUT_TARGET_IMP is not None:
+        return _ABOUT_TARGET_IMP
+
+    @CFUNCTYPE(None, c_void_p, c_void_p, c_void_p)
+    def show_about_panel(_self, _cmd, _sender) -> None:
+        _show_about_alert()
+
+    _ABOUT_TARGET_IMP = show_about_panel
+    return _ABOUT_TARGET_IMP
+
+
+def _show_about_alert() -> None:
+    bridge = _ObjectiveCBridge()
+    alert = bridge.send_id(bridge.get_class("NSAlert"), "alloc")
+    alert = bridge.send_id(alert, "init")
+    bridge.send_void_id(alert, "setMessageText:", bridge.nsstring(APP_NAME))
+    bridge.send_void_id(
+        alert,
+        "setInformativeText:",
+        bridge.nsstring(ABOUT_PANEL_MESSAGE),
+    )
+    bridge.send_id_id(
+        alert,
+        "addButtonWithTitle:",
+        bridge.nsstring("OK"),
+    )
+    bridge.send_void(alert, "runModal")

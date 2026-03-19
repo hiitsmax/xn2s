@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from xs2n.ui.auth_window import AuthWindow
+from xs2n.ui.theme import CLASSIC_DARK_THEME
 
 try:
     from xs2n.schemas.auth import AuthDoctorResult, ProviderStatus, RunReadiness
@@ -89,3 +90,49 @@ def test_action_buttons_dispatch_expected_actions() -> None:
         "x_login",
         "x_reset",
     ]
+
+
+def test_apply_theme_updates_window_sections_and_buttons() -> None:
+    class FakeThemeWidget:
+        def __init__(self) -> None:
+            self.color_value = None
+            self.selection_color_value = None
+            self.label_color_value = None
+            self.text_color_value = None
+            self.redraw_calls = 0
+
+        def color(self, value):  # noqa: ANN001
+            self.color_value = value
+
+        def selection_color(self, value):  # noqa: ANN001
+            self.selection_color_value = value
+
+        def labelcolor(self, value):  # noqa: ANN001
+            self.label_color_value = value
+
+        def textcolor(self, value):  # noqa: ANN001
+            self.text_color_value = value
+
+        def redraw(self) -> None:
+            self.redraw_calls += 1
+
+    window = object.__new__(AuthWindow)
+    window.window = FakeThemeWidget()
+    window.codex_header = FakeThemeWidget()
+    window.x_header = FakeThemeWidget()
+    window.path_label = FakeThemeWidget()
+    window.codex_status_output = FakeThemeWidget()
+    window.x_status_output = FakeThemeWidget()
+    window.x_cookies_path_output = FakeThemeWidget()
+    window.action_buttons = [FakeThemeWidget(), FakeThemeWidget()]
+
+    AuthWindow.apply_theme(window, CLASSIC_DARK_THEME)
+
+    assert window.window.color_value is not None
+    assert window.codex_header.color_value is not None
+    assert window.x_header.color_value is not None
+    assert window.codex_status_output.text_color_value is not None
+    assert window.x_status_output.text_color_value is not None
+    assert window.x_cookies_path_output.text_color_value is not None
+    assert window.action_buttons[0].selection_color_value is not None
+    assert window.window.redraw_calls == 1

@@ -7,6 +7,7 @@ import typer
 from typer.models import OptionInfo
 
 from xs2n.ui import DEFAULT_UI_DATA_PATH
+from xs2n.ui.macos import relaunch_ui_from_app_bundle
 
 
 def _load_ui_launcher():
@@ -49,6 +50,14 @@ def ui(
             )
         typer.echo("\n".join(install_lines), err=True)
         raise typer.Exit(code=1) from error
+
+    repo_root = Path(__file__).resolve().parents[3]
+    if relaunch_ui_from_app_bundle(
+        repo_root=repo_root,
+        data_dir=resolved_data_dir,
+        run_id=resolved_run_id,
+    ):
+        return
 
     launch_browser(
         data_dir=resolved_data_dir,

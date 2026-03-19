@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 
 DEFAULT_UI_FONT_FAMILY = "Microsoft Sans Serif"
+DEFAULT_UI_HTML_FONT_FAMILY = (
+    "Helvetica"
+    if sys.platform == "darwin"
+    else DEFAULT_UI_FONT_FAMILY
+)
 
 _DEFAULT_UI_FONT_VARIANTS = (
     ("FL_HELVETICA", 0, ("Microsoft Sans Serif", "Tahoma")),
