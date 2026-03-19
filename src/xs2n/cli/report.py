@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
+import sys
 
 import typer
+from typer.models import OptionInfo
 
 from xs2n.agents import (
     DEFAULT_REPORT_MODEL,
@@ -20,6 +22,7 @@ from xs2n.report_runtime import (
     resolve_latest_since as _resolve_latest_since,
     run_latest_report,
 )
+from xs2n.schemas.run_events import RunEvent
 from xs2n.storage import DEFAULT_SOURCES_PATH, DEFAULT_TIMELINE_PATH
 
 report_app = typer.Typer(
@@ -58,6 +61,19 @@ def _render_saved_issue_run_html(*, run_dir: Path) -> Path:
     except RuntimeError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from error
+
+
+def _build_human_echo(*, jsonl_events: bool):
+    return lambda message: typer.echo(message, err=jsonl_events)
+
+
+def _emit_jsonl_event(event: RunEvent) -> None:
+    sys.stdout.write(event.model_dump_json() + "\n")
+    sys.stdout.flush()
+
+
+def _resolve_bool_option(value: bool | OptionInfo) -> bool:
+    return False if isinstance(value, OptionInfo) else value
 
 
 @report_app.command("auth")
@@ -121,24 +137,36 @@ def issues(
         "--model",
         help="OpenAI model name used for the loose filter and issue-building steps.",
     ),
+    jsonl_events: bool = typer.Option(
+        False,
+        "--jsonl-events",
+        help=(
+            "Emit machine-readable JSONL progress events to stdout and route "
+            "human-readable messages to stderr."
+        ),
+    ),
 ) -> None:
     """Build issue artifacts from timeline data."""
 
+    resolved_jsonl_events = _resolve_bool_option(jsonl_events)
+    human_echo = _build_human_echo(jsonl_events=resolved_jsonl_events)
+    emit_event = _emit_jsonl_event if resolved_jsonl_events else None
     try:
         result = run_issue_report(
             timeline_file=timeline_file,
             output_dir=output_dir,
             model=model,
+            emit_event=emit_event,
         )
     except RuntimeError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from error
 
-    typer.echo(
+    human_echo(
         f"Issue run {result.run_id}: loaded {result.thread_count} threads, "
         f"kept {result.kept_count} threads, produced {result.issue_count} issues."
     )
-    typer.echo(f"Render later with: xs2n report html --run-dir {result.run_dir}")
+    human_echo(f"Render later with: xs2n report html --run-dir {result.run_dir}")
 
 
 @report_app.command("render")
@@ -227,6 +255,14 @@ def latest(
         "--model",
         help="OpenAI model name used for the loose filter and issue-building steps.",
     ),
+    jsonl_events: bool = typer.Option(
+        False,
+        "--jsonl-events",
+        help=(
+            "Emit machine-readable JSONL progress events to stdout and route "
+            "human-readable messages to stderr."
+        ),
+    ),
 ) -> None:
     """Ingest latest timeline data, build issues, and render HTML."""
 
@@ -243,11 +279,15 @@ def latest(
     )
 
     try:
+        resolved_jsonl_events = _resolve_bool_option(jsonl_events)
+        human_echo = _build_human_echo(jsonl_events=resolved_jsonl_events)
         run_latest_report(
             arguments,
+            echo=human_echo,
             run_timeline_ingestion_fn=run_timeline_ingestion,
             run_issue_report_fn=run_issue_report,
             render_issue_digest_html_fn=render_issue_digest_html,
+            emit_event=_emit_jsonl_event if resolved_jsonl_events else None,
         )
     except RuntimeError as error:
         typer.echo(str(error), err=True)

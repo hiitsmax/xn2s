@@ -15,6 +15,7 @@ from xs2n.agents.digest import (
     render_issue_digest_html,
     run_issue_report,
 )
+from xs2n.schemas.run_events import RunEvent
 
 
 class _FakeLLM:
@@ -493,6 +494,63 @@ def test_run_issue_report_uses_only_primary_post_images_in_llm_calls(
     assert fake_llm.image_urls_by_schema_name["IssueWriteResult"] == [
         ["https://img.test/root.png"]
     ]
+
+
+def test_run_issue_report_emits_run_and_phase_events(tmp_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    timeline_file = tmp_path / "timeline.json"
+    output_dir = tmp_path / "report_runs"
+    events: list[RunEvent] = []
+
+    timeline_file.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "tweet_id": "chip-1",
+                        "account_handle": "mx",
+                        "author_handle": "mx",
+                        "kind": "post",
+                        "created_at": now.isoformat(),
+                        "text": "Foundry supply is tightening.",
+                        "conversation_id": "conv-chip-1",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_issue_report(
+        timeline_file=timeline_file,
+        output_dir=output_dir,
+        model="fake-model",
+        llm=_FakeLLM(),
+        emit_event=events.append,
+    )
+
+    assert events[0].event == "run_started"
+    assert events[0].run_id == result.run_id
+    assert any(
+        event.event == "phase_started" and event.phase == "load_threads"
+        for event in events
+    )
+    assert any(
+        event.event == "artifact_written"
+        and event.artifact_path is not None
+        and event.artifact_path.endswith("threads.json")
+        for event in events
+    )
+    assert any(
+        event.event == "phase_completed" and event.phase == "group_issues"
+        for event in events
+    )
+    assert events[-1].event == "run_completed"
+    assert events[-1].counts == {
+        "thread_count": 1,
+        "kept_count": 1,
+        "issue_count": 1,
+    }
 
 
 def test_render_issue_digest_html_uses_saved_issue_artifacts_only(tmp_path: Path) -> None:

@@ -27,6 +27,7 @@ def test_digest_run_arguments_use_defaults_for_blank_form_values() -> None:
         "data/report_runs",
         "--model",
         "gpt-5.4-mini",
+        "--jsonl-events",
     ]
 
 
@@ -89,6 +90,7 @@ def test_latest_run_arguments_include_since_and_home_latest() -> None:
         "tmp/report_runs",
         "--model",
         "gpt-5.5-mini",
+        "--jsonl-events",
         "--since",
         "2026-03-15T20:31:38Z",
         "--home-latest",

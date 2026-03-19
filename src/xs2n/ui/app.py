@@ -14,6 +14,7 @@ import webbrowser
 import fltk
 
 from xs2n.schemas.auth import AuthDoctorResult, ProviderStatus, RunReadiness
+from xs2n.schemas.run_events import RunEvent
 from xs2n.storage.ui_state import DEFAULT_UI_STATE_PATH, load_ui_state, save_ui_state
 from xs2n.ui.artifacts import (
     DEFAULT_UI_DATA_PATH,
@@ -144,6 +145,12 @@ class CommandResult:
 
 
 @dataclass(slots=True)
+class CommandProgress:
+    label: str
+    event: RunEvent
+
+
+@dataclass(slots=True)
 class ViewerRenderResult:
     request_id: int
     artifact_name: str
@@ -168,6 +175,7 @@ class ArtifactBrowserWindow:
         apply_fltk_theme_defaults(fltk, self.theme)
         self.repo_root = Path(__file__).resolve().parents[3]
         self.cli_executable = self._resolve_cli_executable()
+        self.command_progress_updates: Queue[CommandProgress] = Queue()
         self.command_results: Queue[CommandResult] = Queue()
         self.viewer_render_results: Queue[ViewerRenderResult] = Queue()
         self.run_list_header_boxes: list[object] = []
@@ -1015,6 +1023,10 @@ class ArtifactBrowserWindow:
                 status_text=f"Failed to render {artifact_name}.",
             )
         self.viewer_render_results.put(result)
+        self._wake_ui()
+
+    @staticmethod
+    def _wake_ui() -> None:
         try:
             fltk.Fl.awake()
         except Exception:
@@ -1029,6 +1041,7 @@ class ArtifactBrowserWindow:
         refresh_runs: bool = True,
         on_completed: Callable[[CommandResult], None] | None = None,
         starting_status: str | None = None,
+        stream_jsonl_events: bool = False,
     ) -> None:
         if self.running_thread is not None and self.running_thread.is_alive():
             fltk.fl_alert(
@@ -1055,40 +1068,130 @@ class ArtifactBrowserWindow:
             )
 
         def worker() -> None:
-            completed = subprocess.run(
-                command,
-                cwd=self.repo_root,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=self.repo_root,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    bufsize=1,
+                )
+            except OSError as error:
+                transcript_parts = [
+                    f"$ {' '.join(command)}",
+                    "",
+                    "stderr:",
+                    str(error),
+                    "",
+                    "exit_code: 1",
+                ]
+                self.command_results.put(
+                    CommandResult(
+                        label=label,
+                        command=command,
+                        returncode=1,
+                        stdout="",
+                        stderr=f"{error}\n",
+                        output="\n".join(transcript_parts).rstrip() + "\n",
+                        show_transcript=show_transcript,
+                        refresh_runs=refresh_runs,
+                        on_completed=on_completed,
+                    )
+                )
+                self._wake_ui()
+                return
+
+            stdout_lines: list[str] = []
+            stderr_lines: list[str] = []
+            event_lines: list[str] = []
+
+            def read_stdout() -> None:
+                if process.stdout is None:
+                    return
+                for raw_line in process.stdout:
+                    line = raw_line.rstrip("\n")
+                    stdout_lines.append(line)
+                    if not stream_jsonl_events:
+                        continue
+                    try:
+                        event = RunEvent.model_validate_json(line)
+                    except Exception:
+                        continue
+                    event_lines.append(f"{event.event}: {event.message}")
+                    self.command_progress_updates.put(
+                        CommandProgress(label=label, event=event)
+                    )
+                    self._wake_ui()
+                process.stdout.close()
+
+            def read_stderr() -> None:
+                if process.stderr is None:
+                    return
+                for raw_line in process.stderr:
+                    stderr_lines.append(raw_line.rstrip("\n"))
+                process.stderr.close()
+
+            stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+            stdout_thread.start()
+            stderr_thread.start()
+            returncode = process.wait()
+            stdout_thread.join()
+            stderr_thread.join()
+
             transcript_parts = [f"$ {' '.join(command)}", ""]
-            if completed.stdout:
-                transcript_parts.extend(["stdout:", completed.stdout.rstrip(), ""])
-            if completed.stderr:
-                transcript_parts.extend(["stderr:", completed.stderr.rstrip(), ""])
-            transcript_parts.append(f"exit_code: {completed.returncode}")
+            if event_lines:
+                transcript_parts.extend(["events:", "\n".join(event_lines).rstrip(), ""])
+            elif stdout_lines:
+                transcript_parts.extend(["stdout:", "\n".join(stdout_lines).rstrip(), ""])
+            if stderr_lines:
+                transcript_parts.extend(["stderr:", "\n".join(stderr_lines).rstrip(), ""])
+            transcript_parts.append(f"exit_code: {returncode}")
             self.command_results.put(
                 CommandResult(
                     label=label,
                     command=command,
-                    returncode=completed.returncode,
-                    stdout=completed.stdout,
-                    stderr=completed.stderr,
+                    returncode=returncode,
+                    stdout=("\n".join(stdout_lines).rstrip() + "\n") if stdout_lines else "",
+                    stderr=("\n".join(stderr_lines).rstrip() + "\n") if stderr_lines else "",
                     output="\n".join(transcript_parts).rstrip() + "\n",
                     show_transcript=show_transcript,
                     refresh_runs=refresh_runs,
                     on_completed=on_completed,
                 )
             )
+            self._wake_ui()
 
         self.running_thread = threading.Thread(target=worker, daemon=True)
         self.running_thread.start()
 
     def _start_run_command(self, command: RunCommand) -> None:
-        self._start_command(label=command.label, args=command.args)
+        self._start_command(
+            label=command.label,
+            args=command.args,
+            stream_jsonl_events=command.stream_jsonl_events,
+        )
+
+    def _handle_command_progress(self, progress: CommandProgress) -> None:
+        event = progress.event
+        if event.run_id is not None:
+            self.selected_run_id = event.run_id
+
+        self.status_output.value(event.message)
+
+        if event.event in {"artifact_written", "run_completed", "run_failed"}:
+            self.refresh_runs()
 
     def _drain_idle_work(self, _data=None) -> None:  # noqa: ANN001
+        while True:
+            try:
+                progress = self.command_progress_updates.get_nowait()
+            except Empty:
+                break
+
+            self._handle_command_progress(progress)
+
         while True:
             try:
                 result = self.command_results.get_nowait()

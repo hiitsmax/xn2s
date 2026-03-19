@@ -16,6 +16,7 @@ from xs2n.agents import (
 )
 from xs2n.cli.timeline import parse_since_datetime, run_timeline_ingestion
 from xs2n.profile.timeline import DEFAULT_IMPORT_TIMELINE
+from xs2n.schemas.run_events import RunEvent
 from xs2n.storage import DEFAULT_SOURCES_PATH, DEFAULT_TIMELINE_PATH, load_timeline
 
 
@@ -268,6 +269,7 @@ def run_latest_report(
     run_timeline_ingestion_fn=None,
     run_issue_report_fn=None,
     render_issue_digest_html_fn=None,
+    emit_event: Callable[[RunEvent], None] | None = None,
 ) -> LatestReportResult:
     run_timeline_ingestion_fn = run_timeline_ingestion_fn or run_timeline_ingestion
     if run_issue_report_fn is None or render_issue_digest_html_fn is None:
@@ -293,6 +295,14 @@ def run_latest_report(
         f"Ingesting {ingest_label} before issue generation "
         f"(since {since_value})."
     )
+    if emit_event is not None:
+        emit_event(
+            RunEvent(
+                event="phase_started",
+                message="Starting timeline ingestion.",
+                phase="timeline_ingestion",
+            )
+        )
 
     run_timeline_ingestion_fn(
         account=None,
@@ -304,6 +314,14 @@ def run_latest_report(
         timeline_file=arguments.timeline_file,
         sources_file=arguments.sources_file,
     )
+    if emit_event is not None:
+        emit_event(
+            RunEvent(
+                event="phase_completed",
+                message="Completed timeline ingestion.",
+                phase="timeline_ingestion",
+            )
+        )
 
     timeline_window_file = arguments.output_dir / "timeline_window.json"
     timeline_window_file.parent.mkdir(parents=True, exist_ok=True)
@@ -315,13 +333,30 @@ def run_latest_report(
         f"{json.dumps(timeline_window_doc, ensure_ascii=False, indent=2)}\n",
         encoding="utf-8",
     )
+    if emit_event is not None:
+        emit_event(
+            RunEvent(
+                event="artifact_written",
+                message="Wrote timeline window snapshot.",
+                phase="timeline_window",
+                artifact_path=str(timeline_window_file),
+                counts={"entry_count": len(timeline_window_doc.get("entries", []))},
+            )
+        )
 
-    result = run_issue_report_fn(
-        timeline_file=timeline_window_file,
-        output_dir=arguments.output_dir,
-        model=arguments.model,
-    )
-    digest_path = render_issue_digest_html_fn(run_dir=result.run_dir)
+    issue_report_kwargs = {
+        "timeline_file": timeline_window_file,
+        "output_dir": arguments.output_dir,
+        "model": arguments.model,
+    }
+    if emit_event is not None:
+        issue_report_kwargs["emit_event"] = emit_event
+    result = run_issue_report_fn(**issue_report_kwargs)
+
+    render_kwargs = {"run_dir": result.run_dir}
+    if emit_event is not None:
+        render_kwargs["emit_event"] = emit_event
+    digest_path = render_issue_digest_html_fn(**render_kwargs)
     echo(
         f"Latest issue run {result.run_id}: loaded {result.thread_count} threads, "
         f"kept {result.kept_count} threads, produced {result.issue_count} issues."

@@ -43,7 +43,9 @@ def test_current_digest_command_uses_last_applied_values() -> None:
             "tmp/report_runs",
             "--model",
             "gpt-5.5",
+            "--jsonl-events",
         ],
+        stream_jsonl_events=True,
     )
 
 
@@ -82,10 +84,12 @@ def test_current_latest_command_uses_last_applied_values() -> None:
             "tmp/report_runs",
             "--model",
             "gpt-5.5-mini",
+            "--jsonl-events",
             "--since",
             "2026-03-15T20:31:38Z",
             "--home-latest",
         ],
+        stream_jsonl_events=True,
     )
 
 
@@ -165,7 +169,9 @@ def test_apply_click_commits_draft_values_without_live_updates() -> None:
             "data/report_runs",
             "--model",
             "gpt-5.4-mini",
+            "--jsonl-events",
         ],
+        stream_jsonl_events=True,
     )
 
     RunPreferencesWindow._on_apply_clicked(window)
@@ -183,7 +189,9 @@ def test_apply_click_commits_draft_values_without_live_updates() -> None:
             "tmp/report_runs",
             "--model",
             "gpt-5.5",
+            "--jsonl-events",
         ],
+        stream_jsonl_events=True,
     )
     latest_args = RunPreferencesWindow.current_latest_command(window).args
     assert "--since" in latest_args

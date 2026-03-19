@@ -16,6 +16,7 @@ DEFAULT_REPORT_MODEL = "gpt-5.4-mini"
 class RunCommand:
     label: str
     args: list[str]
+    stream_jsonl_events: bool = False
 
 
 @dataclass(slots=True)
@@ -56,10 +57,15 @@ class IssuesRunArguments:
             str(self.output_dir),
             "--model",
             self.model,
+            "--jsonl-events",
         ]
 
     def to_command(self) -> RunCommand:
-        return RunCommand(label="report issues", args=self.to_cli_args())
+        return RunCommand(
+            label="report issues",
+            args=self.to_cli_args(),
+            stream_jsonl_events=True,
+        )
 
 
 DigestRunArguments = IssuesRunArguments
@@ -144,6 +150,7 @@ class LatestRunArguments:
             str(self.output_dir),
             "--model",
             self.model,
+            "--jsonl-events",
         ]
         if self.since is not None:
             args.extend(["--since", self.since])
@@ -152,7 +159,11 @@ class LatestRunArguments:
         return args
 
     def to_command(self) -> RunCommand:
-        return RunCommand(label="report latest", args=self.to_cli_args())
+        return RunCommand(
+            label="report latest",
+            args=self.to_cli_args(),
+            stream_jsonl_events=True,
+        )
 
     def to_following_refresh_command(self) -> RunCommand:
         return RunCommand(

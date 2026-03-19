@@ -323,3 +323,43 @@ def run(...): ...
 ### Why
 
 When a file says too many things at once, it becomes harder to change without fear. Separating orchestration, shared helpers, and concrete steps is an architectural improvement because it reduces cognitive load and makes future edits more predictable.
+
+## Keep CLI Progress Structured When A UI Needs Live State
+
+### General Rule
+
+When a UI launches a long-running CLI command and needs live process state, prefer a structured event stream over free-form stdout. Keep the CLI as the adapter, but make it emit one machine-readable JSON object per stdout line and keep human logs on stderr.
+
+### Wrong Example
+
+```python
+completed = subprocess.run(
+    ["xs2n", "report", "latest"],
+    text=True,
+    capture_output=True,
+    check=False,
+)
+
+if completed.returncode == 0:
+    refresh_runs_from_disk()
+```
+
+### Right Example
+
+```python
+process = subprocess.Popen(
+    ["xs2n", "report", "latest", "--jsonl-events"],
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    bufsize=1,
+)
+
+for line in process.stdout:
+    event = RunEvent.model_validate_json(line)
+    update_ui_job_state(event)
+```
+
+### Why
+
+The corrected version keeps the CLI reusable for cron and shell workflows while giving the UI a stable contract for live progress, phase changes, artifact discovery, and failure state. The UI no longer has to infer state from transcripts or wait until process exit before it knows what happened.

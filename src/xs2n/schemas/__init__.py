@@ -12,6 +12,7 @@ from .digest import (
     TimelineMedia,
     TimelineRecord,
 )
+from .run_events import RunEvent
 
 __all__ = [
     "FilteredThread",
@@ -24,4 +25,5 @@ __all__ = [
     "ThreadInput",
     "TimelineMedia",
     "TimelineRecord",
+    "RunEvent",
 ]

@@ -11,6 +11,7 @@ from xs2n.schemas.digest import (
     IssueThread,
     PhaseTrace,
 )
+from xs2n.schemas.run_events import RunEvent
 
 from .helpers import write_json
 
@@ -42,6 +43,7 @@ def run_issue_report(
     model: str = DEFAULT_REPORT_MODEL,
     llm: Any | None = None,
     run_dir: Path | None = None,
+    emit_event=None,
 ) -> IssueReportRunResult:
     from .llm import DigestLLM
     from .steps.filter_threads import run as filter_threads
@@ -56,6 +58,29 @@ def run_issue_report(
     else:
         run_id = resolved_run_dir.name
     resolved_run_dir.mkdir(parents=True, exist_ok=True)
+
+    def emit(
+        event: str,
+        *,
+        message: str,
+        phase: str | None = None,
+        artifact_path: Path | None = None,
+        counts: dict[str, int] | None = None,
+    ) -> None:
+        if emit_event is None:
+            return
+        emit_event(
+            RunEvent(
+                event=event,
+                message=message,
+                run_id=run_id,
+                phase=phase,
+                artifact_path=(
+                    str(artifact_path) if artifact_path is not None else None
+                ),
+                counts=counts or {},
+            )
+        )
 
     phases_path = resolved_run_dir / "phases.json"
     phases: list[PhaseTrace] = []
@@ -146,6 +171,10 @@ def run_issue_report(
 
     write_phase_traces()
     write_run_summary(status="running")
+    emit(
+        "run_started",
+        message=f"Issue run {run_id} started.",
+    )
 
     try:
         digest_llm = llm or DigestLLM(model=model)
@@ -156,6 +185,11 @@ def run_issue_report(
         write_run_summary(status="running")
 
         current_phase_name = "load_threads"
+        emit(
+            "phase_started",
+            message="Starting load_threads phase.",
+            phase=current_phase_name,
+        )
         current_phase_started_at = datetime.now(timezone.utc)
         threads = load_threads(timeline_file=timeline_file)
         threads_path = resolved_run_dir / "threads.json"
@@ -168,8 +202,26 @@ def run_issue_report(
             artifact_paths=[threads_path],
             counts={"threads": len(threads)},
         )
+        emit(
+            "artifact_written",
+            message="Wrote threads artifact.",
+            phase=current_phase_name,
+            artifact_path=threads_path,
+            counts={"threads": len(threads)},
+        )
+        emit(
+            "phase_completed",
+            message="Completed load_threads phase.",
+            phase=current_phase_name,
+            counts={"threads": len(threads)},
+        )
 
         current_phase_name = "filter_threads"
+        emit(
+            "phase_started",
+            message="Starting filter_threads phase.",
+            phase=current_phase_name,
+        )
         current_phase_started_at = datetime.now(timezone.utc)
         filtered_threads = filter_threads(
             llm=digest_llm,
@@ -189,8 +241,32 @@ def run_issue_report(
                 "kept_threads": kept_thread_count,
             },
         )
+        emit(
+            "artifact_written",
+            message="Wrote filtered threads artifact.",
+            phase=current_phase_name,
+            artifact_path=filtered_threads_path,
+            counts={
+                "filtered_threads": len(filtered_threads),
+                "kept_threads": kept_thread_count,
+            },
+        )
+        emit(
+            "phase_completed",
+            message="Completed filter_threads phase.",
+            phase=current_phase_name,
+            counts={
+                "filtered_threads": len(filtered_threads),
+                "kept_threads": kept_thread_count,
+            },
+        )
 
         current_phase_name = "group_issues"
+        emit(
+            "phase_started",
+            message="Starting group_issues phase.",
+            phase=current_phase_name,
+        )
         current_phase_started_at = datetime.now(timezone.utc)
         issue_threads, issues = group_issues(
             llm=digest_llm,
@@ -207,6 +283,29 @@ def run_issue_report(
             input_count=kept_thread_count,
             output_count=len(issues),
             artifact_paths=[issue_assignments_path, issues_path],
+            counts={
+                "issue_threads": len(issue_threads),
+                "issues": len(issues),
+            },
+        )
+        emit(
+            "artifact_written",
+            message="Wrote issue assignments artifact.",
+            phase=current_phase_name,
+            artifact_path=issue_assignments_path,
+            counts={"issue_threads": len(issue_threads)},
+        )
+        emit(
+            "artifact_written",
+            message="Wrote issues artifact.",
+            phase=current_phase_name,
+            artifact_path=issues_path,
+            counts={"issues": len(issues)},
+        )
+        emit(
+            "phase_completed",
+            message="Completed group_issues phase.",
+            phase=current_phase_name,
             counts={
                 "issue_threads": len(issue_threads),
                 "issues": len(issues),
@@ -237,10 +336,31 @@ def run_issue_report(
             error=error,
             failed_phase=current_phase_name,
         )
+        emit(
+            "run_failed",
+            message=(
+                f"Issue run {run_id} failed"
+                + (
+                    f" during {current_phase_name}: {error}"
+                    if current_phase_name is not None
+                    else f": {error}"
+                )
+            ),
+            phase=current_phase_name,
+        )
         raise
 
     finished_at = datetime.now(timezone.utc)
     write_run_summary(status="completed", finished_at=finished_at)
+    emit(
+        "run_completed",
+        message=f"Issue run {run_id} completed.",
+        counts={
+            "thread_count": len(threads),
+            "kept_count": len([thread for thread in filtered_threads if thread.keep]),
+            "issue_count": len(issues),
+        },
+    )
 
     return IssueReportRunResult(
         run_id=run_id,
@@ -250,14 +370,37 @@ def run_issue_report(
         issue_count=len(issues),
     )
 
-
-def render_issue_digest_html(*, run_dir: Path) -> Path:
+def render_issue_digest_html(*, run_dir: Path, emit_event=None) -> Path:
     from .steps.render_digest_html import run as render_digest_html
 
     started_at = datetime.now(timezone.utc)
     run_doc = _load_json(run_dir / "run.json")
     if not isinstance(run_doc, dict):
         raise RuntimeError(f"Run metadata is missing or invalid in {run_dir / 'run.json'}.")
+    run_id = str(run_doc.get("run_id") or run_dir.name)
+
+    def emit(
+        event: str,
+        *,
+        message: str,
+        phase: str | None = None,
+        artifact_path: Path | None = None,
+        counts: dict[str, int] | None = None,
+    ) -> None:
+        if emit_event is None:
+            return
+        emit_event(
+            RunEvent(
+                event=event,
+                message=message,
+                run_id=run_id,
+                phase=phase,
+                artifact_path=(
+                    str(artifact_path) if artifact_path is not None else None
+                ),
+                counts=counts or {},
+            )
+        )
 
     issues_doc = _load_json(run_dir / "issues.json")
     issue_threads_doc = _load_json(run_dir / "issue_assignments.json")
@@ -271,9 +414,14 @@ def render_issue_digest_html(*, run_dir: Path) -> Path:
         if isinstance(item, dict)
     ]
 
+    emit(
+        "phase_started",
+        message="Starting render_digest_html phase.",
+        phase="render_digest_html",
+    )
     digest_title = _digest_title_from_issues(issues)
     html_text = render_digest_html(
-        run_id=str(run_doc.get("run_id") or run_dir.name),
+        run_id=run_id,
         digest_title=digest_title,
         issues=issues,
         issue_threads=issue_threads,
@@ -305,4 +453,17 @@ def render_issue_digest_html(*, run_dir: Path) -> Path:
         ).model_dump(mode="json")
     )
     write_json(phases_path, phases_doc)
+    emit(
+        "artifact_written",
+        message="Rendered HTML digest artifact.",
+        phase="render_digest_html",
+        artifact_path=html_path,
+        counts={"issues": len(issues)},
+    )
+    emit(
+        "phase_completed",
+        message="Completed render_digest_html phase.",
+        phase="render_digest_html",
+        counts={"issues": len(issues)},
+    )
     return html_path

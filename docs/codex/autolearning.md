@@ -28,6 +28,22 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - broader regression verification reached `35 passed`
   - one runtime hardening detail was captured: `pyFLTK` passes extra callback args to `Fl_Help_View.link(...)`, so the handler now resolves the clicked URI from `*args` instead of assuming a rigid callback signature
 
+## CLI UI JSONL Job Events (2026-03-19)
+
+- Added a neutral run-event contract in `src/xs2n/schemas/run_events.py` so CLI adapters and UI adapters now share one honest machine-readable progress schema.
+- Taught `src/xs2n/report_runtime.py` and `src/xs2n/agents/digest/pipeline.py` to emit structured run, phase, and artifact events instead of leaving the UI to infer all state from shell transcripts and post-run disk scans.
+- Added `--jsonl-events` to `xs2n report issues` and `xs2n report latest`, with one deliberate contract: JSONL events go to stdout, human-oriented logs go to stderr.
+- Replaced the FLTK runner in `src/xs2n/ui/app.py` with a `subprocess.Popen(...)` reader so the desktop app can consume events live, update status text during the run, and refresh artifact lists as files appear.
+- Kept the final `refresh_runs()` path as reconciliation rather than the primary state mechanism, which means the UI now has live process state and still converges on on-disk truth at completion.
+- Verified the milestone with:
+  - `uv run pytest tests/test_report_runtime.py tests/test_report_digest.py tests/test_report_cli.py tests/test_ui_app.py tests/test_ui_run_arguments.py tests/test_ui_run_preferences.py -q`
+  - `uv run pytest -q`
+  - `uv run xs2n report latest --help`
+- Current repository status after the change:
+  - focused verification reached `64 passed`
+  - full regression verification reached `222 passed`
+  - one adapter hardening detail was captured: direct Python calls into Typer command functions can receive `OptionInfo` defaults instead of plain booleans, so CLI code that supports both Typer invocation and direct unit calls now normalizes those values explicitly before branching
+
 ## UI Digest Help View Simplification (2026-03-19)
 
 - Root-caused the digest freeze to `Fl_Help_View.value(...)` parsing the saved browser-oriented `digest.html`, not to worker-thread preview generation or JSON preview loading.

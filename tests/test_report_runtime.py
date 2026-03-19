@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from xs2n.report_runtime import LatestRunArguments, run_latest_report
+from xs2n.schemas.run_events import RunEvent
 
 
 def test_run_latest_report_runs_timeline_then_windowed_issues_then_render(
@@ -118,4 +119,83 @@ def test_run_latest_report_runs_timeline_then_windowed_issues_then_render(
         "Ingesting Home->Following latest timeline before issue generation (since 2026-03-18T00:00:00+00:00).",
         "Latest issue run 20260318T190000Z: loaded 6 threads, kept 4 threads, produced 2 issues.",
         f"Rendered HTML digest to {tmp_path / 'report_runs' / '20260318T190000Z' / 'digest.html'}.",
+    ]
+
+
+def test_run_latest_report_emits_progress_events(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    events: list[RunEvent] = []
+
+    monkeypatch.setattr(
+        "xs2n.report_runtime.run_timeline_ingestion",
+        lambda **kwargs: kwargs["timeline_file"].write_text(
+            '{"entries": []}\n',
+            encoding="utf-8",
+        ),
+    )
+
+    arguments = LatestRunArguments(
+        since="2026-03-18T00:00:00Z",
+        cookies_file=tmp_path / "cookies.json",
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+        output_dir=tmp_path / "report_runs",
+        taxonomy_file=tmp_path / "taxonomy.json",
+        model="gpt-5.4-mini",
+    )
+
+    def fake_run_issue_report(**kwargs):
+        kwargs["emit_event"](
+            RunEvent(
+                event="run_started",
+                message="Issue run 20260318T190000Z started.",
+                run_id="20260318T190000Z",
+            )
+        )
+        kwargs["emit_event"](
+            RunEvent(
+                event="run_completed",
+                message="Issue run 20260318T190000Z completed.",
+                run_id="20260318T190000Z",
+                counts={"thread_count": 0, "kept_count": 0, "issue_count": 0},
+            )
+        )
+        return SimpleNamespace(
+            run_id="20260318T190000Z",
+            run_dir=tmp_path / "report_runs" / "20260318T190000Z",
+            thread_count=0,
+            kept_count=0,
+            issue_count=0,
+        )
+
+    def fake_render_issue_digest_html(**kwargs):
+        digest_path = tmp_path / "report_runs" / "20260318T190000Z" / "digest.html"
+        kwargs["emit_event"](
+            RunEvent(
+                event="artifact_written",
+                message="Rendered HTML digest artifact.",
+                run_id="20260318T190000Z",
+                phase="render_digest_html",
+                artifact_path=str(digest_path),
+            )
+        )
+        return digest_path
+
+    run_latest_report(
+        arguments,
+        emit_event=events.append,
+        echo=lambda _message: None,
+        run_issue_report_fn=fake_run_issue_report,
+        render_issue_digest_html_fn=fake_render_issue_digest_html,
+    )
+
+    assert [(event.event, event.phase, event.run_id) for event in events] == [
+        ("phase_started", "timeline_ingestion", None),
+        ("phase_completed", "timeline_ingestion", None),
+        ("artifact_written", "timeline_window", None),
+        ("run_started", None, "20260318T190000Z"),
+        ("run_completed", None, "20260318T190000Z"),
+        ("artifact_written", "render_digest_html", "20260318T190000Z"),
     ]

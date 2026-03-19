@@ -17,6 +17,7 @@ from xs2n.cli.report import (
     latest,
     render,
 )
+from xs2n.schemas.run_events import RunEvent
 
 
 def test_report_auth_runs_codex_login(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -440,3 +441,84 @@ def test_report_latest_surfaces_runtime_error(
     assert error.value.exit_code == 1
     captured = capsys.readouterr()
     assert "issue build failed" in captured.err
+
+
+def test_report_latest_can_emit_jsonl_events(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fake_run_timeline_ingestion(**kwargs):
+        timeline_file = kwargs["timeline_file"]
+        assert isinstance(timeline_file, Path)
+        timeline_file.write_text('{"entries": []}\n', encoding="utf-8")
+
+    def fake_run_issue_report(**kwargs):
+        kwargs["emit_event"](
+            RunEvent(
+                event="run_started",
+                message="Issue run 20260318T120000Z started.",
+                run_id="20260318T120000Z",
+            )
+        )
+        kwargs["emit_event"](
+            RunEvent(
+                event="run_completed",
+                message="Issue run 20260318T120000Z completed.",
+                run_id="20260318T120000Z",
+            )
+        )
+        return SimpleNamespace(
+            run_id="20260318T120000Z",
+            run_dir=tmp_path / "report_runs" / "20260318T120000Z",
+            thread_count=0,
+            kept_count=0,
+            issue_count=0,
+        )
+
+    def fake_render_issue_digest_html(**kwargs):
+        digest_path = tmp_path / "report_runs" / "20260318T120000Z" / "digest.html"
+        kwargs["emit_event"](
+            RunEvent(
+                event="artifact_written",
+                message="Rendered HTML digest artifact.",
+                run_id="20260318T120000Z",
+                phase="render_digest_html",
+                artifact_path=str(digest_path),
+            )
+        )
+        return digest_path
+
+    monkeypatch.setattr("xs2n.cli.report.run_timeline_ingestion", fake_run_timeline_ingestion)
+    monkeypatch.setattr("xs2n.cli.report.run_issue_report", fake_run_issue_report)
+    monkeypatch.setattr(
+        "xs2n.cli.report.render_issue_digest_html",
+        fake_render_issue_digest_html,
+    )
+
+    latest(
+        since="2026-03-08T00:00:00Z",
+        lookback_hours=24,
+        cookies_file=tmp_path / "cookies.json",
+        limit=120,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+        home_latest=False,
+        output_dir=tmp_path / "report_runs",
+        model="gpt-5.4-mini",
+        jsonl_events=True,
+    )
+
+    captured = capsys.readouterr()
+    stdout_lines = [line for line in captured.out.splitlines() if line.strip()]
+
+    assert len(stdout_lines) >= 4
+    parsed_events = [json.loads(line) for line in stdout_lines]
+    assert [event["event"] for event in parsed_events[:3]] == [
+        "phase_started",
+        "phase_completed",
+        "artifact_written",
+    ]
+    assert any(event.get("run_id") == "20260318T120000Z" for event in parsed_events)
+    assert "Ingesting source timelines before issue generation" in captured.err
+    assert "Rendered HTML digest to" in captured.err

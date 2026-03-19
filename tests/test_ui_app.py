@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 from queue import Queue
 from types import SimpleNamespace
 import signal
 
 import xs2n.ui.app as app
 from xs2n.schemas.auth import AuthDoctorResult, ProviderStatus, RunReadiness
+from xs2n.schemas.run_events import RunEvent
 from xs2n.ui.artifacts import ArtifactRecord, ArtifactSectionRecord, RunRecord
 from xs2n.ui.run_arguments import RunCommand
 
@@ -242,6 +244,117 @@ def test_handle_run_auth_doctor_result_blocks_latest_when_x_is_missing() -> None
     assert status_messages == [
         "Cannot start report latest until Codex and X / Twitter are ready."
     ]
+
+
+def test_drain_idle_work_applies_streamed_run_events() -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    refresh_calls: list[str] = []
+
+    browser.command_progress_updates = Queue()
+    browser.command_results = Queue()
+    browser.viewer_render_results = Queue()
+    browser.running_label = None
+    browser.running_thread = None
+    browser.selected_run_id = None
+    browser.status_output = FakeStatusOutput()
+    browser.refresh_runs = lambda: refresh_calls.append("refresh")
+    browser._drain_pending_viewer_render = lambda: None
+    browser._sync_run_list_layout = lambda force=False: None
+
+    browser.command_progress_updates.put(
+        app.CommandProgress(
+            label="report latest",
+            event=RunEvent(
+                event="run_started",
+                message="Issue run 20260319T101500Z started.",
+                run_id="20260319T101500Z",
+            ),
+        )
+    )
+    browser.command_progress_updates.put(
+        app.CommandProgress(
+            label="report latest",
+            event=RunEvent(
+                event="artifact_written",
+                message="Wrote filtered threads artifact.",
+                run_id="20260319T101500Z",
+                phase="filter_threads",
+                artifact_path="data/report_runs/20260319T101500Z/filtered_threads.json",
+            ),
+        )
+    )
+
+    app.ArtifactBrowserWindow._drain_idle_work(browser)
+
+    assert browser.selected_run_id == "20260319T101500Z"
+    assert refresh_calls == ["refresh"]
+    assert browser.status_output.messages[-1] == "Wrote filtered threads artifact."
+
+
+def test_start_command_streams_jsonl_events_with_popen(monkeypatch) -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    viewer_html: list[str] = []
+
+    browser.running_label = None
+    browser.running_thread = None
+    browser.repo_root = app.Path("/tmp/xs2n")
+    browser.cli_executable = "xs2n"
+    browser.command_progress_updates = Queue()
+    browser.command_results = Queue()
+    browser.status_output = FakeStatusOutput()
+    browser._clear_artifact_viewer_state = lambda: None
+    browser._set_viewer_html = lambda html: viewer_html.append(html)
+    browser._current_theme = lambda: app.CLASSIC_LIGHT_THEME
+    browser._wake_ui = lambda: None
+
+    class InlineThread:
+        def __init__(self, *, target, daemon=None) -> None:  # noqa: ANN001
+            self._target = target
+            self._alive = False
+
+        def start(self) -> None:
+            self._alive = True
+            self._target()
+            self._alive = False
+
+        def is_alive(self) -> bool:
+            return self._alive
+
+        def join(self) -> None:
+            return None
+
+    class FakePopen:
+        def __init__(self, command, cwd, text, stdout, stderr, bufsize) -> None:  # noqa: ANN001
+            self.command = command
+            self.cwd = cwd
+            self.returncode = 0
+            self.stdout = io.StringIO(
+                '{"event":"run_started","message":"Issue run 20260319T101500Z started.","run_id":"20260319T101500Z"}\n'
+                '{"event":"artifact_written","message":"Wrote issues artifact.","run_id":"20260319T101500Z","artifact_path":"data/report_runs/20260319T101500Z/issues.json"}\n'
+            )
+            self.stderr = io.StringIO("human log\n")
+
+        def wait(self) -> int:
+            return self.returncode
+
+    monkeypatch.setattr(app.threading, "Thread", InlineThread)
+    monkeypatch.setattr(app.subprocess, "Popen", FakePopen)
+
+    app.ArtifactBrowserWindow._start_command(
+        browser,
+        label="report latest",
+        args=["report", "latest", "--jsonl-events"],
+        stream_jsonl_events=True,
+    )
+
+    progress = browser.command_progress_updates.get_nowait()
+    result = browser.command_results.get_nowait()
+
+    assert progress.event.event == "run_started"
+    assert result.returncode == 0
+    assert "artifact_written" in result.stdout
+    assert "human log" in result.stderr
+    assert viewer_html
 
 
 def test_apply_selected_artifact_name_syncs_sections_and_raw_files(

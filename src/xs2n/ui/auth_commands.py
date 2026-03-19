@@ -10,6 +10,7 @@ except ImportError:
     class RunCommand:
         label: str
         args: list[str]
+        stream_jsonl_events: bool = False
 
 
 def build_auth_doctor_command(cookies_file: Path) -> RunCommand:
