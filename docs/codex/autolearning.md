@@ -12,6 +12,57 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 4. Add one operational hardening step in the next milestone.
 5. Repeat.
 
+## UI Latest Primary And Saved-Run HTML Alias (2026-03-19)
+
+- Promoted `xs2n report latest` to the primary run action in the desktop UI by removing the peer `Issues` launcher from the main menu/toolbar instead of keeping two equally prominent run buttons.
+- Kept the issue-building CLI path intact for offline and scripted use, but made saved-run HTML rendering easier to discover with a new `xs2n report html --run-dir ...` command while preserving `xs2n report render` as a compatibility alias.
+- Updated `xs2n report issues` output so a completed issue run now tells the operator exactly how to render HTML later from the saved run directory.
+- Verified the milestone with:
+  - `uv run pytest tests/test_report_cli.py tests/test_ui_app.py -q`
+- Current repository status after the change:
+  - focused verification reached `39 passed`
+
+## Report Schedule And Shared Latest Runtime (2026-03-18)
+
+- Added `xs2n report schedule` with portable v1 commands: `create`, `list`, `show`, `run`, `export`, and `delete`.
+- Kept the operating system as the real scheduler. The new CLI stores named definitions in `data/report_schedules.json`, acquires overlap locks in `data/report_schedule_locks/`, records `last_run`, and only prints install-ready `cron` / `launchd` / `systemd` output instead of mutating the OS directly.
+- Added a reusable `report_runtime.py` helper for the current issue-based `report latest` flow, so the schedule runner reuses the same timeline-ingestion, windowing, issue-build, and HTML-render path as the CLI.
+- Mid-implementation, the active branch reality turned out to be `report issues` / `report render` / `report latest`, not the older digest-only report surface. The schedule work was deliberately integrated with that newer truth instead of trying to keep both report contracts alive.
+- Verified the milestone with:
+  - `uv run pytest tests/test_report_digest.py tests/test_report_runtime.py tests/test_report_schedule.py tests/test_report_schedule_storage.py tests/test_report_cli.py tests/test_ui_run_arguments.py tests/test_ui_run_preferences.py`
+  - `uv run xs2n report schedule --help`
+  - `uv run xs2n report schedule create demo --every-hours 6 --lookback-hours 24 --schedules-file /tmp/...`
+  - `uv run xs2n report schedule export demo --target cron --schedules-file /tmp/...`
+  - `uv run pytest`
+- Current repository status after the change: `208 passed`.
+
+## Following Source Refresh (2026-03-18)
+
+- Added `xs2n onboard --refresh-following` as a CLI-first shortcut for replacing `data/sources.json` with the authenticated account's current following list.
+- Kept the existing `xs2n onboard --from-following <handle>` path merge-oriented so explicit-handle onboarding still behaves as a non-destructive import.
+- Added a dedicated replace helper in `src/xs2n/storage/sources.py` so replacement semantics stay separate from merge semantics and remain easy to test.
+- Wired the desktop UI to launch the same CLI shortcut from the `Run` menu instead of duplicating onboarding logic inside the FLTK layer.
+- Locked the empty-following edge case with tests so refresh can intentionally clear stale source rows instead of failing when the authenticated account follows nobody.
+- Verified the feature with focused tests only; the full `uv run pytest` is currently blocked by unrelated missing modules already present in this workspace (`xs2n.cli.auth`, `xs2n.schemas.auth`, `xs2n.report_runtime`, and related auth/schedule UI paths).
+
+## UI Auth Center And Login Guard (2026-03-18)
+
+- Added an explicit CLI auth surface for the desktop app:
+  - `xs2n auth doctor --json`
+  - `xs2n auth x login`
+  - `xs2n auth x reset`
+- Kept Codex login on the existing `xs2n report auth` path instead of adding a wrapper command with duplicated semantics.
+- Added a dedicated desktop auth window with separate `Codex` and `X / Twitter` sections, plus a direct `File -> Authentication` menu entry.
+- The UI now refreshes auth state on explicit demand from `File -> Authentication` and as a preflight before `report digest` / `report latest`, using the CLI as the source of truth instead of inferring state from viewer transcripts.
+- The auth window does not duplicate the cookies-path setting: it displays the currently applied `Latest` cookies path from Preferences and passes that exact path into doctor/login/reset commands.
+- Updated Playwright X bootstrap so browser login can wait for `auth_token` and `ct0` automatically instead of depending on a terminal `Press Enter` checkpoint.
+- Verified the feature with:
+  - `uv run pytest tests/test_auth.py tests/test_auth_cli.py tests/test_auth_recovery.py tests/test_browser_cookies.py tests/test_onboard_recovery.py tests/test_ui_app.py tests/test_ui_auth_commands.py tests/test_ui_auth_window.py tests/test_ui_cli.py tests/test_ui_following_refresh.py tests/test_ui_run_arguments.py tests/test_ui_run_preferences.py -q`
+  - `uv run xs2n auth doctor --json --cookies-file cookies.json`
+- Repository status after full-suite verification:
+  - `uv run pytest` reaches `189 passed`
+  - 6 failures remain outside this feature in report/digest/schedule flows (`tests/test_report_digest.py`, `tests/test_report_runtime.py`, `tests/test_report_schedule.py`)
+
 ## Current Milestone Notes (2026-03-01)
 
 - Implemented onboarding CLI with two paths:
@@ -219,6 +270,17 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added a root-level `src/xs2n/schemas/` package with `src/xs2n/schemas/digest.py` as the source of truth for digest schemas.
 - Kept `pipeline.py` focused on orchestration, rendering, and deterministic helpers while the step files now import their schemas from `xs2n.schemas.digest`.
 
+## UI Run Arguments Panel (2026-03-15)
+
+- Moved digest/latest argument editing out of the main browser pane and into a dedicated `Preferences` window opened from `File -> Preferences`.
+- Extracted deterministic argument defaults, normalization, and validation into `src/xs2n/ui/run_arguments.py`, then isolated the window-specific FLTK form code in `src/xs2n/ui/run_preferences.py` so the main browser stays readable.
+- Added explicit `Apply` and `Cancel` controls so preferences no longer affect launches while the user is typing. The active commands now read from stored applied state, not directly from the live widgets.
+- Added focused tests for digest/latest CLI argument rendering plus lightweight callback wiring tests in `tests/test_ui_run_arguments.py`, `tests/test_ui_run_preferences.py`, and `tests/test_ui_app.py`.
+- Verified the feature with:
+  - `uv run pytest tests/test_ui_run_arguments.py tests/test_ui_run_preferences.py tests/test_ui_app.py tests/test_ui_cli.py`
+  - `uv run pytest`
+  - a bootstrap smoke that instantiated `ArtifactBrowserWindow`, opened the Preferences window, and confirmed the `Latest` tab could be selected without crashing.
+
 ## Digest Parallel Worker Pool (2026-03-15)
 
 - Added bounded per-stage parallelism for the three thread-local digest phases:
@@ -240,9 +302,9 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - use `run.json` and `phases.json` when present,
   - tolerate old or interrupted runs that only contain a subset of files.
 - Kept the viewer FLTK-native by switching the right-hand pane to `Fl_Help_View` and converting `.md` artifacts to HTML at load time instead of embedding a browser engine.
-- Discovered a concrete macOS caveat during packaging research: `pyfltk` needs the native FLTK shared libraries from Homebrew, or imports fail with a missing `libfltk*.dylib` error.
 - Split the macOS-specific native menu override into `src/xs2n/ui/macos/` so the main FLTK app stays readable and the Cocoa bridge stays isolated to the platform that needs it.
 - Used FLTK's `Fl_Sys_Menu_Bar.window_menu_style(no_window_menu)` before first show, then a tiny Cocoa/AppKit bridge after show to rename the app to `xn2s` and replace the default macOS menu with only `About xn2s` and `Quit xn2s`.
+- Discovered a concrete macOS caveat during packaging research: `pyfltk` needs the native FLTK shared libraries from Homebrew, or imports fail with a missing `libfltk*.dylib` error.
 - Updated the user-facing docs to make the install path explicit:
   - `uv sync --extra gui`
   - `brew install fltk` on macOS
@@ -316,3 +378,132 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Verified a completed real-model digest run on a trimmed timeline subset; the run folder now explains both execution flow and model decisions well enough to audit why threads were dropped.
 - New fragility discovered during live verification: `xs2n report latest` still digests the whole accumulated `data/timeline.json` after ingesting new items, so long-lived timeline files can make a “latest” run much larger and slower than the lookback window suggests.
 - New fragility discovered during manual interruption: externally terminated runs can leave `run.json` in `running` state because a process-level `SIGTERM` bypasses the normal Python exception cleanup path.
+
+## Artifact Browser Command Strip Refresh (2026-03-16)
+
+- Restyled the artifact-browser command strip into a retro control bar with larger icon-first buttons, small engraved captions, and beige hover tooltips.
+- Kept the command wiring unchanged so the UI polish stayed isolated to layout and widget styling instead of touching the digest/runtime code paths.
+- Verified the FLTK bindings directly with `uv run --extra gui python` before changing widget APIs, which caught the real available methods/constants and reduced guesswork for the optional GUI dependency.
+- User feedback pushed the design one step further toward a true Windows toolbar: the better fit was smaller monochrome icon buttons with tooltip-only labels, not “hero” buttons with extra emphasis.
+- For FLTK menus, “padding” is effectively controlled through menu text metrics and bar height; a small bump to `textsize`/`MENU_HEIGHT` gives dropdown items more breathing room without custom drawing.
+
+## UI Terminal Launch Fallback (2026-03-16)
+
+- Reproduced a real macOS regression where `uv run xs2n ui` returned immediately with no visible feedback after the new app-bundle relaunch path was added.
+- The underlying FLTK browser still worked when launched directly, so the safer contract for terminal users is to keep interactive launches in-process and reserve the detached app-bundle handoff for non-interactive contexts.
+- Moved the optional-GUI import check ahead of the relaunch attempt so missing `pyfltk` or missing native FLTK runtime errors stay visible in the terminal instead of disappearing into a detached macOS `open` call.
+
+## UI Markdown Font Fallback (2026-03-16)
+
+- Reproduced a typography bug where rendered Markdown in `Fl_Help_View` showed up in a monospace-looking fallback font on macOS even though the rest of the window styling was intentional.
+- The root cause was not Python-Markdown: it only emits HTML tags. The real issue was our wrapper forcing `<font face="Microsoft Sans Serif">`, which is a Windows face and not a safe HTML font choice for the FLTK help viewer on macOS.
+- Kept the Windows-classic widget styling for FLTK controls, but split the HTML viewer font to a platform-appropriate face so macOS Markdown content now renders with `Helvetica` instead of falling back awkwardly.
+
+## UI Run List Column Cleanup (2026-03-16)
+
+- Tightened the left-hand run browser by switching from one verbose summary string to four explicit FLTK browser columns: source, started, status, and thread/kept/issue counts.
+- Kept the retro desktop feel by using FLTK's native column support instead of custom drawing or a modern table widget.
+- Verified the live widget API through Context7 plus `uv run python` introspection before changing the browser setup, which confirmed `column_char()`, `column_widths()`, and `linespacing()` were all available in the actual pyFLTK binding.
+- A compact source label such as `[24H/100]` works better in the scan list than repeating the full `report_runs_*` directory name, while the full root still stays available in `run.json`.
+
+## UI Artifact Browser Navigation Cleanup (2026-03-16)
+
+- Removed the dedicated right-side run-details pane because it duplicated information already available in `run.json`.
+- Split the middle artifact column into two stacked browsers:
+  - curated sections at the top for the important artifacts,
+  - raw files below for the full run folder listing.
+- Kept both navigation surfaces on one artifact-selection path, so clicking `Run metadata` in the top pane and `run.json` in the bottom pane opens the same viewer content.
+- Added focused regression coverage for section derivation and synchronized section/raw-file selection behavior, then verified the real FLTK bootstrap with `ArtifactBrowserWindow(data_dir=Path("data"))`.
+
+## UI Run List Preferences (2026-03-16)
+
+- Changed the left run pane default from metadata-heavy columns to a simpler `Date` + `Digest` view, which reads more like a digest inbox and less like a trace console.
+- Added digest-title extraction during run scan by reading `digest.md` and preferring the first meaningful issue heading (`### ...`) over the generic top-level file title.
+- Split the run-list rendering logic into `src/xs2n/ui/run_list.py`, which now owns visible-column normalization, row formatting, and responsive width math for the FLTK browser.
+- Added a dedicated `Run List` tab to the existing Preferences window instead of inventing a second settings surface inside the browser window.
+- Verified the feature with focused tests for digest-title extraction, run-list formatting, preferences wiring, and app-level live updates, plus a live widget smoke that confirmed the header strip and toggle behavior on a real `ArtifactBrowserWindow`.
+
+## UI Viewer Focus Mode (2026-03-16)
+
+- Added a right-aligned icon toggle to the desktop artifact browser command strip so the left run list and middle navigation pane can be hidden temporarily while reading in the viewer.
+- Restored the previous run-list and navigation widths when focus mode is turned off, so the viewer-only pass does not discard the browsing layout the user already set up.
+- Kept the change local to `src/xs2n/ui/app.py` instead of moving focus state into the preferences window, because this is an immediate reading-mode action rather than a persistent configuration choice.
+- Added focused app-level regression tests for the toggle callback plus pane hide/show geometry restoration before running the live FLTK smoke.
+
+## UI Running-Command Exit Warning (2026-03-16)
+
+- Added a close-path confirmation in the desktop artifact browser so quitting while a digest or latest run is still active no longer closes the app silently.
+- Reused FLTK's native `fl_choice(...)` dialog instead of inventing a custom modal, which keeps the warning consistent with the rest of the retro desktop style and covers menu quit, window-close, and terminal interrupt paths through the same `close_browser()` guard.
+- Kept the warning text honest: it names the active command label and warns that the run may be interrupted, without promising exactly what the child process will do after the UI exits.
+- Added focused regression coverage for both outcomes: cancel keeps the window open, confirm proceeds with shutdown.
+
+## UI Deferred Artifact Rendering (2026-03-16)
+
+- Measured a real responsiveness bug in the artifact browser and confirmed the slow part was `Fl_Help_View.value(...)`, not the section-to-raw-file selection sync.
+- Moved heavy artifact rendering onto the browser's existing FLTK idle loop so list selection can repaint before large JSON artifacts are parsed into the viewer.
+- Added a lightweight loading view plus focused tests for deferred rendering and last-selection-wins behavior, which gives the user immediate feedback without lying about when the expensive viewer work actually finishes.
+
+## UI Run List Multi-Select Delete (2026-03-16)
+
+- Split the left-pane interaction logic into `src/xs2n/ui/run_list_browser.py` so `src/xs2n/ui/app.py` does not have to own raw FLTK modifier-key handling and popup-menu plumbing.
+- Switched the run list from `Fl_Hold_Browser` to a `RunListBrowser` built on `Fl_Multi_Browser`, then normalized the selection semantics after the base widget processes the click so Shift-range and Ctrl-add/remove behave the way the user expects.
+- Added a destructive-action safety rule for this UI: delete selected run folders only after a native `fl_choice(...)` confirmation, and keep the center/right panes bound to one fallback run after deletion rather than trying to make the artifact viewer multi-run aware.
+- Locked the feature with focused tests for the filesystem delete helper, the pure run-list browser helpers, and the app-level delete flow, then verified the real FLTK bootstrap still instantiates `ArtifactBrowserWindow` with `RunListBrowser` successfully.
+
+## UI Main-Thread Hardening (2026-03-18)
+
+- Re-audited the artifact browser after the earlier idle-deferred fix and confirmed the deeper problem was still main-thread viewer work, not just delayed selection repaint.
+- The worst measured freezes on local data were severe: about `21.85 s` for `filtered_threads.json`, `19.54 s` for `categorized_threads.json`, `14.43 s` for `threads.json`, `8.95 s` for `issue_assignments.json`, and `7.16 s` for `processed_threads.json`.
+- The run-selection path also showed avoidable work: the newest local run expanded to `1211` visible artifacts because `llm_calls/` contributed `1200` nested child rows, and `list_run_artifacts(...)` took about `510.45 ms`.
+- Hardened `src/xs2n/ui/artifacts.py` by collapsing nested directories in the raw-files browser and adding bounded preview loading for large files and large directories.
+- Hardened `src/xs2n/ui/viewer.py` so previews can report truncation explicitly and avoid extra repeated regex compilation on every Markdown render.
+- Hardened `src/xs2n/ui/app.py` by moving preview generation onto a worker thread and waking the FLTK loop with `fltk.Fl.awake()` only to apply ready results on the main thread.
+- Tightened `src/xs2n/ui/run_list_browser.py` so plain left-click release no longer snapshots the full previous selection when Shift/Ctrl logic is not needed.
+- The same local timing probe dropped to about `157.85 ms` for `filtered_threads.json`, `130.44 ms` for `categorized_threads.json`, `146.11 ms` for `threads.json`, `507.62 ms` for `issue_assignments.json`, and `484.41 ms` for `processed_threads.json`.
+- `list_run_artifacts(...)` on the same run dropped from `1211` artifacts / `510.45 ms` to `11` artifacts / `1.2 ms` once `llm_calls/` stopped expanding into individual child rows.
+- Focused verification passed for the touched modules:
+  - `uv run pytest tests/test_ui_artifacts.py tests/test_ui_viewer.py -q` -> `12 passed`
+  - `uv run pytest tests/test_ui_run_list_browser.py -q` -> `6 passed`
+- New fragility discovered during verification: the broader UI test surface currently has unrelated concurrent blockers in the workspace, including a missing `xs2n.schemas.auth` module referenced by older tests and a separate `SyntaxError` in `src/xs2n/cli/report.py`, so the isolated rendering-path checks are the trustworthy signal for this milestone.
+
+## CLI-First Issue Digest Simplification (2026-03-18)
+
+- Replaced the old taxonomy-heavy `report digest` pipeline with a smaller CLI-first split:
+  - `xs2n report issues` for loose filtering plus sequential issue building,
+  - `xs2n report render` for deterministic HTML rendering from saved artifacts,
+  - `xs2n report latest` for ingestion + latest-only snapshot + issue build + HTML render.
+- Removed taxonomy and parallel-worker knobs from the primary report surface so the active product flow matches the simpler design instead of keeping legacy scaffolding visible.
+- Extended timeline ingestion/storage with lightweight remote media metadata, which is now captured per tweet and reused only from the primary source-authored post when the issue-builder makes multimodal model calls.
+- Updated the OpenAI wrapper to support Responses image inputs alongside structured JSON text payloads, while keeping the same trace-per-call artifact pattern in `llm_calls/`.
+- Changed the desktop artifact browser to treat `digest.html` as the primary digest artifact and rely on `run.json.digest_title` / `primary_artifact_path` instead of scraping titles from markdown-only output.
+- Verified the refactor with the full suite:
+  - `uv run pytest -q` -> `207 passed`
+
+## UI System Appearance Theme (2026-03-18)
+
+- Added a small shared theme layer in `src/xs2n/ui/theme.py` with three appearance modes:
+  - `system`
+  - `classic_light`
+  - `classic_dark`
+- Kept the implementation honest by splitting persistence into `src/xs2n/storage/ui_state.py` instead of hiding app-wide appearance state inside `RunPreferencesWindow`.
+- Hardened `save_ui_state(...)` to write through a temporary file and replace atomically, so a shared or concurrently running UI process is less likely to leave `data/ui_state.json` half-written.
+- Updated the desktop browser, Preferences window, HTML viewer, and authentication window to consume the same theme tokens so dark mode no longer stops at the FLTK chrome.
+- Taught the viewer to inject a dark-theme CSS override into HTML artifacts such as `digest.html`, and updated the digest HTML renderer itself to publish light/dark CSS variables for standalone viewing outside the app.
+- Preserved the retro utility feel in dark mode by using warm charcoal and brown-gray surfaces, restrained blue selection, and slightly roomier row/header spacing rather than a flat modern dark palette.
+- Tightened the async preview error path so a failed older render future no longer fabricates the current request id and overwrites the selected artifact with the wrong failure view.
+- Added focused regression coverage for:
+  - theme normalization and system resolution,
+  - persisted appearance state,
+  - dark viewer HTML rendering,
+  - Preferences apply/cancel behavior for appearance,
+  - app-level theme switching,
+  - authentication-window theming.
+- A concurrent-worktree verification blocker surfaced during the feature:
+  - `xs2n.schemas.__init__` eagerly imported missing digest models,
+  - `src/xs2n/report_runtime.py` eagerly imported digest execution when the UI only needed run-argument dataclasses.
+  Both were narrowed just enough to unblock UI verification without dragging the theme work into the digest refactor.
+- A late UX bug also surfaced in smoke testing: opening the UI immediately kicked off `auth doctor`, which made quit show a scary interruption dialog even when the user had not started any run. The root cause was the eager `_refresh_auth_state()` call in `ArtifactBrowserWindow.__init__`; removing that startup refresh fixed the prompt while keeping explicit auth refresh and command preflight behavior intact.
+- Verified the final UI surface with:
+  - `uv run pytest tests/test_ui_*.py -q` -> `90 passed`
+  - `uv run python -m py_compile src/xs2n/ui/theme.py src/xs2n/storage/ui_state.py src/xs2n/ui/viewer.py src/xs2n/ui/run_preferences.py src/xs2n/ui/auth_window.py src/xs2n/ui/app.py src/xs2n/ui/run_arguments.py src/xs2n/report_runtime.py src/xs2n/schemas/__init__.py`
+  - runtime smoke: `ArtifactBrowserWindow(data_dir=Path("data"))` printed `{'appearance_mode': 'system', 'theme': 'classic_dark', 'runs': 2}` and closed cleanly.
