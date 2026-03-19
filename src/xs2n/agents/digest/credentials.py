@@ -127,6 +127,6 @@ def resolve_digest_credentials(api_key: str | None = None) -> ResolvedDigestCred
         )
 
     raise RuntimeError(
-        "No model credentials found for `xs2n report digest`. "
+        "No model credentials found for `xs2n report issues`. "
         "Either export OPENAI_API_KEY or run `xs2n report auth` to log into Codex, then retry."
     )

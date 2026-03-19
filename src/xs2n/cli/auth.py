@@ -10,6 +10,13 @@ from typing import Any
 
 import typer
 
+from xs2n.profile.browser_cookies import (
+    describe_cookie_candidate,
+    discover_x_cookie_candidates,
+    maybe_warn_keychain_prompt,
+    resolve_screen_name_from_cookies,
+    write_cookie_candidate,
+)
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
 from xs2n.schemas.auth import AuthDoctorResult, ProviderStatus, RunReadiness
 
@@ -164,9 +171,17 @@ def _build_x_status(cookies_file: Path) -> ProviderStatus:
             detail=str(resolved_path),
         )
 
+    screen_name = resolve_screen_name_from_cookies(cookies)
+    if screen_name:
+        return ProviderStatus(
+            status="ready",
+            summary=f"X session ready for @{screen_name}.",
+            detail=str(resolved_path),
+        )
+
     return ProviderStatus(
-        status="ready",
-        summary="X session cookies available.",
+        status="expired",
+        summary="X session cookies are present but could not be verified.",
         detail=str(resolved_path),
     )
 
@@ -192,6 +207,26 @@ def build_auth_doctor_result(
 
 
 def login_x_session(*, cookies_file: Path) -> Path:
+    maybe_warn_keychain_prompt(echo=typer.echo)
+    try:
+        candidates = discover_x_cookie_candidates(resolve_profiles=True)
+    except RuntimeError:
+        candidates = []
+
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        typer.echo(
+            "Using logged-in browser session "
+            f"{describe_cookie_candidate(candidate)}."
+        )
+        return write_cookie_candidate(candidate, cookies_file)
+
+    if len(candidates) > 1:
+        typer.echo(
+            "Found multiple logged-in X browser sessions. "
+            "Opening browser login to refresh the desired one explicitly."
+        )
+
     return bootstrap_cookies_via_browser(cookies_file)
 
 

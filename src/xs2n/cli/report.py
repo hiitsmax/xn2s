@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 
@@ -8,19 +7,26 @@ import typer
 
 from xs2n.agents import (
     DEFAULT_REPORT_MODEL,
-    DEFAULT_REPORT_PARALLEL_WORKERS,
     DEFAULT_REPORT_RUNS_PATH,
-    DEFAULT_TAXONOMY_PATH,
-    run_digest_report,
+    render_issue_digest_html,
+    run_issue_report,
 )
-from xs2n.cli.timeline import parse_since_datetime, run_timeline_ingestion
+from xs2n.cli.report_schedule import schedule_app
+from xs2n.cli.timeline import run_timeline_ingestion
 from xs2n.profile.timeline import DEFAULT_IMPORT_TIMELINE, IMPORT_TIMELINE_LIMIT
+from xs2n.report_runtime import (
+    DEFAULT_COOKIES_PATH,
+    LatestRunArguments,
+    resolve_latest_since as _resolve_latest_since,
+    run_latest_report,
+)
 from xs2n.storage import DEFAULT_SOURCES_PATH, DEFAULT_TIMELINE_PATH
 
 report_app = typer.Typer(
     help="Report pipeline commands.",
     no_args_is_help=True,
 )
+report_app.add_typer(schedule_app, name="schedule")
 
 
 @report_app.callback()
@@ -46,16 +52,12 @@ def _run_codex_command(command: list[str]) -> None:
         raise typer.Exit(code=completed.returncode or 1)
 
 
-def _resolve_latest_since(
-    *,
-    since: str | None,
-    lookback_hours: int,
-    now: datetime | None = None,
-) -> datetime:
-    if since is not None:
-        return parse_since_datetime(since)
-    reference_now = now or datetime.now(timezone.utc)
-    return reference_now - timedelta(hours=lookback_hours)
+def _render_saved_issue_run_html(*, run_dir: Path) -> Path:
+    try:
+        return render_issue_digest_html(run_dir=run_dir)
+    except RuntimeError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from error
 
 
 @report_app.command("auth")
@@ -102,8 +104,8 @@ def auth(
     _run_codex_command(command)
 
 
-@report_app.command("digest")
-def digest(
+@report_app.command("issues")
+def issues(
     timeline_file: Path = typer.Option(
         DEFAULT_TIMELINE_PATH,
         "--timeline-file",
@@ -114,42 +116,65 @@ def digest(
         "--output-dir",
         help="Directory where report run artifacts are written.",
     ),
-    taxonomy_file: Path = typer.Option(
-        DEFAULT_TAXONOMY_PATH,
-        "--taxonomy-file",
-        help="Editable taxonomy JSON file.",
-    ),
     model: str = typer.Option(
         DEFAULT_REPORT_MODEL,
         "--model",
-        help="OpenAI model name used for structured digest steps.",
-    ),
-    parallel_workers: int = typer.Option(
-        DEFAULT_REPORT_PARALLEL_WORKERS,
-        "--parallel-workers",
-        min=1,
-        help="Worker count for parallel categorize/filter/process digest steps.",
+        help="OpenAI model name used for the loose filter and issue-building steps.",
     ),
 ) -> None:
-    """Generate a traceable markdown digest from timeline data."""
+    """Build issue artifacts from timeline data."""
 
     try:
-        result = run_digest_report(
+        result = run_issue_report(
             timeline_file=timeline_file,
             output_dir=output_dir,
-            taxonomy_file=taxonomy_file,
             model=model,
-            parallel_workers=parallel_workers,
         )
     except RuntimeError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from error
 
     typer.echo(
-        f"Digest run {result.run_id}: loaded {result.thread_count} threads, "
-        f"kept {result.kept_count} threads, produced {result.issue_count} issues. "
-        f"Saved markdown to {result.digest_path}."
+        f"Issue run {result.run_id}: loaded {result.thread_count} threads, "
+        f"kept {result.kept_count} threads, produced {result.issue_count} issues."
     )
+    typer.echo(f"Render later with: xs2n report html --run-dir {result.run_dir}")
+
+
+@report_app.command("render")
+def render(
+    run_dir: Path = typer.Option(
+        ...,
+        "--run-dir",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        help="Existing run directory containing issues.json and issue_assignments.json.",
+    ),
+) -> None:
+    """Render one saved run into HTML."""
+
+    html_path = _render_saved_issue_run_html(run_dir=run_dir)
+    typer.echo(f"Rendered HTML digest to {html_path}.")
+
+
+@report_app.command("html")
+def html_render(
+    run_dir: Path = typer.Option(
+        ...,
+        "--run-dir",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        help="Existing run directory containing issues.json and issue_assignments.json.",
+    ),
+) -> None:
+    """Render one saved issue run into HTML."""
+
+    html_path = _render_saved_issue_run_html(run_dir=run_dir)
+    typer.echo(f"Rendered HTML digest to {html_path}.")
 
 
 @report_app.command("latest")
@@ -166,7 +191,7 @@ def latest(
         help="When --since is omitted, ingest timeline entries from now minus this many hours.",
     ),
     cookies_file: Path = typer.Option(
-        Path("cookies.json"),
+        DEFAULT_COOKIES_PATH,
         "--cookies-file",
         help="Twikit cookies file for authenticated scraping.",
     ),
@@ -197,65 +222,33 @@ def latest(
         "--output-dir",
         help="Directory where report run artifacts are written.",
     ),
-    taxonomy_file: Path = typer.Option(
-        DEFAULT_TAXONOMY_PATH,
-        "--taxonomy-file",
-        help="Editable taxonomy JSON file.",
-    ),
     model: str = typer.Option(
         DEFAULT_REPORT_MODEL,
         "--model",
-        help="OpenAI model name used for structured digest steps.",
-    ),
-    parallel_workers: int = typer.Option(
-        DEFAULT_REPORT_PARALLEL_WORKERS,
-        "--parallel-workers",
-        min=1,
-        help="Worker count for parallel categorize/filter/process digest steps.",
+        help="OpenAI model name used for the loose filter and issue-building steps.",
     ),
 ) -> None:
-    """Ingest latest timeline data and render one digest."""
+    """Ingest latest timeline data, build issues, and render HTML."""
 
-    since_datetime = _resolve_latest_since(
+    arguments = LatestRunArguments(
         since=since,
         lookback_hours=lookback_hours,
-    )
-    since_value = since_datetime.isoformat()
-
-    ingest_label = (
-        "Home->Following latest timeline"
-        if home_latest
-        else "source timelines"
-    )
-    typer.echo(
-        f"Ingesting {ingest_label} before digest generation "
-        f"(since {since_value})."
-    )
-    run_timeline_ingestion(
-        account=None,
-        from_sources=not home_latest,
-        home_latest=home_latest,
-        since=since_value,
         cookies_file=cookies_file,
         limit=limit,
         timeline_file=timeline_file,
         sources_file=sources_file,
+        home_latest=home_latest,
+        output_dir=output_dir,
+        model=model,
     )
 
     try:
-        result = run_digest_report(
-            timeline_file=timeline_file,
-            output_dir=output_dir,
-            taxonomy_file=taxonomy_file,
-            model=model,
-            parallel_workers=parallel_workers,
+        run_latest_report(
+            arguments,
+            run_timeline_ingestion_fn=run_timeline_ingestion,
+            run_issue_report_fn=run_issue_report,
+            render_issue_digest_html_fn=render_issue_digest_html,
         )
     except RuntimeError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from error
-
-    typer.echo(
-        f"Latest digest run {result.run_id}: loaded {result.thread_count} threads, "
-        f"kept {result.kept_count} threads, produced {result.issue_count} issues. "
-        f"Saved markdown to {result.digest_path}."
-    )

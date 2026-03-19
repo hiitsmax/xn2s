@@ -19,7 +19,13 @@ class ProfileEntry:
 
 
 TimelineEntryKind = Literal["post", "reply", "retweet"]
-TimelineEntrySource = Literal["tweets", "replies", "thread_parent", "thread_reply"]
+TimelineEntrySource = Literal[
+    "tweets",
+    "replies",
+    "thread_parent",
+    "thread_reply",
+    "home_latest",
+]
 
 
 @dataclass(slots=True)
@@ -41,6 +47,7 @@ class TimelineEntry:
     reply_count: int | None = None
     quote_count: int | None = None
     view_count: int | None = None
+    media: list[dict[str, object]] | None = None
 
 
 @dataclass(slots=True)
@@ -54,5 +61,4 @@ class TimelineFetchResult:
 class TimelineMergeResult:
     added: int
     skipped_duplicates: int
-
 

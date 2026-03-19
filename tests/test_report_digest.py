@@ -5,20 +5,15 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import threading
-import time
 
 import pytest
 
 from xs2n.agents.digest import (
-    CategorizationResult,
-    DEFAULT_TAXONOMY_DOC,
-    FilterResult,
-    IssueAssignmentResult,
-    ThreadProcessResult,
     TimelineRecord,
     _load_threads,
     _virality_score,
-    run_digest_report,
+    render_issue_digest_html,
+    run_issue_report,
 )
 
 
@@ -26,14 +21,13 @@ class _FakeLLM:
     def __init__(
         self,
         *,
-        fail_schema=None,
-        delay_by_thread_id: dict[str, float] | None = None,
-    ) -> None:  # noqa: ANN001
-        self._fail_schema = fail_schema
-        self._delay_by_thread_id = delay_by_thread_id or {}
+        fail_schema_name: str | None = None,
+    ) -> None:
+        self._fail_schema_name = fail_schema_name
         self._trace_dir: Path | None = None
         self._call_index = 0
         self._trace_lock = threading.Lock()
+        self.image_urls_by_schema_name: dict[str, list[list[str]]] = {}
 
     def configure_run_logging(self, *, run_dir: Path) -> None:
         self._trace_dir = run_dir / "llm_calls"
@@ -41,14 +35,10 @@ class _FakeLLM:
         with self._trace_lock:
             self._call_index = 0
 
-    def _phase_name(self, schema) -> str:  # noqa: ANN001, ANN201
-        if schema is CategorizationResult:
-            return "categorize_threads"
-        if schema is FilterResult:
+    def _phase_name(self, schema_name: str) -> str:
+        if schema_name == "ThreadFilterResult":
             return "filter_threads"
-        if schema is ThreadProcessResult:
-            return "process_threads"
-        if schema is IssueAssignmentResult:
+        if schema_name in {"IssueSelectionResult", "IssueWriteResult"}:
             return "group_issues"
         return "llm"
 
@@ -61,32 +51,26 @@ class _FakeLLM:
         *,
         prompt: str,
         payload,
-        schema,
+        schema_name: str,
         result=None,
         error: str | None = None,
+        image_urls: list[str] | None = None,
     ) -> None:  # noqa: ANN001, ANN201
         if self._trace_dir is None:
             return
         with self._trace_lock:
             self._call_index += 1
             call_id = self._call_index
-        if hasattr(payload, "model_dump"):
-            payload_doc = payload.model_dump(mode="json")
-        elif isinstance(payload, dict):
-            payload_doc = {
-                key: value.model_dump(mode="json") if hasattr(value, "model_dump") else value
-                for key, value in payload.items()
-            }
-        else:
-            payload_doc = payload
+        payload_doc = self._to_jsonable(payload)
         trace = {
             "call_id": call_id,
-            "phase": self._phase_name(schema),
+            "phase": self._phase_name(schema_name),
             "item_id": self._item_id(payload),
-            "schema_name": schema.__name__,
+            "schema_name": schema_name,
             "prompt": prompt,
             "payload": payload_doc,
-            "result": result.model_dump(mode="json") if result is not None else None,
+            "image_urls": image_urls or [],
+            "result": result,
             "error_message": error,
         }
         item_suffix = re.sub(
@@ -99,77 +83,109 @@ class _FakeLLM:
         )
         path.write_text(f"{json.dumps(trace, indent=2)}\n", encoding="utf-8")
 
-    def run(self, *, prompt, payload, schema):  # noqa: ANN001, ANN201
-        thread_id = self._item_id(payload)
-        delay_seconds = self._delay_by_thread_id.get(thread_id or "", 0.0)
-        if delay_seconds > 0:
-            time.sleep(delay_seconds)
+    def _to_jsonable(self, value):  # noqa: ANN001, ANN201
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json")
+        if isinstance(value, dict):
+            return {
+                key: self._to_jsonable(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._to_jsonable(item) for item in value]
+        return value
 
-        if schema is self._fail_schema:
+    def run(self, *, prompt, payload, schema, image_urls=None):  # noqa: ANN001, ANN201
+        schema_name = schema.__name__
+        image_urls = image_urls or []
+        self.image_urls_by_schema_name.setdefault(schema_name, []).append(image_urls)
+
+        if schema_name == self._fail_schema_name:
             self._write_trace(
                 prompt=prompt,
                 payload=payload,
-                schema=schema,
+                schema_name=schema_name,
                 error="synthetic failure",
+                image_urls=image_urls,
             )
             raise RuntimeError("synthetic failure")
 
-        if schema is CategorizationResult:
+        if schema_name == "ThreadFilterResult":
             thread = payload["thread"]
             joined_text = " ".join(tweet.text.lower() for tweet in thread.tweets)
-            if "promo" in joined_text:
-                category = "promo"
-            elif "debate" in joined_text:
-                category = "debate"
+            result = {
+                "keep": "buy now" not in joined_text and "gm gm gm" not in joined_text,
+                "filter_reason": (
+                    "drop_obvious_noise"
+                    if "buy now" in joined_text or "gm gm gm" in joined_text
+                    else "keep_real_signal"
+                ),
+            }
+            self._write_trace(
+                prompt=prompt,
+                payload=payload,
+                schema_name=schema_name,
+                result=result,
+                image_urls=image_urls,
+            )
+            return schema.model_validate(result)
+
+        if schema_name == "IssueSelectionResult":
+            thread = payload["thread"]
+            issue_candidates = payload["issues"]
+            if issue_candidates:
+                result = {
+                    "action": "update_existing_issue",
+                    "issue_slug": issue_candidates[0]["slug"],
+                    "reasoning": "Same running story.",
+                }
             else:
-                category = "analysis"
-            result = CategorizationResult(
-                category=category,
-                subcategory=None,
-                editorial_angle="scaffold",
-                reasoning="Deterministic test categorization.",
+                result = {
+                    "action": "create_new_issue",
+                    "issue_slug": "chip_race",
+                    "reasoning": "First thread creates the issue.",
+                }
+            self._write_trace(
+                prompt=prompt,
+                payload=payload,
+                schema_name=schema_name,
+                result=result,
+                image_urls=image_urls,
             )
-            self._write_trace(prompt=prompt, payload=payload, schema=schema, result=result)
-            return result
+            return schema.model_validate(result)
 
-        if schema is FilterResult:
+        if schema_name == "IssueWriteResult":
             thread = payload["thread"]
-            result = FilterResult(
-                keep=thread.category != "promo",
-                filter_reason="keep_for_signal" if thread.category != "promo" else "drop_promo",
+            selection = payload["selection"]
+            issue_slug = selection.issue_slug or "chip_race"
+            resolved_thread = thread.get("thread") if isinstance(thread, dict) else thread
+            primary_tweet = (
+                resolved_thread.primary_tweet
+                if hasattr(resolved_thread, "primary_tweet")
+                else resolved_thread["primary_tweet"]
             )
-            self._write_trace(prompt=prompt, payload=payload, schema=schema, result=result)
-            return result
-
-        if schema is ThreadProcessResult:
-            thread = payload
-            joined_text = " ".join(tweet.text.lower() for tweet in thread.tweets)
-            disagreement = "debate" in joined_text
-            result = ThreadProcessResult(
-                headline=thread.tweets[0].text[:40],
-                main_claim=thread.tweets[0].text,
-                why_it_matters="This matters for the digest.",
-                key_entities=[thread.account_handle],
-                disagreement_present=disagreement,
-                disagreement_summary="There is visible pushback." if disagreement else None,
-                novelty_label="fresh",
-                signal_score=82 if disagreement else 70,
+            result = {
+                "issue_slug": issue_slug,
+                "issue_title": "Chip Race",
+                "issue_summary": "Why AI chip supply keeps driving the conversation.",
+                "thread_title": f"Thread about {primary_tweet['text'][:24] if isinstance(primary_tweet, dict) else primary_tweet.text[:24]}",
+                "thread_summary": (
+                    primary_tweet["text"]
+                    if isinstance(primary_tweet, dict)
+                    else primary_tweet.text
+                ),
+                "why_this_thread_belongs": "It adds a concrete development to the same issue.",
+            }
+            self._write_trace(
+                prompt=prompt,
+                payload=payload,
+                schema_name=schema_name,
+                result=result,
+                image_urls=image_urls,
             )
-            self._write_trace(prompt=prompt, payload=payload, schema=schema, result=result)
-            return result
+            return schema.model_validate(result)
 
-        if schema is IssueAssignmentResult:
-            thread = payload
-            result = IssueAssignmentResult(
-                issue_slug="main_topic",
-                issue_title="Main Topic",
-                issue_summary="Grouped issue summary.",
-                why_this_thread_belongs=f"{thread.headline} belongs here.",
-            )
-            self._write_trace(prompt=prompt, payload=payload, schema=schema, result=result)
-            return result
-
-        raise AssertionError(f"Unexpected schema: {schema}")
+        raise AssertionError(f"Unexpected schema: {schema_name}")
 
 
 def _record(
@@ -186,6 +202,7 @@ def _record(
     reply_count: int = 0,
     quote_count: int = 0,
     view_count: int = 0,
+    media: list[dict[str, object]] | None = None,
 ) -> TimelineRecord:
     return TimelineRecord.model_validate(
         {
@@ -201,11 +218,14 @@ def _record(
             "reply_count": reply_count,
             "quote_count": quote_count,
             "view_count": view_count,
+            "media": media or [],
         }
     )
 
 
-def test_load_threads_groups_source_authored_conversations(tmp_path: Path) -> None:
+def test_load_threads_groups_source_authored_conversations_and_exposes_primary_post(
+    tmp_path: Path,
+) -> None:
     now = datetime.now(timezone.utc)
     timeline_file = tmp_path / "timeline.json"
     timeline_file.write_text(
@@ -220,6 +240,14 @@ def test_load_threads_groups_source_authored_conversations(tmp_path: Path) -> No
                         "created_at": (now - timedelta(minutes=3)).isoformat(),
                         "text": "thread root",
                         "conversation_id": "conv-1",
+                        "media": [
+                            {
+                                "media_url": "https://img.test/root.png",
+                                "media_type": "photo",
+                                "width": 1200,
+                                "height": 800,
+                            }
+                        ],
                     },
                     {
                         "tweet_id": "source-2",
@@ -238,15 +266,12 @@ def test_load_threads_groups_source_authored_conversations(tmp_path: Path) -> No
                         "created_at": (now - timedelta(minutes=1)).isoformat(),
                         "text": "outside reply",
                         "conversation_id": "conv-1",
-                    },
-                    {
-                        "tweet_id": "outside-only",
-                        "account_handle": "mx",
-                        "author_handle": "other",
-                        "kind": "reply",
-                        "created_at": now.isoformat(),
-                        "text": "ignore this conversation",
-                        "conversation_id": "conv-2",
+                        "media": [
+                            {
+                                "media_url": "https://img.test/reply.png",
+                                "media_type": "photo",
+                            }
+                        ],
                     },
                 ]
             }
@@ -260,6 +285,8 @@ def test_load_threads_groups_source_authored_conversations(tmp_path: Path) -> No
     assert threads[0].thread_id == "conv-1"
     assert threads[0].source_tweet_ids == ["source-1", "source-2"]
     assert threads[0].context_tweet_ids == ["reply-1"]
+    assert threads[0].primary_tweet.tweet_id == "source-1"
+    assert threads[0].primary_tweet_media_urls == ["https://img.test/root.png"]
 
 
 def test_virality_score_weights_multi_metric_signal() -> None:
@@ -287,10 +314,9 @@ def test_virality_score_weights_multi_metric_signal() -> None:
     assert _virality_score(high) > _virality_score(low)
 
 
-def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None:
+def test_run_issue_report_writes_artifacts_and_issue_json(tmp_path: Path) -> None:
     now = datetime.now(timezone.utc)
     timeline_file = tmp_path / "timeline.json"
-    taxonomy_file = tmp_path / "taxonomy.json"
     output_dir = tmp_path / "report_runs"
 
     timeline_file.write_text(
@@ -298,92 +324,74 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
             {
                 "entries": [
                     {
-                        "tweet_id": "fresh-1",
+                        "tweet_id": "chip-1",
                         "account_handle": "mx",
                         "author_handle": "mx",
                         "kind": "post",
                         "created_at": (now - timedelta(minutes=5)).isoformat(),
-                        "text": "A fresh debate is happening",
-                        "conversation_id": "conv-fresh",
+                        "text": "Nvidia supply is tightening again",
+                        "conversation_id": "conv-chip-1",
                         "favorite_count": 50,
                         "retweet_count": 8,
                         "reply_count": 6,
                         "quote_count": 2,
                         "view_count": 5000,
+                        "media": [
+                            {
+                                "media_url": "https://img.test/chip-1.png",
+                                "media_type": "photo",
+                            }
+                        ],
                     },
                     {
-                        "tweet_id": "fresh-2",
-                        "account_handle": "mx",
-                        "author_handle": "other",
-                        "kind": "reply",
-                        "created_at": (now - timedelta(minutes=4)).isoformat(),
-                        "text": "debate reply",
-                        "conversation_id": "conv-fresh",
-                        "favorite_count": 120,
-                        "retweet_count": 10,
-                        "reply_count": 3,
-                        "quote_count": 4,
-                        "view_count": 9000,
-                    },
-                    {
-                        "tweet_id": "promo-1",
+                        "tweet_id": "chip-2",
                         "account_handle": "mx",
                         "author_handle": "mx",
                         "kind": "post",
                         "created_at": (now - timedelta(minutes=3)).isoformat(),
-                        "text": "promo post buy now",
-                        "conversation_id": "conv-promo",
+                        "text": "TSMC capacity is still the bottleneck",
+                        "conversation_id": "conv-chip-2",
+                        "favorite_count": 30,
+                        "retweet_count": 5,
+                        "reply_count": 4,
+                        "quote_count": 1,
+                        "view_count": 3000,
+                    },
+                    {
+                        "tweet_id": "noise-1",
+                        "account_handle": "mx",
+                        "author_handle": "mx",
+                        "kind": "post",
+                        "created_at": (now - timedelta(minutes=1)).isoformat(),
+                        "text": "gm gm gm buy now",
+                        "conversation_id": "conv-noise",
                         "favorite_count": 5,
                         "retweet_count": 1,
                         "reply_count": 0,
                         "quote_count": 0,
                         "view_count": 200,
                     },
-                    {
-                        "tweet_id": "analysis-1",
-                        "account_handle": "mx",
-                        "author_handle": "mx",
-                        "kind": "post",
-                        "created_at": (now - timedelta(minutes=2)).isoformat(),
-                        "text": "Interesting market analysis thread",
-                        "conversation_id": "conv-analysis",
-                        "favorite_count": 20,
-                        "retweet_count": 3,
-                        "reply_count": 2,
-                        "quote_count": 1,
-                        "view_count": 1500,
-                    },
                 ]
             }
         ),
         encoding="utf-8",
     )
-    taxonomy_file.write_text(
-        json.dumps(DEFAULT_TAXONOMY_DOC),
-        encoding="utf-8",
-    )
 
-    result = run_digest_report(
+    result = run_issue_report(
         timeline_file=timeline_file,
         output_dir=output_dir,
-        taxonomy_file=taxonomy_file,
         model="fake-model",
-        parallel_workers=2,
-        llm=_FakeLLM(delay_by_thread_id={"conv-promo": 0.02, "conv-analysis": 0.01}),
+        llm=_FakeLLM(),
     )
 
     expected_files = {
         "threads.json",
-        "categorized_threads.json",
         "filtered_threads.json",
-        "processed_threads.json",
         "issue_assignments.json",
         "issues.json",
-        "taxonomy.json",
         "phases.json",
         "llm_calls",
         "run.json",
-        "digest.md",
     }
     produced_files = {path.name for path in result.run_dir.iterdir()}
 
@@ -392,83 +400,104 @@ def test_run_digest_report_writes_artifacts_and_markdown(tmp_path: Path) -> None
     assert result.kept_count == 2
     assert result.issue_count == 1
 
-    digest_text = result.digest_path.read_text(encoding="utf-8")
-    assert "## Top Issues" in digest_text
-    assert "## Standout Threads" in digest_text
-    assert "https://x.com/mx/status/fresh-1" in digest_text
-
+    issues_doc = json.loads((result.run_dir / "issues.json").read_text(encoding="utf-8"))
+    assignments_doc = json.loads(
+        (result.run_dir / "issue_assignments.json").read_text(encoding="utf-8")
+    )
     run_doc = json.loads((result.run_dir / "run.json").read_text(encoding="utf-8"))
     phases_doc = json.loads((result.run_dir / "phases.json").read_text(encoding="utf-8"))
-    taxonomy_snapshot = json.loads(
-        (result.run_dir / "taxonomy.json").read_text(encoding="utf-8")
-    )
-    categorized_threads = json.loads(
-        (result.run_dir / "categorized_threads.json").read_text(encoding="utf-8")
-    )
     llm_call_paths = sorted((result.run_dir / "llm_calls").iterdir())
 
+    assert [issue["slug"] for issue in issues_doc] == ["chip_race"]
+    assert len(assignments_doc) == 2
+    assert {assignment["thread_id"] for assignment in assignments_doc} == {
+        "conv-chip-1",
+        "conv-chip-2",
+    }
     assert run_doc["status"] == "completed"
     assert run_doc["thread_count"] == 3
     assert run_doc["kept_count"] == 2
     assert run_doc["issue_count"] == 1
-    assert run_doc["parallel_workers"] == 2
-    assert run_doc["phase_counts"]["categorized_threads"] == 3
-    assert run_doc["phase_counts"]["issues"] == 1
-    assert run_doc["taxonomy_snapshot_path"].endswith("taxonomy.json")
-    assert run_doc["llm_calls_dir"].endswith("llm_calls")
-    assert [thread["thread_id"] for thread in categorized_threads] == [
-        "conv-analysis",
-        "conv-promo",
-        "conv-fresh",
-    ]
+    assert run_doc["digest_title"] == "Chip Race"
+    assert run_doc["primary_artifact_path"] is None
     assert [phase["name"] for phase in phases_doc] == [
-        "load_taxonomy",
         "load_threads",
-        "categorize_threads",
         "filter_threads",
-        "process_threads",
         "group_issues",
-        "render_digest",
     ]
     assert all(phase["status"] == "completed" for phase in phases_doc)
-    assert taxonomy_snapshot == DEFAULT_TAXONOMY_DOC
-    assert len(llm_call_paths) == 10
-
-    categorize_call_docs = [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in llm_call_paths
-        if "categorize_threads" in path.name
-    ]
-    assert len(categorize_call_docs) == 3
-    assert all(doc["schema_name"] == "CategorizationResult" for doc in categorize_call_docs)
-    assert {doc["result"]["category"] for doc in categorize_call_docs} == {
-        "analysis",
-        "debate",
-        "promo",
-    }
-    llm_call_docs = [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in llm_call_paths
-    ]
-    assert len({doc["call_id"] for doc in llm_call_docs}) == 10
+    assert len(llm_call_paths) == 7
 
 
-def test_run_digest_report_rejects_invalid_parallel_workers(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="parallel_workers must be at least 1"):
-        run_digest_report(
-            timeline_file=tmp_path / "timeline.json",
-            output_dir=tmp_path / "report_runs",
-            taxonomy_file=tmp_path / "taxonomy.json",
-            model="fake-model",
-            parallel_workers=0,
-            llm=_FakeLLM(),
-        )
-
-
-def test_run_digest_report_records_failed_phase_artifacts(tmp_path: Path) -> None:
+def test_run_issue_report_uses_only_primary_post_images_in_llm_calls(
+    tmp_path: Path,
+) -> None:
     now = datetime.now(timezone.utc)
     timeline_file = tmp_path / "timeline.json"
-    taxonomy_file = tmp_path / "taxonomy.json"
+    output_dir = tmp_path / "report_runs"
+    fake_llm = _FakeLLM()
+
+    timeline_file.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "tweet_id": "root-1",
+                        "account_handle": "mx",
+                        "author_handle": "mx",
+                        "kind": "post",
+                        "created_at": (now - timedelta(minutes=5)).isoformat(),
+                        "text": "Interesting chart about foundry constraints",
+                        "conversation_id": "conv-1",
+                        "media": [
+                            {
+                                "media_url": "https://img.test/root.png",
+                                "media_type": "photo",
+                            }
+                        ],
+                    },
+                    {
+                        "tweet_id": "reply-1",
+                        "account_handle": "mx",
+                        "author_handle": "other",
+                        "kind": "reply",
+                        "created_at": (now - timedelta(minutes=4)).isoformat(),
+                        "text": "reply with image",
+                        "conversation_id": "conv-1",
+                        "media": [
+                            {
+                                "media_url": "https://img.test/reply.png",
+                                "media_type": "photo",
+                            }
+                        ],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    run_issue_report(
+        timeline_file=timeline_file,
+        output_dir=output_dir,
+        model="fake-model",
+        llm=fake_llm,
+    )
+
+    assert fake_llm.image_urls_by_schema_name["ThreadFilterResult"] == [
+        ["https://img.test/root.png"]
+    ]
+    assert fake_llm.image_urls_by_schema_name["IssueSelectionResult"] == [
+        ["https://img.test/root.png"]
+    ]
+    assert fake_llm.image_urls_by_schema_name["IssueWriteResult"] == [
+        ["https://img.test/root.png"]
+    ]
+
+
+def test_render_issue_digest_html_uses_saved_issue_artifacts_only(tmp_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    timeline_file = tmp_path / "timeline.json"
     output_dir = tmp_path / "report_runs"
 
     timeline_file.write_text(
@@ -476,32 +505,72 @@ def test_run_digest_report_records_failed_phase_artifacts(tmp_path: Path) -> Non
             {
                 "entries": [
                     {
-                        "tweet_id": "fresh-1",
+                        "tweet_id": "chip-1",
                         "account_handle": "mx",
                         "author_handle": "mx",
                         "kind": "post",
-                        "created_at": (now - timedelta(minutes=5)).isoformat(),
-                        "text": "A fresh debate is happening",
-                        "conversation_id": "conv-fresh",
+                        "created_at": now.isoformat(),
+                        "text": "Foundry supply is tightening.",
+                        "conversation_id": "conv-chip-1",
                     }
                 ]
             }
         ),
         encoding="utf-8",
     )
-    taxonomy_file.write_text(
-        json.dumps(DEFAULT_TAXONOMY_DOC),
+
+    result = run_issue_report(
+        timeline_file=timeline_file,
+        output_dir=output_dir,
+        model="fake-model",
+        llm=_FakeLLM(),
+    )
+    (result.run_dir / "threads.json").unlink()
+    (result.run_dir / "filtered_threads.json").unlink()
+
+    html_path = render_issue_digest_html(run_dir=result.run_dir)
+
+    html_text = html_path.read_text(encoding="utf-8")
+    run_doc = json.loads((result.run_dir / "run.json").read_text(encoding="utf-8"))
+
+    assert html_path.name == "digest.html"
+    assert "<html" in html_text.lower()
+    assert "Chip Race" in html_text
+    assert "Why AI chip supply keeps driving the conversation." in html_text
+    assert run_doc["primary_artifact_path"].endswith("digest.html")
+    assert run_doc["digest_title"] == "Chip Race"
+
+
+def test_run_issue_report_records_failed_phase_artifacts(tmp_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    timeline_file = tmp_path / "timeline.json"
+    output_dir = tmp_path / "report_runs"
+
+    timeline_file.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "tweet_id": "chip-1",
+                        "account_handle": "mx",
+                        "author_handle": "mx",
+                        "kind": "post",
+                        "created_at": now.isoformat(),
+                        "text": "One real thread",
+                        "conversation_id": "conv-chip-1",
+                    }
+                ]
+            }
+        ),
         encoding="utf-8",
     )
 
     with pytest.raises(RuntimeError, match="synthetic failure"):
-        run_digest_report(
+        run_issue_report(
             timeline_file=timeline_file,
             output_dir=output_dir,
-            taxonomy_file=taxonomy_file,
             model="fake-model",
-            parallel_workers=2,
-            llm=_FakeLLM(fail_schema=ThreadProcessResult),
+            llm=_FakeLLM(fail_schema_name="IssueWriteResult"),
         )
 
     run_dir = next(output_dir.iterdir())
@@ -510,10 +579,10 @@ def test_run_digest_report_records_failed_phase_artifacts(tmp_path: Path) -> Non
     llm_call_paths = sorted((run_dir / "llm_calls").iterdir())
 
     assert run_doc["status"] == "failed"
-    assert run_doc["failed_phase"] == "process_threads"
+    assert run_doc["failed_phase"] == "group_issues"
     assert run_doc["error_message"] == "synthetic failure"
-    assert phases_doc[-1]["name"] == "process_threads"
+    assert phases_doc[-1]["name"] == "group_issues"
     assert phases_doc[-1]["status"] == "failed"
     assert phases_doc[-1]["error_message"] == "synthetic failure"
-    assert not (run_dir / "digest.md").exists()
-    assert any("process_threads" in path.name for path in llm_call_paths)
+    assert not (run_dir / "digest.html").exists()
+    assert any("group_issues" in path.name for path in llm_call_paths)

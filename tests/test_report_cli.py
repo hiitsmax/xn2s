@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,8 +12,10 @@ from xs2n.cli.report import (
     _resolve_latest_since,
     _run_codex_command,
     auth,
-    digest,
+    html_render,
+    issues,
     latest,
+    render,
 )
 
 
@@ -103,61 +106,140 @@ def test_run_codex_command_uses_non_zero_exit_code(monkeypatch: pytest.MonkeyPat
     assert error.value.exit_code == 7
 
 
-def test_report_digest_runs_pipeline(
+def test_report_issues_runs_pipeline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run_digest_report(**kwargs):
+    def fake_run_issue_report(**kwargs):
         captured.update(kwargs)
         return SimpleNamespace(
-            run_id="20260307T120000Z",
+            run_id="20260318T120000Z",
+            run_dir=tmp_path / "report_runs" / "20260318T120000Z",
             thread_count=3,
             kept_count=2,
             issue_count=1,
-            digest_path=tmp_path / "report_runs" / "digest.md",
         )
 
-    monkeypatch.setattr("xs2n.cli.report.run_digest_report", fake_run_digest_report)
+    monkeypatch.setattr("xs2n.cli.report.run_issue_report", fake_run_issue_report)
 
-    digest(
+    issues(
         timeline_file=tmp_path / "timeline.json",
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
-        model="gpt-5.4",
-        parallel_workers=6,
+        model="gpt-5.4-mini",
     )
 
-    assert captured["model"] == "gpt-5.4"
-    assert captured["parallel_workers"] == 6
+    assert captured["timeline_file"] == tmp_path / "timeline.json"
+    assert captured["output_dir"] == tmp_path / "report_runs"
+    assert captured["model"] == "gpt-5.4-mini"
     out = capsys.readouterr().out
+    assert "Issue run 20260318T120000Z" in out
     assert "loaded 3 threads" in out
     assert "produced 1 issues" in out
+    assert (
+        "xs2n report html --run-dir "
+        f"{tmp_path / 'report_runs' / '20260318T120000Z'}"
+    ) in out
 
 
-def test_report_digest_surfaces_runtime_error(
+def test_report_issues_surfaces_runtime_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(
-        "xs2n.cli.report.run_digest_report",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("OPENAI_API_KEY missing")),
+        "xs2n.cli.report.run_issue_report",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("missing credentials")),
     )
 
     with pytest.raises(typer.Exit) as error:
-        digest(
+        issues(
             timeline_file=tmp_path / "timeline.json",
             output_dir=tmp_path / "report_runs",
-            taxonomy_file=tmp_path / "taxonomy.json",
-            model="gpt-5.4",
+            model="gpt-5.4-mini",
         )
 
     assert error.value.exit_code == 1
     captured = capsys.readouterr()
-    assert "OPENAI_API_KEY missing" in captured.err
+    assert "missing credentials" in captured.err
+
+
+def test_report_render_writes_html(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "report_runs" / "20260318T120000Z"
+    run_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "xs2n.cli.report.render_issue_digest_html",
+        lambda **kwargs: run_dir / "digest.html",
+    )
+
+    render(run_dir=run_dir)
+
+    out = capsys.readouterr().out
+    assert "Rendered HTML digest to" in out
+    assert "digest.html" in out
+
+
+def test_report_render_surfaces_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        "xs2n.cli.report.render_issue_digest_html",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("render failed")),
+    )
+
+    with pytest.raises(typer.Exit) as error:
+        render(run_dir=tmp_path / "report_runs" / "20260318T120000Z")
+
+    assert error.value.exit_code == 1
+    captured = capsys.readouterr()
+    assert "render failed" in captured.err
+
+
+def test_report_html_writes_html(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "report_runs" / "20260318T120000Z"
+    run_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "xs2n.cli.report.render_issue_digest_html",
+        lambda **kwargs: run_dir / "digest.html",
+    )
+
+    html_render(run_dir=run_dir)
+
+    out = capsys.readouterr().out
+    assert "Rendered HTML digest to" in out
+    assert "digest.html" in out
+
+
+def test_report_html_surfaces_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        "xs2n.cli.report.render_issue_digest_html",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("render failed")),
+    )
+
+    with pytest.raises(typer.Exit) as error:
+        html_render(run_dir=tmp_path / "report_runs" / "20260318T120000Z")
+
+    assert error.value.exit_code == 1
+    captured = capsys.readouterr()
+    assert "render failed" in captured.err
 
 
 def test_resolve_latest_since_prefers_explicit_since() -> None:
@@ -184,32 +266,72 @@ def test_resolve_latest_since_uses_lookback_window() -> None:
     assert resolved == now - timedelta(hours=6)
 
 
-def test_report_latest_runs_timeline_then_digest(
+def test_report_latest_runs_timeline_then_windowed_issues_then_render(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     timeline_calls: list[dict[str, object]] = []
-    digest_calls: list[dict[str, object]] = []
+    issue_calls: list[dict[str, object]] = []
+    render_calls: list[dict[str, object]] = []
 
     def fake_run_timeline_ingestion(**kwargs):
         timeline_calls.append(kwargs)
-
-    def fake_run_digest_report(**kwargs):
-        digest_calls.append(kwargs)
-        return SimpleNamespace(
-            run_id="20260308T120000Z",
-            thread_count=8,
-            kept_count=3,
-            issue_count=2,
-            digest_path=tmp_path / "report_runs" / "digest.md",
+        timeline_file = kwargs["timeline_file"]
+        assert isinstance(timeline_file, Path)
+        timeline_file.write_text(
+            json.dumps(
+                {
+                    "entries": [
+                        {
+                            "tweet_id": "old-1",
+                            "account_handle": "mx",
+                            "author_handle": "mx",
+                            "kind": "post",
+                            "created_at": "2026-03-07T23:59:00+00:00",
+                            "text": "old",
+                            "conversation_id": "conv-old",
+                        },
+                        {
+                            "tweet_id": "fresh-1",
+                            "account_handle": "mx",
+                            "author_handle": "mx",
+                            "kind": "post",
+                            "created_at": "2026-03-08T01:00:00+00:00",
+                            "text": "fresh",
+                            "conversation_id": "conv-fresh",
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
         )
 
+    def fake_run_issue_report(**kwargs):
+        issue_calls.append(kwargs)
+        timeline_file = kwargs["timeline_file"]
+        assert isinstance(timeline_file, Path)
+        snapshot_doc = json.loads(timeline_file.read_text(encoding="utf-8"))
+        assert [entry["tweet_id"] for entry in snapshot_doc["entries"]] == ["fresh-1"]
+        assert timeline_file.name == "timeline_window.json"
+        return SimpleNamespace(
+            run_id="20260318T120000Z",
+            run_dir=tmp_path / "report_runs" / "20260318T120000Z",
+            thread_count=1,
+            kept_count=1,
+            issue_count=1,
+        )
+
+    def fake_render_issue_digest_html(**kwargs):
+        render_calls.append(kwargs)
+        return tmp_path / "report_runs" / "20260318T120000Z" / "digest.html"
+
+    monkeypatch.setattr("xs2n.cli.report.run_timeline_ingestion", fake_run_timeline_ingestion)
+    monkeypatch.setattr("xs2n.cli.report.run_issue_report", fake_run_issue_report)
     monkeypatch.setattr(
-        "xs2n.cli.report.run_timeline_ingestion",
-        fake_run_timeline_ingestion,
+        "xs2n.cli.report.render_issue_digest_html",
+        fake_render_issue_digest_html,
     )
-    monkeypatch.setattr("xs2n.cli.report.run_digest_report", fake_run_digest_report)
 
     latest(
         since="2026-03-08T00:00:00Z",
@@ -220,9 +342,7 @@ def test_report_latest_runs_timeline_then_digest(
         sources_file=tmp_path / "sources.json",
         home_latest=False,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
-        model="gpt-5.4",
-        parallel_workers=5,
+        model="gpt-5.4-mini",
     )
 
     assert len(timeline_calls) == 1
@@ -230,12 +350,15 @@ def test_report_latest_runs_timeline_then_digest(
     assert timeline_calls[0]["home_latest"] is False
     assert timeline_calls[0]["account"] is None
     assert timeline_calls[0]["since"] == "2026-03-08T00:00:00+00:00"
-    assert len(digest_calls) == 1
-    assert digest_calls[0]["model"] == "gpt-5.4"
-    assert digest_calls[0]["parallel_workers"] == 5
+    assert len(issue_calls) == 1
+    assert issue_calls[0]["model"] == "gpt-5.4-mini"
+    assert issue_calls[0]["timeline_file"] != tmp_path / "timeline.json"
+    assert len(render_calls) == 1
+    assert render_calls[0]["run_dir"] == tmp_path / "report_runs" / "20260318T120000Z"
     out = capsys.readouterr().out
-    assert "Ingesting source timelines before digest generation" in out
-    assert "Latest digest run 20260308T120000Z" in out
+    assert "Ingesting source timelines before issue generation" in out
+    assert "Latest issue run 20260318T120000Z" in out
+    assert "Rendered HTML digest to" in out
 
 
 def test_report_latest_routes_home_latest_mode(
@@ -244,22 +367,29 @@ def test_report_latest_routes_home_latest_mode(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     timeline_calls: list[dict[str, object]] = []
-    digest_calls: list[dict[str, object]] = []
+    issue_calls: list[dict[str, object]] = []
 
+    def fake_run_timeline_ingestion(**kwargs):
+        timeline_calls.append(kwargs)
+        timeline_file = kwargs["timeline_file"]
+        assert isinstance(timeline_file, Path)
+        timeline_file.write_text('{"entries": []}\n', encoding="utf-8")
+
+    monkeypatch.setattr("xs2n.cli.report.run_timeline_ingestion", fake_run_timeline_ingestion)
     monkeypatch.setattr(
-        "xs2n.cli.report.run_timeline_ingestion",
-        lambda **kwargs: timeline_calls.append(kwargs),
+        "xs2n.cli.report.run_issue_report",
+        lambda **kwargs: issue_calls.append(kwargs)
+        or SimpleNamespace(
+            run_id="20260318T120000Z",
+            run_dir=tmp_path / "report_runs" / "20260318T120000Z",
+            thread_count=0,
+            kept_count=0,
+            issue_count=0,
+        ),
     )
     monkeypatch.setattr(
-        "xs2n.cli.report.run_digest_report",
-        lambda **kwargs: digest_calls.append(kwargs)
-        or SimpleNamespace(
-            run_id="20260308T120000Z",
-            thread_count=5,
-            kept_count=2,
-            issue_count=1,
-            digest_path=tmp_path / "report_runs" / "digest.md",
-        ),
+        "xs2n.cli.report.render_issue_digest_html",
+        lambda **kwargs: tmp_path / "report_runs" / "20260318T120000Z" / "digest.html",
     )
 
     latest(
@@ -271,19 +401,16 @@ def test_report_latest_routes_home_latest_mode(
         sources_file=tmp_path / "sources.json",
         home_latest=True,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
-        model="gpt-5.4",
-        parallel_workers=3,
+        model="gpt-5.4-mini",
     )
 
     assert len(timeline_calls) == 1
     assert timeline_calls[0]["from_sources"] is False
     assert timeline_calls[0]["home_latest"] is True
     assert timeline_calls[0]["account"] is None
-    assert len(digest_calls) == 1
-    assert digest_calls[0]["parallel_workers"] == 3
+    assert len(issue_calls) == 1
     out = capsys.readouterr().out
-    assert "Ingesting Home->Following latest timeline before digest generation" in out
+    assert "Ingesting Home->Following latest timeline before issue generation" in out
 
 
 def test_report_latest_surfaces_runtime_error(
@@ -293,8 +420,8 @@ def test_report_latest_surfaces_runtime_error(
 ) -> None:
     monkeypatch.setattr("xs2n.cli.report.run_timeline_ingestion", lambda **kwargs: None)
     monkeypatch.setattr(
-        "xs2n.cli.report.run_digest_report",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("digest failed")),
+        "xs2n.cli.report.run_issue_report",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("issue build failed")),
     )
 
     with pytest.raises(typer.Exit) as error:
@@ -307,10 +434,9 @@ def test_report_latest_surfaces_runtime_error(
             sources_file=tmp_path / "sources.json",
             home_latest=False,
             output_dir=tmp_path / "report_runs",
-            taxonomy_file=tmp_path / "taxonomy.json",
-            model="gpt-5.4",
+            model="gpt-5.4-mini",
         )
 
     assert error.value.exit_code == 1
     captured = capsys.readouterr()
-    assert "digest failed" in captured.err
+    assert "issue build failed" in captured.err

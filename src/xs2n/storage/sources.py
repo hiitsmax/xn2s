@@ -153,3 +153,33 @@ def merge_profiles(
 
     save_sources(doc, path)
     return OnboardResult(added=added, skipped_duplicates=skipped, invalid=[])
+
+
+def replace_profiles(
+    new_entries: list[ProfileEntry],
+    path: Path | None = None,
+) -> OnboardResult:
+    deduped_profiles: list[dict[str, str]] = []
+    seen_handles: set[str] = set()
+    skipped = 0
+
+    for entry in new_entries:
+        if entry.handle in seen_handles:
+            skipped += 1
+            continue
+
+        seen_handles.add(entry.handle)
+        deduped_profiles.append(
+            {
+                "handle": entry.handle,
+                "added_via": entry.added_via,
+                "added_at": entry.added_at,
+            }
+        )
+
+    save_sources({"profiles": deduped_profiles}, path)
+    return OnboardResult(
+        added=len(deduped_profiles),
+        skipped_duplicates=skipped,
+        invalid=[],
+    )

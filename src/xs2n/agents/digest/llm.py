@@ -58,13 +58,9 @@ def _strict_json_schema(fragment: Any) -> Any:
 
 
 def _phase_name(schema: type[BaseModel]) -> str:
-    if schema.__name__ == "CategorizationResult":
-        return "categorize_threads"
-    if schema.__name__ == "FilterResult":
+    if schema.__name__ == "ThreadFilterResult":
         return "filter_threads"
-    if schema.__name__ == "ThreadProcessResult":
-        return "process_threads"
-    if schema.__name__ == "IssueAssignmentResult":
+    if schema.__name__ in {"IssueSelectionResult", "IssueWriteResult"}:
         return "group_issues"
     return "llm"
 
@@ -125,6 +121,7 @@ class DigestLLM:
         finished_at: datetime,
         output_text: str | None,
         result: BaseModel | None,
+        image_urls: list[str],
         response_id: str | None,
         request_id: str | None,
         usage: Any,
@@ -149,6 +146,7 @@ class DigestLLM:
             ),
             prompt=prompt,
             payload=to_jsonable(payload),
+            image_urls=image_urls,
             output_text=output_text,
             result=to_jsonable(result),
             response_id=response_id,
@@ -174,9 +172,11 @@ class DigestLLM:
         prompt: str,
         payload: Any,
         schema: type[SchemaT],
+        image_urls: list[str] | None = None,
     ) -> SchemaT:
         started_at = datetime.now(timezone.utc)
         payload_json = json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2)
+        resolved_image_urls = image_urls or []
         schema_json = _strict_json_schema(schema.model_json_schema())
         output_text: str | None = None
         response_id: str | None = None
@@ -187,6 +187,19 @@ class DigestLLM:
         runtime_error: RuntimeError | None = None
 
         try:
+            input_content = [
+                {
+                    "type": "input_text",
+                    "text": f"Input JSON:\n{payload_json}",
+                }
+            ]
+            input_content.extend(
+                {
+                    "type": "input_image",
+                    "image_url": {"url": image_url},
+                }
+                for image_url in resolved_image_urls
+            )
             with self._get_client().responses.stream(
                 model=self._model,
                 store=False,
@@ -194,12 +207,7 @@ class DigestLLM:
                 input=[
                     {
                         "role": "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": f"Input JSON:\n{payload_json}",
-                            }
-                        ],
+                        "content": input_content,
                     }
                 ],
                 text={
@@ -226,7 +234,7 @@ class DigestLLM:
             ):
                 runtime_error = RuntimeError(
                     f"Model `{self._model}` is not supported via Codex auth. "
-                    "Use a Codex-supported GPT-5 model such as `gpt-5.4`, "
+                    "Use a Codex-supported GPT-5 model such as `gpt-5.4-mini`, "
                     "or export OPENAI_API_KEY for standard OpenAI API models."
                 )
             else:
@@ -261,6 +269,7 @@ class DigestLLM:
             finished_at=finished_at,
             output_text=output_text,
             result=parsed_result,
+            image_urls=resolved_image_urls,
             response_id=response_id,
             request_id=request_id,
             usage=usage,

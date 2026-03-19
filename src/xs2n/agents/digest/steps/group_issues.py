@@ -4,82 +4,92 @@ from collections import OrderedDict
 from typing import Any
 
 from xs2n.schemas.digest import (
+    FilteredThread,
     Issue,
-    IssueAssignmentResult,
+    IssueSelectionResult,
     IssueThread,
-    ProcessedThread,
+    IssueWriteResult,
 )
 
-from ..helpers import slugify_issue
-
-
-DEFAULT_MAX_ISSUES = 6
+from ..helpers import compact_issue_summaries, filtered_thread_payload, slugify_issue
 
 
 def run(
     *,
     llm: Any,
-    threads: list[ProcessedThread],
+    threads: list[FilteredThread],
 ) -> tuple[list[IssueThread], list[Issue]]:
+    kept_threads = [thread for thread in threads if thread.keep]
     issue_threads: list[IssueThread] = []
-    grouped_threads: OrderedDict[str, dict[str, Any]] = OrderedDict()
+    grouped_threads: OrderedDict[str, list[IssueThread]] = OrderedDict()
+    current_issues: list[Issue] = []
 
-    for thread in threads:
-        result = llm.run(
+    for thread in kept_threads:
+        selection = llm.run(
             prompt=(
-                "You assign one high-signal X/Twitter thread to the live issue or argument "
-                "it belongs to. Reuse a stable issue_slug when multiple threads are clearly "
-                "part of the same ongoing argument. Keep the issue title newsroom-friendly."
+                "You receive one kept X/Twitter thread and the current issue list for a "
+                "magazine-style digest. Decide whether this thread should create a new issue "
+                "or update an existing one. Reuse an issue only when it is clearly the same "
+                "running story."
             ),
-            payload=thread,
-            schema=IssueAssignmentResult,
+            payload={
+                "thread": filtered_thread_payload(thread),
+                "issues": compact_issue_summaries(current_issues),
+            },
+            schema=IssueSelectionResult,
+            image_urls=thread.primary_tweet_media_urls,
         )
-        issue_slug = slugify_issue(
-            result.issue_slug or result.issue_title,
+
+        target_issue_slug = slugify_issue(
+            selection.issue_slug or thread.thread_id,
             fallback=thread.thread_id,
         )
-        issue_title = result.issue_title.strip() or issue_slug.replace("_", " ").title()
-        issue_summary = result.issue_summary.strip() or thread.why_it_matters
+        if selection.action == "update_existing_issue" and not current_issues:
+            selection = IssueSelectionResult(
+                action="create_new_issue",
+                issue_slug=target_issue_slug,
+                reasoning=selection.reasoning,
+            )
+
+        written_issue = llm.run(
+            prompt=(
+                "You write the issue copy for one kept X/Twitter thread in a simple magazine "
+                "digest. Return the final issue slug, issue title, issue summary, a short "
+                "thread title, a short thread summary, and why this thread belongs in the issue."
+            ),
+            payload={
+                "thread": filtered_thread_payload(thread),
+                "issues": compact_issue_summaries(current_issues),
+                "selection": selection,
+            },
+            schema=IssueWriteResult,
+            image_urls=thread.primary_tweet_media_urls,
+        )
+
+        issue_slug = slugify_issue(written_issue.issue_slug, fallback=target_issue_slug)
         issue_thread = IssueThread(
             **thread.model_dump(),
             issue_slug=issue_slug,
-            issue_title=issue_title,
-            issue_summary=issue_summary,
-            why_this_thread_belongs=result.why_this_thread_belongs,
+            issue_title=written_issue.issue_title.strip() or issue_slug.replace("_", " ").title(),
+            issue_summary=written_issue.issue_summary.strip() or thread.primary_tweet.text,
+            thread_title=written_issue.thread_title.strip() or thread.primary_tweet.text[:80],
+            thread_summary=written_issue.thread_summary.strip() or thread.primary_tweet.text,
+            why_this_thread_belongs=(
+                written_issue.why_this_thread_belongs.strip() or "Part of the same issue."
+            ),
         )
         issue_threads.append(issue_thread)
+        grouped_threads.setdefault(issue_slug, []).append(issue_thread)
 
-        bucket = grouped_threads.setdefault(
-            issue_slug,
-            {
-                "slug": issue_slug,
-                "title": issue_title,
-                "summary": issue_summary,
-                "threads": [],
-            },
-        )
-        bucket["threads"].append(issue_thread)
-        if not bucket["summary"] and issue_summary:
-            bucket["summary"] = issue_summary
-
-    ordered_groups = sorted(
-        grouped_threads.values(),
-        key=lambda bucket: (
-            max(thread.signal_score for thread in bucket["threads"]),
-            max(thread.virality_score for thread in bucket["threads"]),
-        ),
-        reverse=True,
-    )
-
-    issues: list[Issue] = []
-    for bucket in ordered_groups[:DEFAULT_MAX_ISSUES]:
-        issues.append(
+        current_issues = [
             Issue(
-                slug=bucket["slug"],
-                title=bucket["title"],
-                summary=bucket["summary"],
-                thread_ids=[thread.thread_id for thread in bucket["threads"]],
+                slug=slug,
+                title=grouped_issue_threads[0].issue_title,
+                summary=grouped_issue_threads[-1].issue_summary,
+                thread_ids=[grouped_thread.thread_id for grouped_thread in grouped_issue_threads],
+                thread_count=len(grouped_issue_threads),
             )
-        )
+            for slug, grouped_issue_threads in grouped_threads.items()
+        ]
 
-    return issue_threads, issues
+    return issue_threads, current_issues

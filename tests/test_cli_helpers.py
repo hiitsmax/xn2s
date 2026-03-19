@@ -89,6 +89,30 @@ def test_sanitize_cli_parameters_wizard_requests_handle(monkeypatch: pytest.Monk
     assert parameters["from_following"] == "mx"
 
 
+def test_sanitize_cli_parameters_refresh_following_skips_prompt_and_sets_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_file = tmp_path / "onboard_state.json"
+
+    def fail_prompt(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("prompt should not be used for refresh shortcut")
+
+    monkeypatch.setattr("typer.prompt", fail_prompt)
+    parameters = {
+        "paste": False,
+        "from_following": None,
+        "wizard": False,
+        "refresh_following": True,
+        "onboard_state_file": state_file,
+    }
+
+    sanitize_cli_parameters(parameters)
+
+    saved_state = json.loads(state_file.read_text(encoding="utf-8"))
+    assert saved_state == {"last_mode": "following"}
+
+
 def test_normalize_following_account_rejects_invalid_input() -> None:
     with pytest.raises(typer.BadParameter):
         normalize_following_account("https://x.com/")

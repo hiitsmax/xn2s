@@ -34,6 +34,7 @@ def run(*, timeline_file: Path) -> list[ThreadInput]:
         ]
         if not source_tweets:
             continue
+        primary_tweet = source_tweets[0]
 
         threads.append(
             ThreadInput(
@@ -50,6 +51,8 @@ def run(*, timeline_file: Path) -> list[ThreadInput]:
                 latest_created_at=max(
                     record.created_at for record in ordered_group
                 ),
+                primary_tweet_id=primary_tweet.tweet_id,
+                primary_tweet=primary_tweet,
             )
         )
 

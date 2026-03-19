@@ -8,6 +8,27 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class CategorySpec(BaseModel):
+    slug: str
+    label: str
+    description: str
+
+
+class TaxonomyConfig(BaseModel):
+    categories: list[CategorySpec] = Field(default_factory=list)
+    drop_categories: list[str] = Field(default_factory=list)
+
+
+class TimelineMedia(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    media_url: str
+    media_type: str
+    width: int | None = None
+    height: int | None = None
+    expanded_url: str | None = None
+
+
 class TimelineRecord(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -28,6 +49,7 @@ class TimelineRecord(BaseModel):
     reply_count: int | None = None
     quote_count: int | None = None
     view_count: int | None = None
+    media: list[TimelineMedia] = Field(default_factory=list)
 
     @property
     def source_url(self) -> str:
@@ -42,17 +64,6 @@ class TimelineRecord(BaseModel):
         return self.author_handle == self.account_handle
 
 
-class CategorySpec(BaseModel):
-    slug: str
-    label: str
-    description: str
-
-
-class TaxonomyConfig(BaseModel):
-    categories: list[CategorySpec]
-    drop_categories: list[str] = Field(default_factory=list)
-
-
 class ThreadInput(BaseModel):
     thread_id: str
     conversation_id: str
@@ -61,6 +72,8 @@ class ThreadInput(BaseModel):
     source_tweet_ids: list[str] = Field(default_factory=list)
     context_tweet_ids: list[str] = Field(default_factory=list)
     latest_created_at: datetime
+    primary_tweet_id: str
+    primary_tweet: TimelineRecord
 
     @property
     def source_urls(self) -> list[str]:
@@ -75,11 +88,15 @@ class ThreadInput(BaseModel):
             return [self.tweets[0].source_url]
         return []
 
+    @property
+    def primary_tweet_media_urls(self) -> list[str]:
+        return [media.media_url for media in self.primary_tweet.media if media.media_url]
+
 
 class CategorizationResult(BaseModel):
     category: str
     subcategory: str | None = None
-    editorial_angle: str
+    editorial_angle: str | None = None
     reasoning: str
 
 
@@ -91,19 +108,20 @@ class CategorizedThread(BaseModel):
     source_tweet_ids: list[str]
     context_tweet_ids: list[str]
     latest_created_at: datetime
+    primary_tweet_id: str
+    primary_tweet: TimelineRecord
     category: str
     subcategory: str | None = None
-    editorial_angle: str
-    reasoning: str
-
-    @property
-    def source_urls(self) -> list[str]:
-        return ThreadInput(**self.model_dump()).source_urls
+    editorial_angle: str | None = None
+    reasoning: str = ""
 
 
-class FilterResult(BaseModel):
+class ThreadFilterResult(BaseModel):
     keep: bool
     filter_reason: str
+
+
+FilterResult = ThreadFilterResult
 
 
 class FilteredThread(BaseModel):
@@ -114,10 +132,8 @@ class FilteredThread(BaseModel):
     source_tweet_ids: list[str]
     context_tweet_ids: list[str]
     latest_created_at: datetime
-    category: str
-    subcategory: str | None = None
-    editorial_angle: str
-    reasoning: str
+    primary_tweet_id: str
+    primary_tweet: TimelineRecord
     keep: bool
     filter_reason: str
 
@@ -125,16 +141,20 @@ class FilteredThread(BaseModel):
     def source_urls(self) -> list[str]:
         return ThreadInput(**self.model_dump()).source_urls
 
+    @property
+    def primary_tweet_media_urls(self) -> list[str]:
+        return ThreadInput(**self.model_dump()).primary_tweet_media_urls
+
 
 class ThreadProcessResult(BaseModel):
     headline: str
     main_claim: str
     why_it_matters: str
     key_entities: list[str] = Field(default_factory=list)
-    disagreement_present: bool
+    disagreement_present: bool = False
     disagreement_summary: str | None = None
-    novelty_label: str
-    signal_score: int = Field(ge=0, le=100)
+    novelty_label: str | None = None
+    signal_score: int = 0
 
 
 class ProcessedThread(BaseModel):
@@ -145,28 +165,37 @@ class ProcessedThread(BaseModel):
     source_tweet_ids: list[str]
     context_tweet_ids: list[str]
     latest_created_at: datetime
-    category: str
-    subcategory: str | None = None
-    editorial_angle: str
-    reasoning: str
+    primary_tweet_id: str
+    primary_tweet: TimelineRecord
     keep: bool
     filter_reason: str
     headline: str
     main_claim: str
     why_it_matters: str
-    key_entities: list[str]
-    disagreement_present: bool
+    key_entities: list[str] = Field(default_factory=list)
+    disagreement_present: bool = False
     disagreement_summary: str | None = None
-    novelty_label: str
-    signal_score: int
-    virality_score: float
+    novelty_label: str | None = None
+    signal_score: int = 0
+    virality_score: float = 0.0
     source_urls: list[str] = Field(default_factory=list)
 
 
-class IssueAssignmentResult(BaseModel):
+class IssueSelectionResult(BaseModel):
+    action: Literal["create_new_issue", "update_existing_issue"]
+    issue_slug: str | None = None
+    reasoning: str
+
+
+IssueAssignmentResult = IssueSelectionResult
+
+
+class IssueWriteResult(BaseModel):
     issue_slug: str
     issue_title: str
     issue_summary: str
+    thread_title: str
+    thread_summary: str
     why_this_thread_belongs: str
 
 
@@ -178,26 +207,20 @@ class IssueThread(BaseModel):
     source_tweet_ids: list[str]
     context_tweet_ids: list[str]
     latest_created_at: datetime
-    category: str
-    subcategory: str | None = None
-    editorial_angle: str
-    reasoning: str
+    primary_tweet_id: str
+    primary_tweet: TimelineRecord
     keep: bool
     filter_reason: str
-    headline: str
-    main_claim: str
-    why_it_matters: str
-    key_entities: list[str]
-    disagreement_present: bool
-    disagreement_summary: str | None = None
-    novelty_label: str
-    signal_score: int
-    virality_score: float
-    source_urls: list[str] = Field(default_factory=list)
     issue_slug: str
     issue_title: str
     issue_summary: str
+    thread_title: str
+    thread_summary: str
     why_this_thread_belongs: str
+
+    @property
+    def source_urls(self) -> list[str]:
+        return ThreadInput(**self.model_dump(exclude={"keep", "filter_reason", "issue_slug", "issue_title", "issue_summary", "thread_title", "thread_summary", "why_this_thread_belongs"})).source_urls
 
 
 class Issue(BaseModel):
@@ -205,6 +228,7 @@ class Issue(BaseModel):
     title: str
     summary: str
     thread_ids: list[str] = Field(default_factory=list)
+    thread_count: int = 0
 
 
 class PhaseTrace(BaseModel):
@@ -233,6 +257,7 @@ class LLMCallTrace(BaseModel):
     duration_ms: int
     prompt: str
     payload: Any
+    image_urls: list[str] = Field(default_factory=list)
     output_text: str | None = None
     result: Any | None = None
     response_id: str | None = None
@@ -243,10 +268,12 @@ class LLMCallTrace(BaseModel):
 
 
 @dataclass(slots=True)
-class DigestRunResult:
+class IssueReportRunResult:
     run_id: str
     run_dir: Path
-    digest_path: Path
     thread_count: int
     kept_count: int
     issue_count: int
+
+
+DigestRunResult = IssueReportRunResult

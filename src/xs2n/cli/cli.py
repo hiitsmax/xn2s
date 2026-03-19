@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typer
 
+from xs2n.cli.auth import auth_app
 from xs2n.cli.onboard import onboard
 from xs2n.cli.report import report_app
 from xs2n.cli.timeline import timeline
@@ -18,6 +19,7 @@ def main() -> None:
 app.command("onboard")(onboard)
 app.command("timeline")(timeline)
 app.command("ui")(ui)
+app.add_typer(auth_app, name="auth")
 app.add_typer(report_app, name="report")
 
 

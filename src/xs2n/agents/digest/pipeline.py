@@ -1,61 +1,71 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from typing import Any
 
-from xs2n.schemas.digest import DigestRunResult, PhaseTrace
+from xs2n.schemas.digest import (
+    Issue,
+    IssueReportRunResult,
+    IssueThread,
+    PhaseTrace,
+)
 
-from .helpers import load_taxonomy, write_json
+from .helpers import write_json
 
 
 DEFAULT_REPORT_RUNS_PATH = Path("data/report_runs")
+DEFAULT_REPORT_MODEL = "gpt-5.4-mini"
+DEFAULT_REPORT_PARALLEL_WORKERS = 1
 DEFAULT_TAXONOMY_PATH = Path("docs/codex/report_taxonomy.json")
-DEFAULT_REPORT_MODEL = "gpt-5.4"
-DEFAULT_REPORT_PARALLEL_WORKERS = 4
 
 
 def _duration_ms(started_at: datetime, finished_at: datetime) -> int:
     return max(int((finished_at - started_at).total_seconds() * 1000), 0)
 
 
-def run_digest_report(
+def _load_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _digest_title_from_issues(issues: list[Issue]) -> str:
+    if issues:
+        return issues[0].title
+    return "No issue digest produced"
+
+
+def run_issue_report(
     *,
     timeline_file: Path,
     output_dir: Path = DEFAULT_REPORT_RUNS_PATH,
-    taxonomy_file: Path = DEFAULT_TAXONOMY_PATH,
     model: str = DEFAULT_REPORT_MODEL,
-    parallel_workers: int = DEFAULT_REPORT_PARALLEL_WORKERS,
     llm: Any | None = None,
-) -> DigestRunResult:
-    if parallel_workers < 1:
-        raise ValueError("parallel_workers must be at least 1.")
-
+    run_dir: Path | None = None,
+) -> IssueReportRunResult:
     from .llm import DigestLLM
-    from .steps.categorize_threads import run as categorize_threads
     from .steps.filter_threads import run as filter_threads
     from .steps.group_issues import run as group_issues
     from .steps.load_threads import run as load_threads
-    from .steps.process_threads import run as process_threads
-    from .steps.render_digest import run as render_digest
 
     run_started_at = datetime.now(timezone.utc)
-    run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
-    run_dir = output_dir / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    taxonomy_snapshot_path = run_dir / "taxonomy.json"
-    phases_path = run_dir / "phases.json"
-    llm_calls_dir = run_dir / "llm_calls"
+    resolved_run_dir = run_dir
+    if resolved_run_dir is None:
+        run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
+        resolved_run_dir = output_dir / run_id
+    else:
+        run_id = resolved_run_dir.name
+    resolved_run_dir.mkdir(parents=True, exist_ok=True)
+
+    phases_path = resolved_run_dir / "phases.json"
     phases: list[PhaseTrace] = []
     current_phase_name: str | None = None
     current_phase_started_at: datetime | None = None
     credential_source: str | None = None
-    taxonomy = None
-    digest_path: Path | None = None
+    digest_title: str = "No issue digest produced"
+    primary_artifact_path: Path | None = None
     threads: list[Any] = []
-    categorized_threads: list[Any] = []
     filtered_threads: list[Any] = []
-    processed_threads: list[Any] = []
     issue_threads: list[Any] = []
     issues: list[Any] = []
 
@@ -80,26 +90,24 @@ def run_digest_report(
                 else None
             ),
             "timeline_file": str(timeline_file),
-            "taxonomy_file": str(taxonomy_file),
-            "taxonomy_snapshot_path": (
-                str(taxonomy_snapshot_path)
-                if taxonomy_snapshot_path.exists()
-                else None
-            ),
             "model": model,
-            "parallel_workers": parallel_workers,
             "credential_source": credential_source,
             "thread_count": len(threads),
-            "kept_count": len(processed_threads),
+            "kept_count": len([thread for thread in filtered_threads if thread.keep]),
             "issue_count": len(issues),
-            "digest_path": str(digest_path) if digest_path is not None else None,
+            "digest_title": digest_title,
+            "primary_artifact_path": (
+                str(primary_artifact_path) if primary_artifact_path is not None else None
+            ),
+            "digest_path": (
+                str(primary_artifact_path) if primary_artifact_path is not None else None
+            ),
             "phases_path": str(phases_path),
-            "llm_calls_dir": str(llm_calls_dir),
+            "llm_calls_dir": str(resolved_run_dir / "llm_calls"),
             "phase_counts": {
                 "threads": len(threads),
-                "categorized_threads": len(categorized_threads),
                 "filtered_threads": len(filtered_threads),
-                "kept_threads": len(processed_threads),
+                "kept_threads": len([thread for thread in filtered_threads if thread.keep]),
                 "issue_threads": len(issue_threads),
                 "issues": len(issues),
             },
@@ -108,7 +116,7 @@ def run_digest_report(
             "error_type": type(error).__name__ if error is not None else None,
             "error_message": str(error) if error is not None else None,
         }
-        write_json(run_dir / "run.json", summary)
+        write_json(resolved_run_dir / "run.json", summary)
 
     def complete_phase(
         *,
@@ -144,26 +152,13 @@ def run_digest_report(
         credential_source = getattr(digest_llm, "source", None)
         configure_run_logging = getattr(digest_llm, "configure_run_logging", None)
         if callable(configure_run_logging):
-            configure_run_logging(run_dir=run_dir)
+            configure_run_logging(run_dir=resolved_run_dir)
         write_run_summary(status="running")
-
-        current_phase_name = "load_taxonomy"
-        current_phase_started_at = datetime.now(timezone.utc)
-        taxonomy = load_taxonomy(taxonomy_file)
-        write_json(taxonomy_snapshot_path, taxonomy)
-        complete_phase(
-            name=current_phase_name,
-            started_at=current_phase_started_at,
-            input_count=1,
-            output_count=len(taxonomy.categories),
-            artifact_paths=[taxonomy_snapshot_path],
-            counts={"categories": len(taxonomy.categories)},
-        )
 
         current_phase_name = "load_threads"
         current_phase_started_at = datetime.now(timezone.utc)
         threads = load_threads(timeline_file=timeline_file)
-        threads_path = run_dir / "threads.json"
+        threads_path = resolved_run_dir / "threads.json"
         write_json(threads_path, threads)
         complete_phase(
             name=current_phase_name,
@@ -174,40 +169,19 @@ def run_digest_report(
             counts={"threads": len(threads)},
         )
 
-        current_phase_name = "categorize_threads"
-        current_phase_started_at = datetime.now(timezone.utc)
-        categorized_threads = categorize_threads(
-            llm=digest_llm,
-            taxonomy=taxonomy,
-            threads=threads,
-            parallel_workers=parallel_workers,
-        )
-        categorized_threads_path = run_dir / "categorized_threads.json"
-        write_json(categorized_threads_path, categorized_threads)
-        complete_phase(
-            name=current_phase_name,
-            started_at=current_phase_started_at,
-            input_count=len(threads),
-            output_count=len(categorized_threads),
-            artifact_paths=[categorized_threads_path],
-            counts={"categorized_threads": len(categorized_threads)},
-        )
-
         current_phase_name = "filter_threads"
         current_phase_started_at = datetime.now(timezone.utc)
         filtered_threads = filter_threads(
             llm=digest_llm,
-            taxonomy=taxonomy,
-            threads=categorized_threads,
-            parallel_workers=parallel_workers,
+            threads=threads,
         )
-        filtered_threads_path = run_dir / "filtered_threads.json"
+        filtered_threads_path = resolved_run_dir / "filtered_threads.json"
         write_json(filtered_threads_path, filtered_threads)
         kept_thread_count = sum(1 for thread in filtered_threads if thread.keep)
         complete_phase(
             name=current_phase_name,
             started_at=current_phase_started_at,
-            input_count=len(categorized_threads),
+            input_count=len(threads),
             output_count=len(filtered_threads),
             artifact_paths=[filtered_threads_path],
             counts={
@@ -216,63 +190,27 @@ def run_digest_report(
             },
         )
 
-        current_phase_name = "process_threads"
-        current_phase_started_at = datetime.now(timezone.utc)
-        processed_threads = process_threads(
-            llm=digest_llm,
-            threads=filtered_threads,
-            parallel_workers=parallel_workers,
-        )
-        processed_threads_path = run_dir / "processed_threads.json"
-        write_json(processed_threads_path, processed_threads)
-        complete_phase(
-            name=current_phase_name,
-            started_at=current_phase_started_at,
-            input_count=kept_thread_count,
-            output_count=len(processed_threads),
-            artifact_paths=[processed_threads_path],
-            counts={"processed_threads": len(processed_threads)},
-        )
-
         current_phase_name = "group_issues"
         current_phase_started_at = datetime.now(timezone.utc)
         issue_threads, issues = group_issues(
             llm=digest_llm,
-            threads=processed_threads,
+            threads=filtered_threads,
         )
-        issue_assignments_path = run_dir / "issue_assignments.json"
-        issues_path = run_dir / "issues.json"
+        issue_assignments_path = resolved_run_dir / "issue_assignments.json"
+        issues_path = resolved_run_dir / "issues.json"
         write_json(issue_assignments_path, issue_threads)
         write_json(issues_path, issues)
+        digest_title = _digest_title_from_issues(issues)
         complete_phase(
             name=current_phase_name,
             started_at=current_phase_started_at,
-            input_count=len(processed_threads),
+            input_count=kept_thread_count,
             output_count=len(issues),
             artifact_paths=[issue_assignments_path, issues_path],
             counts={
                 "issue_threads": len(issue_threads),
                 "issues": len(issues),
             },
-        )
-
-        current_phase_name = "render_digest"
-        current_phase_started_at = datetime.now(timezone.utc)
-        digest_markdown = render_digest(
-            run_id=run_id,
-            taxonomy=taxonomy,
-            issue_threads=issue_threads,
-            issues=issues,
-        )
-        digest_path = run_dir / "digest.md"
-        digest_path.write_text(digest_markdown, encoding="utf-8")
-        complete_phase(
-            name=current_phase_name,
-            started_at=current_phase_started_at,
-            input_count=len(issues),
-            output_count=1,
-            artifact_paths=[digest_path],
-            counts={"issues": len(issues)},
         )
     except Exception as error:
         failed_at = datetime.now(timezone.utc)
@@ -304,11 +242,67 @@ def run_digest_report(
     finished_at = datetime.now(timezone.utc)
     write_run_summary(status="completed", finished_at=finished_at)
 
-    return DigestRunResult(
+    return IssueReportRunResult(
         run_id=run_id,
-        run_dir=run_dir,
-        digest_path=digest_path or run_dir / "digest.md",
+        run_dir=resolved_run_dir,
         thread_count=len(threads),
-        kept_count=len(processed_threads),
+        kept_count=len([thread for thread in filtered_threads if thread.keep]),
         issue_count=len(issues),
     )
+
+
+def render_issue_digest_html(*, run_dir: Path) -> Path:
+    from .steps.render_digest_html import run as render_digest_html
+
+    started_at = datetime.now(timezone.utc)
+    run_doc = _load_json(run_dir / "run.json")
+    if not isinstance(run_doc, dict):
+        raise RuntimeError(f"Run metadata is missing or invalid in {run_dir / 'run.json'}.")
+
+    issues_doc = _load_json(run_dir / "issues.json")
+    issue_threads_doc = _load_json(run_dir / "issue_assignments.json")
+    if not isinstance(issues_doc, list) or not isinstance(issue_threads_doc, list):
+        raise RuntimeError("Run is missing issues.json or issue_assignments.json.")
+
+    issues = [Issue.model_validate(item) for item in issues_doc if isinstance(item, dict)]
+    issue_threads = [
+        IssueThread.model_validate(item)
+        for item in issue_threads_doc
+        if isinstance(item, dict)
+    ]
+
+    digest_title = _digest_title_from_issues(issues)
+    html_text = render_digest_html(
+        run_id=str(run_doc.get("run_id") or run_dir.name),
+        digest_title=digest_title,
+        issues=issues,
+        issue_threads=issue_threads,
+    )
+    html_path = run_dir / "digest.html"
+    html_path.write_text(html_text, encoding="utf-8")
+
+    run_doc["digest_title"] = digest_title
+    run_doc["primary_artifact_path"] = str(html_path)
+    run_doc["digest_path"] = str(html_path)
+    write_json(run_dir / "run.json", run_doc)
+
+    phases_path = run_dir / "phases.json"
+    phases_doc = _load_json(phases_path)
+    if not isinstance(phases_doc, list):
+        phases_doc = []
+    finished_at = datetime.now(timezone.utc)
+    phases_doc.append(
+        PhaseTrace(
+            name="render_digest_html",
+            status="completed",
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_ms=_duration_ms(started_at, finished_at),
+            input_count=len(issues),
+            output_count=1,
+            artifact_paths=[str(html_path)],
+            counts={"issues": len(issues)},
+        ).model_dump(mode="json")
+    )
+    write_json(phases_path, phases_doc)
+    return html_path

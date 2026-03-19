@@ -2,46 +2,32 @@ from __future__ import annotations
 
 from typing import Any
 
-from xs2n.schemas.digest import (
-    CategorizedThread,
-    FilteredThread,
-    FilterResult,
-    TaxonomyConfig,
-)
-
-from ..helpers import map_in_thread_pool
+from xs2n.schemas.digest import FilteredThread, ThreadFilterResult, ThreadInput
 
 
 def run(
     *,
     llm: Any,
-    taxonomy: TaxonomyConfig,
-    threads: list[CategorizedThread],
-    parallel_workers: int,
+    threads: list[ThreadInput],
 ) -> list[FilteredThread]:
-    def filter_thread(thread: CategorizedThread) -> FilteredThread:
+    filtered_threads: list[FilteredThread] = []
+    for thread in threads:
         result = llm.run(
             prompt=(
-                "You decide whether one categorized X/Twitter thread belongs in a "
-                "high-signal, low-noise digest. Default to keeping real signal. Default "
-                "to dropping shallow promo, personal chatter, or obvious AI slop. Use the "
-                "provided drop categories as a strong prior, but keep exceptional cases "
-                "when the thread still adds real public signal."
+                "You review one X/Twitter thread for a low-noise issue digest. "
+                "Drop only items that are obviously stupid, shallow, spammy, repetitive, "
+                "or clearly not worth a serious reader's attention. "
+                "Default to keeping borderline but real signal."
             ),
-            payload={
-                "drop_categories": taxonomy.drop_categories,
-                "thread": thread,
-            },
-            schema=FilterResult,
+            payload={"thread": thread},
+            schema=ThreadFilterResult,
+            image_urls=thread.primary_tweet_media_urls,
         )
-        return FilteredThread(
-            **thread.model_dump(),
-            keep=result.keep,
-            filter_reason=result.filter_reason,
+        filtered_threads.append(
+            FilteredThread(
+                **thread.model_dump(),
+                keep=result.keep,
+                filter_reason=result.filter_reason,
+            )
         )
-
-    return map_in_thread_pool(
-        items=threads,
-        worker=filter_thread,
-        max_workers=parallel_workers,
-    )
+    return filtered_threads

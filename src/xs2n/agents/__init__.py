@@ -6,8 +6,10 @@ from .digest import (
     DEFAULT_REPORT_RUNS_PATH,
     DEFAULT_TAXONOMY_PATH,
     DigestLLM,
-    DigestRunResult,
+    IssueReportRunResult,
+    render_issue_digest_html,
     run_digest_report,
+    run_issue_report,
 )
 
 __all__ = [
@@ -16,6 +18,8 @@ __all__ = [
     "DEFAULT_REPORT_RUNS_PATH",
     "DEFAULT_TAXONOMY_PATH",
     "DigestLLM",
-    "DigestRunResult",
+    "IssueReportRunResult",
+    "render_issue_digest_html",
     "run_digest_report",
+    "run_issue_report",
 ]

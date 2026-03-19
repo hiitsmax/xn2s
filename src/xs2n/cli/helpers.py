@@ -62,11 +62,24 @@ def _choose_following_from_logged_in_profile() -> BrowserCookieCandidate | None:
 
 
 def sanitize_cli_parameters(parameters: dict[str, Any]) -> None:
+    refresh_following = bool(parameters.get("refresh_following"))
+
     if parameters["paste"] and parameters["from_following"]:
         raise typer.BadParameter("Use either --paste or --from-following, not both.")
+    if refresh_following and (parameters["paste"] or parameters["from_following"]):
+        raise typer.BadParameter(
+            "Use --refresh-following on its own, without --paste or --from-following."
+        )
 
     state_path = onboard_state_storage.resolve_onboard_state_path(parameters)
     state = onboard_state_storage.load_onboard_state(state_path)
+
+    if refresh_following:
+        onboard_state_storage.save_onboard_state(
+            {**state, "last_mode": "following"},
+            path=state_path,
+        )
+        return
 
     if parameters["from_following"]:
         parameters["from_following"] = normalize_following_account(

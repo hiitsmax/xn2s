@@ -1,91 +1,38 @@
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 import json
 import math
 from pathlib import Path
 import re
-from typing import Any, Callable, TypeVar, cast
+from typing import Any
 
 from pydantic import BaseModel
 
-from xs2n.schemas.digest import TaxonomyConfig, TimelineRecord
+from xs2n.schemas.digest import (
+    FilteredThread,
+    Issue,
+    TaxonomyConfig,
+    TimelineRecord,
+)
 
 
 DEFAULT_TAXONOMY_DOC = {
     "categories": [
-        {
-            "slug": "breaking_news",
-            "label": "Breaking News",
-            "description": "Fresh developments, disclosures, or events people need to know now.",
-        },
-        {
-            "slug": "policy",
-            "label": "Policy",
-            "description": "Government, regulation, governance, or institutional moves.",
-        },
-        {
-            "slug": "research",
-            "label": "Research",
-            "description": "Technical findings, experiments, papers, or deep analytical work.",
-        },
-        {
-            "slug": "product_launch",
-            "label": "Product Launch",
-            "description": "Meaningful product, feature, or company launches.",
-        },
-        {
-            "slug": "market_move",
-            "label": "Market Move",
-            "description": "Financial, trading, token, or business movement with market relevance.",
-        },
         {
             "slug": "analysis",
             "label": "Analysis",
             "description": "Thoughtful interpretation, synthesis, or second-order thinking.",
         },
         {
-            "slug": "first_hand_signal",
-            "label": "First-Hand Signal",
-            "description": "Direct observation, operator experience, leaks, or on-the-ground evidence.",
-        },
-        {
-            "slug": "debate",
-            "label": "Debate",
-            "description": "An active disagreement, argument, or clash of interpretations.",
-        },
-        {
-            "slug": "meta_discourse",
-            "label": "Meta Discourse",
-            "description": "Discussion about the platform, media dynamics, or narrative framing.",
-        },
-        {
-            "slug": "meme",
-            "label": "Meme",
-            "description": "Humor, memes, or jokes that may still reveal a real trend or reaction.",
-        },
-        {
-            "slug": "promo",
-            "label": "Promo",
-            "description": "Marketing, self-promotion, obvious calls to action, or shallow launch spam.",
-        },
-        {
-            "slug": "personal_update",
-            "label": "Personal Update",
-            "description": "Personal status updates with low public-information value.",
-        },
-        {
-            "slug": "ai_slop",
-            "label": "AI Slop",
-            "description": "Low-effort, repetitive, generic, or synthetic filler without signal.",
+            "slug": "breaking_news",
+            "label": "Breaking News",
+            "description": "Fresh developments, disclosures, or events people need to know now.",
         },
     ],
-    "drop_categories": ["promo", "personal_update", "ai_slop"],
+    "drop_categories": [],
 }
-
-InputT = TypeVar("InputT")
-OutputT = TypeVar("OutputT")
 
 
 def to_jsonable(value: Any) -> Any:
@@ -112,37 +59,13 @@ def write_json(path: Path, payload: Any) -> None:
 
 def load_taxonomy(path: Path) -> TaxonomyConfig:
     if path.exists():
-        return TaxonomyConfig.model_validate_json(path.read_text(encoding="utf-8"))
-    return TaxonomyConfig.model_validate(DEFAULT_TAXONOMY_DOC)
-
-
-def map_in_thread_pool(
-    *,
-    items: list[InputT],
-    worker: Callable[[InputT], OutputT],
-    max_workers: int,
-) -> list[OutputT]:
-    if max_workers <= 1 or len(items) <= 1:
-        return [worker(item) for item in items]
-
-    executor = ThreadPoolExecutor(max_workers=min(max_workers, len(items)))
-    futures: dict[Future[OutputT], int] = {}
-
-    try:
-        for index, item in enumerate(items):
-            futures[executor.submit(worker, item)] = index
-
-        results: list[OutputT | None] = [None] * len(items)
-        for future in as_completed(futures):
-            results[futures[future]] = future.result()
-
-        return [cast(OutputT, result) for result in results]
-    except Exception:
-        for future in futures:
-            future.cancel()
-        raise
-    finally:
-        executor.shutdown(wait=True, cancel_futures=True)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = DEFAULT_TAXONOMY_DOC
+    else:
+        payload = DEFAULT_TAXONOMY_DOC
+    return TaxonomyConfig.model_validate(payload)
 
 
 def virality_score(record: TimelineRecord) -> float:
@@ -160,7 +83,34 @@ def slugify_issue(value: str, *, fallback: str) -> str:
     return slug or fallback
 
 
-def render_source_links(urls: list[str]) -> str:
-    if not urls:
-        return "No direct source link captured."
-    return ", ".join(f"[source {index + 1}]({url})" for index, url in enumerate(urls))
+def compact_issue_summaries(issues: list[Issue]) -> list[dict[str, Any]]:
+    return [
+        {
+            "slug": issue.slug,
+            "title": issue.title,
+            "summary": issue.summary,
+            "thread_count": issue.thread_count,
+        }
+        for issue in issues
+    ]
+
+
+def filtered_thread_payload(thread: FilteredThread) -> dict[str, Any]:
+    return {
+        "thread": thread,
+        "source_urls": thread.source_urls,
+        "primary_tweet_media_urls": thread.primary_tweet_media_urls,
+        "virality_score": sum(virality_score(tweet) for tweet in thread.tweets),
+    }
+
+
+def map_in_thread_pool(
+    *,
+    items: list[Any],
+    worker,
+    max_workers: int,
+) -> list[Any]:
+    if max_workers <= 1:
+        return [worker(item) for item in items]
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(worker, items))

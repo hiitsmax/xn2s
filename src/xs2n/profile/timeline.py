@@ -120,6 +120,69 @@ def _tweet_conversation_id(tweet: Any) -> str | None:
     return None
 
 
+def _optional_text(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _tweet_media(tweet: Any) -> list[dict[str, object]]:
+    media_entries: list[Any] = []
+    try:
+        resolved_media = getattr(tweet, "media", None)
+    except Exception:
+        resolved_media = None
+
+    if isinstance(resolved_media, list):
+        media_entries = resolved_media
+    else:
+        legacy = getattr(tweet, "_legacy", None)
+        if isinstance(legacy, dict):
+            entities = legacy.get("entities")
+            if isinstance(entities, dict):
+                raw_media = entities.get("media")
+                if isinstance(raw_media, list):
+                    media_entries = raw_media
+
+    normalized_media: list[dict[str, object]] = []
+    for media_entry in media_entries:
+        if isinstance(media_entry, dict):
+            original_info = media_entry.get("original_info")
+            width = _to_int(original_info.get("width")) if isinstance(original_info, dict) else None
+            height = _to_int(original_info.get("height")) if isinstance(original_info, dict) else None
+            media_url = _optional_text(
+                media_entry.get("media_url_https") or media_entry.get("media_url")
+            )
+            media_type = _optional_text(media_entry.get("type"))
+            expanded_url = _optional_text(media_entry.get("expanded_url"))
+        else:
+            media_url = _optional_text(getattr(media_entry, "media_url", None))
+            media_type = _optional_text(getattr(media_entry, "type", None))
+            expanded_url = _optional_text(getattr(media_entry, "expanded_url", None))
+            width = _to_int(getattr(media_entry, "width", None))
+            height = _to_int(getattr(media_entry, "height", None))
+
+        if media_url is None or media_type is None:
+            continue
+
+        normalized_media.append(
+            {
+                key: value
+                for key, value in {
+                    "media_url": media_url,
+                    "media_type": media_type,
+                    "width": width,
+                    "height": height,
+                    "expanded_url": expanded_url,
+                }.items()
+                if value is not None
+            }
+        )
+
+    return normalized_media
+
+
 def _timeline_source_for_feed(tweet_type: str) -> str:
     if tweet_type == "Replies":
         return "replies"
@@ -159,6 +222,8 @@ def _to_timeline_entry(
     elif in_reply_to_tweet_id is not None:
         kind = "reply"
 
+    media_source = retweeted_tweet if retweeted_tweet is not None else tweet
+
     return TimelineEntry(
         tweet_id=tweet_id,
         account_handle=account_handle,
@@ -177,6 +242,7 @@ def _to_timeline_entry(
         reply_count=_to_int(getattr(tweet, "reply_count", None)),
         quote_count=_to_int(getattr(tweet, "quote_count", None)),
         view_count=_to_int(getattr(tweet, "view_count", None)),
+        media=_tweet_media(media_source),
     )
 
 

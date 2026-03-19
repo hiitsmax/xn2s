@@ -20,13 +20,14 @@ from xs2n.profile.browser_cookies import (
     write_cookie_candidate,
 )
 from xs2n.profile.following import (
+    AUTHENTICATED_ACCOUNT_SENTINEL,
     DEFAULT_IMPORT_FOLLOWING_HANDLES,
     IMPORT_FOLLOWING_HANDLES_LIMIT,
     run_import_following_handles,
 )
 from xs2n.profile.helpers import build_entries_from_handles
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
-from xs2n.storage import DEFAULT_SOURCES_PATH, merge_profiles
+from xs2n.storage import DEFAULT_SOURCES_PATH, merge_profiles, replace_profiles
 
 
 def choose_cookie_candidate(candidates: list[BrowserCookieCandidate]) -> BrowserCookieCandidate:
@@ -175,6 +176,14 @@ def onboard(
         "--wizard",
         help="Run an interactive onboarding wizard.",
     ),
+    refresh_following: bool = typer.Option(
+        False,
+        "--refresh-following",
+        help=(
+            "Replace the source catalog with the authenticated account's current "
+            "following list."
+        ),
+    ),
     cookies_file: Path = typer.Option(
         Path("cookies.json"),
         "--cookies-file",
@@ -199,6 +208,7 @@ def onboard(
         "paste": paste,
         "from_following": from_following,
         "wizard": wizard,
+        "refresh_following": refresh_following,
         "cookies_file": cookies_file,
         "limit": limit,
         "sources_file": sources_file,
@@ -210,7 +220,22 @@ def onboard(
     if parameters["paste"]:
         _, invalid = process_paste_parameters(parameters)
 
-    if parameters["from_following"]:
+    if parameters["refresh_following"]:
+        handles = import_following_with_recovery(
+            account=AUTHENTICATED_ACCOUNT_SENTINEL,
+            cookies_file=Path(parameters["cookies_file"]),
+            limit=int(parameters["limit"]),
+        )
+        result = replace_profiles(
+            build_entries_from_handles(handles, source="following_refresh"),
+            path=Path(parameters["sources_file"]),
+        )
+        typer.echo(
+            "Refreshed source catalog from the authenticated account's following list."
+        )
+        typer.echo(f"Stored {result.added} profiles in the sources catalog.")
+
+    elif parameters["from_following"]:
         account = str(parameters["from_following"])
         handles = import_following_with_recovery(
             account=account,

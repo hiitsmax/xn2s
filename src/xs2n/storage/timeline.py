@@ -75,6 +75,7 @@ def merge_timeline_entries(
             "reply_count": entry.reply_count,
             "quote_count": entry.quote_count,
             "view_count": entry.view_count,
+            "media": entry.media or [],
         }
 
         existing_index = existing_indexes.get(entry.tweet_id)

@@ -436,6 +436,64 @@ def test_import_timeline_entries_captures_engagement_metrics(
     assert entry.view_count == 9090
 
 
+def test_import_timeline_entries_captures_media_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    tweet = _tweet(
+        "media",
+        datetime(2026, 1, 5, tzinfo=timezone.utc),
+        text="post with media",
+    )
+    tweet._legacy["entities"] = {
+        "media": [
+            {
+                "id_str": "photo-1",
+                "media_url_https": "https://img.test/post.png",
+                "type": "photo",
+                "original_info": {"width": 1200, "height": 800},
+            }
+        ]
+    }
+    batch = _DummyBatch([tweet])
+    dummy_user = _DummyUser(screen_name="mx", tweets_batch=batch)
+
+    def fake_client(locale: str) -> _DummyClient:
+        return _DummyClient(locale=locale, user=dummy_user)
+
+    async def fake_ensure_authenticated_client(**kwargs):  # noqa: ANN202
+        return None
+
+    monkeypatch.setattr("xs2n.profile.timeline.Client", fake_client)
+    monkeypatch.setattr(
+        "xs2n.profile.timeline.ensure_authenticated_client",
+        fake_ensure_authenticated_client,
+    )
+
+    result = asyncio.run(
+        import_timeline_entries(
+            account_screen_name="mx",
+            cookies_file=Path("cookies.json"),
+            since_datetime=since,
+            limit=10,
+            prompt_login=lambda *_: ("u", "e", "p"),
+            thread_parent_limit=0,
+            thread_replies_limit=0,
+            thread_other_replies_limit=0,
+        )
+    )
+
+    entry = result.entries[0]
+    assert entry.media == [
+        {
+            "media_url": "https://img.test/post.png",
+            "media_type": "photo",
+            "width": 1200,
+            "height": 800,
+        }
+    ]
+
+
 def test_import_timeline_entries_applies_page_delay_between_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

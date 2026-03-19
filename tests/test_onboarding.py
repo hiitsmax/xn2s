@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from xs2n.profile.helpers import build_entries_from_handles as build_entries, parse_handles
-from xs2n.storage import load_sources, merge_profiles
+from xs2n.storage import load_sources, merge_profiles, replace_profiles
 
 
 def test_parse_handles_accepts_handles_and_urls() -> None:
@@ -42,3 +42,34 @@ def test_merge_profiles_adds_and_skips_duplicates(tmp_path: Path) -> None:
     doc = load_sources(sources_file)
     handles = [item["handle"] for item in doc["profiles"]]
     assert handles == ["alpha", "beta", "gamma"]
+
+
+def test_replace_profiles_overwrites_stale_entries(tmp_path: Path) -> None:
+    sources_file = tmp_path / "sources.json"
+
+    merge_profiles(
+        build_entries(["alpha", "beta"], source="paste"),
+        path=sources_file,
+    )
+
+    result = replace_profiles(
+        build_entries(["beta", "gamma"], source="following_refresh"),
+        path=sources_file,
+    )
+
+    assert result.added == 2
+    assert result.skipped_duplicates == 0
+
+    doc = load_sources(sources_file)
+    assert doc["profiles"] == [
+        {
+            "handle": "beta",
+            "added_via": "following_refresh",
+            "added_at": doc["profiles"][0]["added_at"],
+        },
+        {
+            "handle": "gamma",
+            "added_via": "following_refresh",
+            "added_at": doc["profiles"][1]["added_at"],
+        },
+    ]

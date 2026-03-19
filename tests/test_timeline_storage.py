@@ -15,6 +15,7 @@ def _entry(
     reply_count: int | None = None,
     quote_count: int | None = None,
     view_count: int | None = None,
+    media: list[dict[str, object]] | None = None,
 ) -> TimelineEntry:
     return TimelineEntry(
         tweet_id=tweet_id,
@@ -31,6 +32,7 @@ def _entry(
         reply_count=reply_count,
         quote_count=quote_count,
         view_count=view_count,
+        media=media or [],
     )
 
 
@@ -121,3 +123,35 @@ def test_merge_timeline_entries_refreshes_existing_metrics(tmp_path: Path) -> No
     stored = doc["entries"][0]
     assert stored["favorite_count"] == 25
     assert stored["retweet_count"] == 5
+
+
+def test_merge_timeline_entries_persists_media_metadata(tmp_path: Path) -> None:
+    timeline_file = tmp_path / "timeline.json"
+
+    merge_timeline_entries(
+        [
+            _entry(
+                "media-1",
+                media=[
+                    {
+                        "media_url": "https://img.test/post.png",
+                        "media_type": "photo",
+                        "width": 1200,
+                        "height": 800,
+                    }
+                ],
+            )
+        ],
+        path=timeline_file,
+    )
+
+    doc = load_timeline(timeline_file)
+    stored = doc["entries"][0]
+    assert stored["media"] == [
+        {
+            "media_url": "https://img.test/post.png",
+            "media_type": "photo",
+            "width": 1200,
+            "height": 800,
+        }
+    ]
