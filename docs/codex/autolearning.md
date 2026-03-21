@@ -102,6 +102,11 @@ The notes below are chronological history. Older references to `report digest` o
   - the digest viewer can be perfectly responsive in isolation and still feel broken if the surrounding three-pane app shell keeps feeding it rigid pane widths,
   - the real fix was to make the app-level run list and middle navigation columns scale proportionally with the window width, while still respecting minimum widths and leaving room for the viewer,
   - when a resize bug shows up only in the full app screenshots, debug the outer container first before assuming the inner viewer widget is still at fault.
+- Added a full-app screenshot probe for the native FLTK shell:
+  - `src/xs2n/ui/app_probe.py` now opens `ArtifactBrowserWindow`, refreshes runs, selects a concrete run id and artifact, applies a target window size, and writes a PNG screenshot plus a JSON summary,
+  - this is a better debugging surface for resize regressions than one-off terminal snippets because it captures the real three-pane container around the digest viewer, not just the inner digest widget,
+  - the current reliable invocation is:
+    `uv run python -m xs2n.ui.app_probe --data-dir data --run-id 20260318T225654Z --artifact-name digest.html --width 2000 --height 1300 --screenshot /tmp/xs2n-app-probe.png`
 - The reusable lesson here is twofold:
   - this UI does not need more stored ranking metadata to feel prioritized,
   - once `Fl_Help_View` starts parsing richer, repeated structures, the correct fix is often to stop feeding it HTML and move that surface to native FLTK widgets.
