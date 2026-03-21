@@ -30,6 +30,27 @@ def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _count_kept_threads(filtered_threads: list[Any]) -> int:
+    return sum(1 for thread in filtered_threads if thread.keep)
+
+
+def _build_phase_counts(
+    *,
+    threads: list[Any],
+    filtered_threads: list[Any],
+    issue_threads: list[Any],
+    issues: list[Any],
+) -> dict[str, int]:
+    kept_threads = _count_kept_threads(filtered_threads)
+    return {
+        "threads": len(threads),
+        "filtered_threads": len(filtered_threads),
+        "kept_threads": kept_threads,
+        "issue_threads": len(issue_threads),
+        "issues": len(issues),
+    }
+
+
 def _digest_title_from_issues(issues: list[Issue]) -> str:
     if issues:
         return issues[0].title
@@ -104,6 +125,12 @@ def run_issue_report(
         error: Exception | None = None,
         failed_phase: str | None = None,
     ) -> None:
+        phase_counts = _build_phase_counts(
+            threads=threads,
+            filtered_threads=filtered_threads,
+            issue_threads=issue_threads,
+            issues=issues,
+        )
         summary = {
             "run_id": run_id,
             "status": status,
@@ -118,7 +145,7 @@ def run_issue_report(
             "model": model,
             "credential_source": credential_source,
             "thread_count": len(threads),
-            "kept_count": len([thread for thread in filtered_threads if thread.keep]),
+            "kept_count": phase_counts["kept_threads"],
             "issue_count": len(issues),
             "digest_title": digest_title,
             "primary_artifact_path": (
@@ -129,13 +156,7 @@ def run_issue_report(
             ),
             "phases_path": str(phases_path),
             "llm_calls_dir": str(resolved_run_dir / "llm_calls"),
-            "phase_counts": {
-                "threads": len(threads),
-                "filtered_threads": len(filtered_threads),
-                "kept_threads": len([thread for thread in filtered_threads if thread.keep]),
-                "issue_threads": len(issue_threads),
-                "issues": len(issues),
-            },
+            "phase_counts": phase_counts,
             "last_completed_phase": phases[-1].name if phases else None,
             "failed_phase": failed_phase,
             "error_type": type(error).__name__ if error is not None else None,
@@ -169,6 +190,44 @@ def run_issue_report(
         write_phase_traces()
         write_run_summary(status="running")
 
+    def start_phase(name: str) -> datetime:
+        nonlocal current_phase_name, current_phase_started_at
+        current_phase_name = name
+        current_phase_started_at = datetime.now(timezone.utc)
+        emit(
+            "phase_started",
+            message=f"Starting {name} phase.",
+            phase=name,
+        )
+        return current_phase_started_at
+
+    def emit_phase_artifact(
+        *,
+        phase: str,
+        message: str,
+        artifact_path: Path,
+        counts: dict[str, int] | None = None,
+    ) -> None:
+        emit(
+            "artifact_written",
+            message=message,
+            phase=phase,
+            artifact_path=artifact_path,
+            counts=counts,
+        )
+
+    def emit_phase_completed(
+        *,
+        phase: str,
+        counts: dict[str, int] | None = None,
+    ) -> None:
+        emit(
+            "phase_completed",
+            message=f"Completed {phase} phase.",
+            phase=phase,
+            counts=counts,
+        )
+
     write_phase_traces()
     write_run_summary(status="running")
     emit(
@@ -184,90 +243,56 @@ def run_issue_report(
             configure_run_logging(run_dir=resolved_run_dir)
         write_run_summary(status="running")
 
-        current_phase_name = "load_threads"
-        emit(
-            "phase_started",
-            message="Starting load_threads phase.",
-            phase=current_phase_name,
-        )
-        current_phase_started_at = datetime.now(timezone.utc)
+        current_phase_started_at = start_phase("load_threads")
         threads = load_threads(timeline_file=timeline_file)
         threads_path = resolved_run_dir / "threads.json"
         write_json(threads_path, threads)
+        thread_counts = {"threads": len(threads)}
         complete_phase(
-            name=current_phase_name,
+            name="load_threads",
             started_at=current_phase_started_at,
             input_count=1,
             output_count=len(threads),
             artifact_paths=[threads_path],
-            counts={"threads": len(threads)},
+            counts=thread_counts,
         )
-        emit(
-            "artifact_written",
+        emit_phase_artifact(
+            phase="load_threads",
             message="Wrote threads artifact.",
-            phase=current_phase_name,
             artifact_path=threads_path,
-            counts={"threads": len(threads)},
+            counts=thread_counts,
         )
-        emit(
-            "phase_completed",
-            message="Completed load_threads phase.",
-            phase=current_phase_name,
-            counts={"threads": len(threads)},
-        )
+        emit_phase_completed(phase="load_threads", counts=thread_counts)
 
-        current_phase_name = "filter_threads"
-        emit(
-            "phase_started",
-            message="Starting filter_threads phase.",
-            phase=current_phase_name,
-        )
-        current_phase_started_at = datetime.now(timezone.utc)
+        current_phase_started_at = start_phase("filter_threads")
         filtered_threads = filter_threads(
             llm=digest_llm,
             threads=threads,
         )
         filtered_threads_path = resolved_run_dir / "filtered_threads.json"
         write_json(filtered_threads_path, filtered_threads)
-        kept_thread_count = sum(1 for thread in filtered_threads if thread.keep)
+        kept_thread_count = _count_kept_threads(filtered_threads)
+        filter_counts = {
+            "filtered_threads": len(filtered_threads),
+            "kept_threads": kept_thread_count,
+        }
         complete_phase(
-            name=current_phase_name,
+            name="filter_threads",
             started_at=current_phase_started_at,
             input_count=len(threads),
             output_count=len(filtered_threads),
             artifact_paths=[filtered_threads_path],
-            counts={
-                "filtered_threads": len(filtered_threads),
-                "kept_threads": kept_thread_count,
-            },
+            counts=filter_counts,
         )
-        emit(
-            "artifact_written",
+        emit_phase_artifact(
+            phase="filter_threads",
             message="Wrote filtered threads artifact.",
-            phase=current_phase_name,
             artifact_path=filtered_threads_path,
-            counts={
-                "filtered_threads": len(filtered_threads),
-                "kept_threads": kept_thread_count,
-            },
+            counts=filter_counts,
         )
-        emit(
-            "phase_completed",
-            message="Completed filter_threads phase.",
-            phase=current_phase_name,
-            counts={
-                "filtered_threads": len(filtered_threads),
-                "kept_threads": kept_thread_count,
-            },
-        )
+        emit_phase_completed(phase="filter_threads", counts=filter_counts)
 
-        current_phase_name = "group_issues"
-        emit(
-            "phase_started",
-            message="Starting group_issues phase.",
-            phase=current_phase_name,
-        )
-        current_phase_started_at = datetime.now(timezone.utc)
+        current_phase_started_at = start_phase("group_issues")
         issue_threads, issues = group_issues(
             llm=digest_llm,
             threads=filtered_threads,
@@ -277,40 +302,31 @@ def run_issue_report(
         write_json(issue_assignments_path, issue_threads)
         write_json(issues_path, issues)
         digest_title = _digest_title_from_issues(issues)
+        issue_counts = {
+            "issue_threads": len(issue_threads),
+            "issues": len(issues),
+        }
         complete_phase(
-            name=current_phase_name,
+            name="group_issues",
             started_at=current_phase_started_at,
             input_count=kept_thread_count,
             output_count=len(issues),
             artifact_paths=[issue_assignments_path, issues_path],
-            counts={
-                "issue_threads": len(issue_threads),
-                "issues": len(issues),
-            },
+            counts=issue_counts,
         )
-        emit(
-            "artifact_written",
+        emit_phase_artifact(
+            phase="group_issues",
             message="Wrote issue assignments artifact.",
-            phase=current_phase_name,
             artifact_path=issue_assignments_path,
             counts={"issue_threads": len(issue_threads)},
         )
-        emit(
-            "artifact_written",
+        emit_phase_artifact(
+            phase="group_issues",
             message="Wrote issues artifact.",
-            phase=current_phase_name,
             artifact_path=issues_path,
             counts={"issues": len(issues)},
         )
-        emit(
-            "phase_completed",
-            message="Completed group_issues phase.",
-            phase=current_phase_name,
-            counts={
-                "issue_threads": len(issue_threads),
-                "issues": len(issues),
-            },
-        )
+        emit_phase_completed(phase="group_issues", counts=issue_counts)
     except Exception as error:
         failed_at = datetime.now(timezone.utc)
         if current_phase_name is not None and current_phase_started_at is not None:
@@ -357,7 +373,7 @@ def run_issue_report(
         message=f"Issue run {run_id} completed.",
         counts={
             "thread_count": len(threads),
-            "kept_count": len([thread for thread in filtered_threads if thread.keep]),
+            "kept_count": _count_kept_threads(filtered_threads),
             "issue_count": len(issues),
         },
     )
@@ -366,9 +382,10 @@ def run_issue_report(
         run_id=run_id,
         run_dir=resolved_run_dir,
         thread_count=len(threads),
-        kept_count=len([thread for thread in filtered_threads if thread.keep]),
+        kept_count=_count_kept_threads(filtered_threads),
         issue_count=len(issues),
     )
+
 
 def render_issue_digest_html(*, run_dir: Path, emit_event=None) -> Path:
     from .steps.render_digest_html import run as render_digest_html

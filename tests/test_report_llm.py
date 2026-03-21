@@ -146,6 +146,60 @@ def test_digest_llm_streams_structured_output(
     }
 
 
+def test_digest_llm_writes_explicit_trace_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeStream:
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN204
+            return False
+
+        def __iter__(self):  # noqa: ANN204
+            return iter(
+                [
+                    SimpleNamespace(
+                        type="response.output_text.done",
+                        text='{"answer":"OK"}',
+                    )
+                ]
+            )
+
+        def get_final_response(self):  # noqa: ANN204
+            return SimpleNamespace(output=[])
+
+    class FakeOpenAI:
+        def __init__(self, *, api_key: str, base_url: str | None = None) -> None:
+            self.responses = self
+
+        def stream(self, **kwargs):  # noqa: ANN003, ANN204
+            return FakeStream()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr("xs2n.agents.digest.llm.OpenAI", FakeOpenAI)
+
+    llm = DigestLLM(model="gpt-5.4")
+    llm.configure_run_logging(run_dir=tmp_path)
+
+    result = llm.run(
+        prompt="Return JSON only.",
+        payload={"thread": {"thread_id": "conv-1"}},
+        schema=_SimpleResult,
+        phase_name="group_issues",
+        item_id="conv-1",
+    )
+
+    trace_path = tmp_path / "llm_calls" / "001_group_issues_conv-1.json"
+    trace_doc = json.loads(trace_path.read_text(encoding="utf-8"))
+
+    assert result == _SimpleResult(answer="OK")
+    assert trace_doc["phase"] == "group_issues"
+    assert trace_doc["item_id"] == "conv-1"
+    assert trace_doc["schema_name"] == "_SimpleResult"
+
+
 def test_digest_llm_surfaces_codex_unsupported_model_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

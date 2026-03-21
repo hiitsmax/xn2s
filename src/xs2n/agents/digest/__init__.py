@@ -1,18 +1,13 @@
 from __future__ import annotations
 
+import warnings
+from typing import Any
+
 from .steps.load_threads import run as _load_threads
 from .llm import DigestLLM
 from .helpers import virality_score
 from xs2n.schemas.digest import (
-    FilteredThread,
-    Issue,
     IssueReportRunResult,
-    IssueSelectionResult,
-    IssueThread,
-    IssueWriteResult,
-    ThreadFilterResult,
-    ThreadInput,
-    TimelineMedia,
     TimelineRecord,
 )
 from .pipeline import (
@@ -25,7 +20,16 @@ from .pipeline import (
 )
 
 _virality_score = virality_score
-run_digest_report = run_issue_report
+
+
+def run_digest_report(*args: Any, **kwargs: Any) -> IssueReportRunResult:
+    # Compatibility shim for the retired digest-first entrypoint.
+    warnings.warn(
+        "run_digest_report is deprecated; use run_issue_report instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return run_issue_report(*args, **kwargs)
 
 __all__ = [
     "DEFAULT_REPORT_MODEL",
@@ -33,19 +37,8 @@ __all__ = [
     "DEFAULT_REPORT_RUNS_PATH",
     "DEFAULT_TAXONOMY_PATH",
     "DigestLLM",
-    "FilteredThread",
-    "Issue",
     "IssueReportRunResult",
-    "IssueSelectionResult",
-    "IssueThread",
-    "IssueWriteResult",
-    "ThreadFilterResult",
-    "ThreadInput",
-    "TimelineMedia",
     "TimelineRecord",
-    "_load_threads",
-    "_virality_score",
     "render_issue_digest_html",
-    "run_digest_report",
     "run_issue_report",
 ]

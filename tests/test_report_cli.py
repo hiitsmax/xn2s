@@ -7,17 +7,19 @@ from types import SimpleNamespace
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 from xs2n.cli.report import (
     _resolve_latest_since,
     _run_codex_command,
     auth,
-    html_render,
     issues,
     latest,
-    render,
+    report_app,
 )
 from xs2n.schemas.run_events import RunEvent
+
+runner = CliRunner()
 
 
 def test_report_auth_runs_codex_login(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -167,10 +169,9 @@ def test_report_issues_surfaces_runtime_error(
     assert "missing credentials" in captured.err
 
 
-def test_report_render_writes_html(
+def test_report_html_command_writes_html(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     run_dir = tmp_path / "report_runs" / "20260318T120000Z"
     run_dir.mkdir(parents=True)
@@ -180,35 +181,16 @@ def test_report_render_writes_html(
         lambda **kwargs: run_dir / "digest.html",
     )
 
-    render(run_dir=run_dir)
+    result = runner.invoke(report_app, ["html", "--run-dir", str(run_dir)])
 
-    out = capsys.readouterr().out
-    assert "Rendered HTML digest to" in out
-    assert "digest.html" in out
+    assert result.exit_code == 0
+    assert "Rendered HTML digest to" in result.stdout
+    assert "digest.html" in result.stdout
 
 
-def test_report_render_surfaces_runtime_error(
+def test_report_render_command_remains_compatibility_alias(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setattr(
-        "xs2n.cli.report.render_issue_digest_html",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("render failed")),
-    )
-
-    with pytest.raises(typer.Exit) as error:
-        render(run_dir=tmp_path / "report_runs" / "20260318T120000Z")
-
-    assert error.value.exit_code == 1
-    captured = capsys.readouterr()
-    assert "render failed" in captured.err
-
-
-def test_report_html_writes_html(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     run_dir = tmp_path / "report_runs" / "20260318T120000Z"
     run_dir.mkdir(parents=True)
@@ -218,29 +200,44 @@ def test_report_html_writes_html(
         lambda **kwargs: run_dir / "digest.html",
     )
 
-    html_render(run_dir=run_dir)
+    result = runner.invoke(report_app, ["render", "--run-dir", str(run_dir)])
 
-    out = capsys.readouterr().out
-    assert "Rendered HTML digest to" in out
-    assert "digest.html" in out
+    assert result.exit_code == 0
+    assert "Rendered HTML digest to" in result.stdout
+    assert "digest.html" in result.stdout
 
 
 def test_report_html_surfaces_runtime_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    run_dir = tmp_path / "report_runs" / "20260318T120000Z"
+    run_dir.mkdir(parents=True)
+
     monkeypatch.setattr(
         "xs2n.cli.report.render_issue_digest_html",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("render failed")),
     )
 
-    with pytest.raises(typer.Exit) as error:
-        html_render(run_dir=tmp_path / "report_runs" / "20260318T120000Z")
+    result = runner.invoke(
+        report_app,
+        ["html", "--run-dir", str(run_dir)],
+    )
 
-    assert error.value.exit_code == 1
-    captured = capsys.readouterr()
-    assert "render failed" in captured.err
+    assert result.exit_code != 0
+    assert "render failed" in result.stderr
+
+
+def test_report_latest_help_tightens_home_latest_description() -> None:
+    command = typer.main.get_command(report_app).commands["latest"]
+    home_latest_option = next(
+        param for param in command.params if param.name == "home_latest"
+    )
+
+    assert home_latest_option.help == (
+        "Ingest the authenticated Home -> Following latest timeline "
+        "instead of crawling source handles from --sources-file."
+    )
 
 
 def test_resolve_latest_since_prefers_explicit_since() -> None:
@@ -522,3 +519,32 @@ def test_report_latest_can_emit_jsonl_events(
     assert any(event.get("run_id") == "20260318T120000Z" for event in parsed_events)
     assert "Ingesting source timelines before issue generation" in captured.err
     assert "Rendered HTML digest to" in captured.err
+
+
+def test_report_latest_normalizes_optioninfo_booleans(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_latest_report(arguments, **kwargs):
+        captured["home_latest"] = arguments.home_latest
+        captured["emit_event"] = kwargs["emit_event"]
+
+    monkeypatch.setattr("xs2n.cli.report.run_latest_report", fake_run_latest_report)
+
+    latest(
+        since=None,
+        lookback_hours=24,
+        cookies_file=tmp_path / "cookies.json",
+        limit=120,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+        home_latest=typer.Option(True, "--home-latest"),
+        output_dir=tmp_path / "report_runs",
+        model="gpt-5.4-mini",
+        jsonl_events=typer.Option(True, "--jsonl-events"),
+    )
+
+    assert captured["home_latest"] is True
+    assert captured["emit_event"] is not None

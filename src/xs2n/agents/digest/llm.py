@@ -57,19 +57,6 @@ def _strict_json_schema(fragment: Any) -> Any:
     return normalized
 
 
-def _phase_name(schema: type[BaseModel]) -> str:
-    if schema.__name__ == "ThreadFilterResult":
-        return "filter_threads"
-    if schema.__name__ in {"IssueSelectionResult", "IssueWriteResult"}:
-        return "group_issues"
-    return "llm"
-
-
-def _item_id(payload: Any) -> str | None:
-    thread = payload.get("thread") if isinstance(payload, dict) else payload
-    return getattr(thread, "thread_id", None)
-
-
 class DigestLLM:
     def __init__(
         self,
@@ -117,6 +104,8 @@ class DigestLLM:
         prompt: str,
         payload: Any,
         schema: type[BaseModel],
+        phase_name: str,
+        item_id: str | None,
         started_at: datetime,
         finished_at: datetime,
         output_text: str | None,
@@ -133,8 +122,8 @@ class DigestLLM:
         call_id = self._next_call_id()
         trace = LLMCallTrace(
             call_id=call_id,
-            phase=_phase_name(schema),
-            item_id=_item_id(payload),
+            phase=phase_name,
+            item_id=item_id,
             schema_name=schema.__name__,
             model=self._model,
             credential_source=self._source,
@@ -173,6 +162,8 @@ class DigestLLM:
         payload: Any,
         schema: type[SchemaT],
         image_urls: list[str] | None = None,
+        phase_name: str = "llm",
+        item_id: str | None = None,
     ) -> SchemaT:
         started_at = datetime.now(timezone.utc)
         payload_json = json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2)
@@ -265,6 +256,8 @@ class DigestLLM:
             prompt=prompt,
             payload=payload,
             schema=schema,
+            phase_name=phase_name,
+            item_id=item_id,
             started_at=started_at,
             finished_at=finished_at,
             output_text=output_text,

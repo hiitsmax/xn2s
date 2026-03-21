@@ -56,6 +56,8 @@ class _FakeLLM:
         result=None,
         error: str | None = None,
         image_urls: list[str] | None = None,
+        phase_name: str | None = None,
+        item_id: str | None = None,
     ) -> None:  # noqa: ANN001, ANN201
         if self._trace_dir is None:
             return
@@ -65,8 +67,8 @@ class _FakeLLM:
         payload_doc = self._to_jsonable(payload)
         trace = {
             "call_id": call_id,
-            "phase": self._phase_name(schema_name),
-            "item_id": self._item_id(payload),
+            "phase": phase_name or self._phase_name(schema_name),
+            "item_id": item_id or self._item_id(payload),
             "schema_name": schema_name,
             "prompt": prompt,
             "payload": payload_doc,
@@ -96,7 +98,16 @@ class _FakeLLM:
             return [self._to_jsonable(item) for item in value]
         return value
 
-    def run(self, *, prompt, payload, schema, image_urls=None):  # noqa: ANN001, ANN201
+    def run(
+        self,
+        *,
+        prompt,
+        payload,
+        schema,
+        image_urls=None,
+        phase_name: str | None = None,
+        item_id: str | None = None,
+    ):  # noqa: ANN001, ANN201
         schema_name = schema.__name__
         image_urls = image_urls or []
         self.image_urls_by_schema_name.setdefault(schema_name, []).append(image_urls)
@@ -108,6 +119,8 @@ class _FakeLLM:
                 schema_name=schema_name,
                 error="synthetic failure",
                 image_urls=image_urls,
+                phase_name=phase_name,
+                item_id=item_id,
             )
             raise RuntimeError("synthetic failure")
 
@@ -128,6 +141,8 @@ class _FakeLLM:
                 schema_name=schema_name,
                 result=result,
                 image_urls=image_urls,
+                phase_name=phase_name,
+                item_id=item_id,
             )
             return schema.model_validate(result)
 
@@ -152,6 +167,8 @@ class _FakeLLM:
                 schema_name=schema_name,
                 result=result,
                 image_urls=image_urls,
+                phase_name=phase_name,
+                item_id=item_id,
             )
             return schema.model_validate(result)
 
@@ -183,6 +200,8 @@ class _FakeLLM:
                 schema_name=schema_name,
                 result=result,
                 image_urls=image_urls,
+                phase_name=phase_name,
+                item_id=item_id,
             )
             return schema.model_validate(result)
 
@@ -313,6 +332,44 @@ def test_virality_score_weights_multi_metric_signal() -> None:
     )
 
     assert _virality_score(high) > _virality_score(low)
+
+
+def test_agents_package_exports_only_active_report_entrypoints() -> None:
+    import xs2n.agents as agents_module
+    import xs2n.agents.digest as digest_module
+
+    assert "run_digest_report" not in agents_module.__all__
+    assert not hasattr(agents_module, "run_digest_report")
+    assert "run_digest_report" not in digest_module.__all__
+
+
+def test_digest_run_digest_report_warns_and_delegates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xs2n.agents.digest as digest_module
+
+    expected_result = object()
+    observed_kwargs: dict[str, object] = {}
+
+    def fake_run_issue_report(**kwargs):  # noqa: ANN003, ANN201
+        observed_kwargs.update(kwargs)
+        return expected_result
+
+    monkeypatch.setattr(digest_module, "run_issue_report", fake_run_issue_report)
+
+    with pytest.deprecated_call(
+        match="run_digest_report is deprecated; use run_issue_report",
+    ):
+        result = digest_module.run_digest_report(
+            timeline_file=Path("timeline.json"),
+            output_dir=Path("report_runs"),
+        )
+
+    assert result is expected_result
+    assert observed_kwargs == {
+        "timeline_file": Path("timeline.json"),
+        "output_dir": Path("report_runs"),
+    }
 
 
 def test_run_issue_report_writes_artifacts_and_issue_json(tmp_path: Path) -> None:

@@ -14,6 +14,36 @@ from xs2n.schemas.digest import (
 from ..helpers import compact_issue_summaries, filtered_thread_payload, slugify_issue
 
 
+def _resolve_selection(
+    *,
+    selection: IssueSelectionResult,
+    thread: FilteredThread,
+    current_issues: list[Issue],
+) -> IssueSelectionResult:
+    resolved_issue_slug = slugify_issue(
+        selection.issue_slug or thread.thread_id,
+        fallback=thread.thread_id,
+    )
+    current_issue_slugs = {issue.slug for issue in current_issues}
+    if selection.action == "update_existing_issue":
+        if resolved_issue_slug not in current_issue_slugs:
+            return IssueSelectionResult(
+                action="create_new_issue",
+                issue_slug=slugify_issue(thread.thread_id, fallback=thread.thread_id),
+                reasoning=selection.reasoning,
+            )
+        return IssueSelectionResult(
+            action=selection.action,
+            issue_slug=resolved_issue_slug,
+            reasoning=selection.reasoning,
+        )
+    return IssueSelectionResult(
+        action=selection.action,
+        issue_slug=resolved_issue_slug,
+        reasoning=selection.reasoning,
+    )
+
+
 def run(
     *,
     llm: Any,
@@ -38,18 +68,14 @@ def run(
             },
             schema=IssueSelectionResult,
             image_urls=thread.primary_tweet_media_urls,
+            phase_name="group_issues",
+            item_id=thread.thread_id,
         )
-
-        target_issue_slug = slugify_issue(
-            selection.issue_slug or thread.thread_id,
-            fallback=thread.thread_id,
+        selection = _resolve_selection(
+            selection=selection,
+            thread=thread,
+            current_issues=current_issues,
         )
-        if selection.action == "update_existing_issue" and not current_issues:
-            selection = IssueSelectionResult(
-                action="create_new_issue",
-                issue_slug=target_issue_slug,
-                reasoning=selection.reasoning,
-            )
 
         written_issue = llm.run(
             prompt=(
@@ -64,9 +90,14 @@ def run(
             },
             schema=IssueWriteResult,
             image_urls=thread.primary_tweet_media_urls,
+            phase_name="group_issues",
+            item_id=thread.thread_id,
         )
 
-        issue_slug = slugify_issue(written_issue.issue_slug, fallback=target_issue_slug)
+        issue_slug = slugify_issue(
+            written_issue.issue_slug,
+            fallback=selection.issue_slug or thread.thread_id,
+        )
         issue_thread = IssueThread(
             **thread.model_dump(),
             issue_slug=issue_slug,

@@ -73,7 +73,9 @@ def _emit_jsonl_event(event: RunEvent) -> None:
 
 
 def _resolve_bool_option(value: bool | OptionInfo) -> bool:
-    return False if isinstance(value, OptionInfo) else value
+    if isinstance(value, OptionInfo):
+        return bool(value.default)
+    return value
 
 
 @report_app.command("auth")
@@ -169,8 +171,8 @@ def issues(
     human_echo(f"Render later with: xs2n report html --run-dir {result.run_dir}")
 
 
-@report_app.command("render")
-def render(
+@report_app.command("html")
+def html_render(
     run_dir: Path = typer.Option(
         ...,
         "--run-dir",
@@ -187,8 +189,8 @@ def render(
     typer.echo(f"Rendered HTML digest to {html_path}.")
 
 
-@report_app.command("html")
-def html_render(
+@report_app.command("render", deprecated=True)
+def render(
     run_dir: Path = typer.Option(
         ...,
         "--run-dir",
@@ -199,10 +201,9 @@ def html_render(
         help="Existing run directory containing issues.json and issue_assignments.json.",
     ),
 ) -> None:
-    """Render one saved issue run into HTML."""
+    """Compatibility alias for `html`."""
 
-    html_path = _render_saved_issue_run_html(run_dir=run_dir)
-    typer.echo(f"Rendered HTML digest to {html_path}.")
+    html_render(run_dir=run_dir)
 
 
 @report_app.command("latest")
@@ -243,7 +244,10 @@ def latest(
     home_latest: bool = typer.Option(
         False,
         "--home-latest",
-        help="Use authenticated Home -> Following latest timeline instead of --from-sources.",
+        help=(
+            "Ingest the authenticated Home -> Following latest timeline "
+            "instead of crawling source handles from --sources-file."
+        ),
     ),
     output_dir: Path = typer.Option(
         DEFAULT_REPORT_RUNS_PATH,
@@ -266,6 +270,8 @@ def latest(
 ) -> None:
     """Ingest latest timeline data, build issues, and render HTML."""
 
+    resolved_home_latest = _resolve_bool_option(home_latest)
+    resolved_jsonl_events = _resolve_bool_option(jsonl_events)
     arguments = LatestRunArguments(
         since=since,
         lookback_hours=lookback_hours,
@@ -273,13 +279,12 @@ def latest(
         limit=limit,
         timeline_file=timeline_file,
         sources_file=sources_file,
-        home_latest=home_latest,
+        home_latest=resolved_home_latest,
         output_dir=output_dir,
         model=model,
     )
 
     try:
-        resolved_jsonl_events = _resolve_bool_option(jsonl_events)
         human_echo = _build_human_echo(jsonl_events=resolved_jsonl_events)
         run_latest_report(
             arguments,

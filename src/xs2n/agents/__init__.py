@@ -8,7 +8,6 @@ from .digest import (
     DigestLLM,
     IssueReportRunResult,
     render_issue_digest_html,
-    run_digest_report,
     run_issue_report,
 )
 
@@ -20,6 +19,5 @@ __all__ = [
     "DigestLLM",
     "IssueReportRunResult",
     "render_issue_digest_html",
-    "run_digest_report",
     "run_issue_report",
 ]

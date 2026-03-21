@@ -93,35 +93,9 @@ class ThreadInput(BaseModel):
         return [media.media_url for media in self.primary_tweet.media if media.media_url]
 
 
-class CategorizationResult(BaseModel):
-    category: str
-    subcategory: str | None = None
-    editorial_angle: str | None = None
-    reasoning: str
-
-
-class CategorizedThread(BaseModel):
-    thread_id: str
-    conversation_id: str
-    account_handle: str
-    tweets: list[TimelineRecord]
-    source_tweet_ids: list[str]
-    context_tweet_ids: list[str]
-    latest_created_at: datetime
-    primary_tweet_id: str
-    primary_tweet: TimelineRecord
-    category: str
-    subcategory: str | None = None
-    editorial_angle: str | None = None
-    reasoning: str = ""
-
-
 class ThreadFilterResult(BaseModel):
     keep: bool
     filter_reason: str
-
-
-FilterResult = ThreadFilterResult
 
 
 class FilteredThread(BaseModel):
@@ -146,48 +120,10 @@ class FilteredThread(BaseModel):
         return ThreadInput(**self.model_dump()).primary_tweet_media_urls
 
 
-class ThreadProcessResult(BaseModel):
-    headline: str
-    main_claim: str
-    why_it_matters: str
-    key_entities: list[str] = Field(default_factory=list)
-    disagreement_present: bool = False
-    disagreement_summary: str | None = None
-    novelty_label: str | None = None
-    signal_score: int = 0
-
-
-class ProcessedThread(BaseModel):
-    thread_id: str
-    conversation_id: str
-    account_handle: str
-    tweets: list[TimelineRecord]
-    source_tweet_ids: list[str]
-    context_tweet_ids: list[str]
-    latest_created_at: datetime
-    primary_tweet_id: str
-    primary_tweet: TimelineRecord
-    keep: bool
-    filter_reason: str
-    headline: str
-    main_claim: str
-    why_it_matters: str
-    key_entities: list[str] = Field(default_factory=list)
-    disagreement_present: bool = False
-    disagreement_summary: str | None = None
-    novelty_label: str | None = None
-    signal_score: int = 0
-    virality_score: float = 0.0
-    source_urls: list[str] = Field(default_factory=list)
-
-
 class IssueSelectionResult(BaseModel):
     action: Literal["create_new_issue", "update_existing_issue"]
     issue_slug: str | None = None
     reasoning: str
-
-
-IssueAssignmentResult = IssueSelectionResult
 
 
 class IssueWriteResult(BaseModel):
@@ -274,6 +210,3 @@ class IssueReportRunResult:
     thread_count: int
     kept_count: int
     issue_count: int
-
-
-DigestRunResult = IssueReportRunResult
