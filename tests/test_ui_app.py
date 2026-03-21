@@ -252,13 +252,11 @@ def test_drain_idle_work_applies_streamed_run_events() -> None:
 
     browser.command_progress_updates = Queue()
     browser.command_results = Queue()
-    browser.viewer_render_results = Queue()
     browser.running_command = None
     browser.running_run_id = None
     browser.selected_run_id = None
     browser.status_output = FakeStatusOutput()
     browser.refresh_runs = lambda: refresh_calls.append("refresh")
-    browser._drain_pending_viewer_render = lambda: None
     browser._sync_run_list_layout = lambda force=False: None
 
     browser.command_progress_updates.put(
@@ -299,13 +297,11 @@ def test_drain_idle_work_keeps_user_selection_while_tracking_running_run_id(
 
     browser.command_progress_updates = Queue()
     browser.command_results = Queue()
-    browser.viewer_render_results = Queue()
     browser.running_command = None
     browser.running_run_id = "20260319T101000Z"
     browser.selected_run_id = "20260318T083000Z"
     browser.status_output = FakeStatusOutput()
     browser.refresh_runs = lambda: refresh_calls.append("refresh")
-    browser._drain_pending_viewer_render = lambda: None
     browser._sync_run_list_layout = lambda force=False: None
 
     browser.command_progress_updates.put(
@@ -360,7 +356,6 @@ def test_start_command_streams_jsonl_events_with_popen(monkeypatch) -> None:
     browser.command_progress_updates = Queue()
     browser.command_results = Queue()
     browser.status_output = FakeStatusOutput()
-    browser._clear_artifact_viewer_state = lambda: None
     browser._set_viewer_html = lambda html: viewer_html.append(html)
     browser._current_theme = lambda: app.CLASSIC_LIGHT_THEME
     browser._wake_ui = lambda: None
@@ -415,244 +410,6 @@ def test_start_command_streams_jsonl_events_with_popen(monkeypatch) -> None:
     assert "artifact_written" in result.stdout
     assert "human log" in result.stderr
     assert viewer_html
-
-
-def test_apply_selected_artifact_name_syncs_sections_and_raw_files(
-    monkeypatch,
-) -> None:
-    class FakeBrowser:
-        def __init__(self) -> None:
-            self.selection = 0
-
-        def value(self, selection: int | None = None) -> int:
-            if selection is None:
-                return self.selection
-            self.selection = selection
-            return self.selection
-
-    class FakeViewer:
-        def __init__(self) -> None:
-            self.html = ""
-            self.top = None
-            self.left = None
-
-        def value(self, html: str) -> None:
-            self.html = html
-
-        def topline(self, line: int) -> None:
-            self.top = line
-
-        def leftline(self, line: int) -> None:
-            self.left = line
-
-    class FakeStatus:
-        def __init__(self) -> None:
-            self.text = ""
-
-        def value(self, text: str) -> None:
-            self.text = text
-
-    browser = object.__new__(app.ArtifactBrowserWindow)
-    browser.artifacts = [
-        ArtifactRecord(
-            name="digest.md",
-            path=app.Path("digest.md"),
-            kind="markdown",
-            exists=True,
-        ),
-        ArtifactRecord(
-            name="run.json",
-            path=app.Path("run.json"),
-            kind="json",
-            exists=True,
-        ),
-        ArtifactRecord(
-            name="llm_calls/001_trace.json",
-            path=app.Path("llm_calls/001_trace.json"),
-            kind="json",
-            exists=True,
-        ),
-    ]
-    browser.sections = [
-        ArtifactSectionRecord(
-            icon="◆",
-            label="Digest",
-            artifact_name="digest.md",
-        ),
-        ArtifactSectionRecord(
-            icon="▣",
-            label="Run metadata",
-            artifact_name="run.json",
-        ),
-    ]
-    browser.sections_browser = FakeBrowser()
-    browser.raw_files_browser = FakeBrowser()
-    browser.viewer = FakeViewer()
-    browser.status_output = FakeStatus()
-    browser.viewer_render_results = Queue()
-    browser.selected_artifact_name = None
-    browser.pending_viewer_request_id = 0
-    scheduled_artifacts: list[str] = []
-
-    browser._schedule_artifact_preview_render = lambda artifact: (
-        scheduled_artifacts.append(artifact.name),
-        setattr(
-            browser,
-            "pending_viewer_request_id",
-            browser.pending_viewer_request_id + 1,
-        ),
-    )
-    monkeypatch.setattr(
-        app,
-        "render_loading_artifact_html",
-        lambda artifact, *, theme=None: f"<loading>{artifact.name}</loading>",
-    )
-
-    app.ArtifactBrowserWindow._apply_selected_artifact_name(
-        browser,
-        "run.json",
-    )
-
-    assert browser.selected_artifact_name == "run.json"
-    assert browser.sections_browser.selection == 2
-    assert browser.raw_files_browser.selection == 2
-    assert browser.viewer.html == "<loading>run.json</loading>"
-    assert browser.viewer.top == 0
-    assert browser.viewer.left == 0
-    assert browser.status_output.text == "Loading run.json..."
-    assert scheduled_artifacts == ["run.json"]
-
-    app.ArtifactBrowserWindow._apply_selected_artifact_name(
-        browser,
-        "llm_calls/001_trace.json",
-    )
-
-    assert browser.sections_browser.selection == 0
-    assert browser.raw_files_browser.selection == 3
-    assert scheduled_artifacts == ["run.json", "llm_calls/001_trace.json"]
-
-
-def test_drain_pending_viewer_render_uses_latest_completed_result(
-) -> None:
-    class FakeViewer:
-        def __init__(self) -> None:
-            self.html = ""
-            self.top = None
-            self.left = None
-
-        def value(self, html: str) -> None:
-            self.html = html
-
-        def topline(self, line: int) -> None:
-            self.top = line
-
-        def leftline(self, line: int) -> None:
-            self.left = line
-
-    class FakeStatus:
-        def __init__(self) -> None:
-            self.text = ""
-
-        def value(self, text: str) -> None:
-            self.text = text
-
-    browser = object.__new__(app.ArtifactBrowserWindow)
-    browser.viewer = FakeViewer()
-    browser.status_output = FakeStatus()
-    browser.viewer_render_results = Queue()
-    browser.selected_artifact_name = "run.json"
-    browser.pending_viewer_request_id = 2
-    browser.viewer_render_results.put(
-        app.ViewerRenderResult(
-            request_id=1,
-            artifact_name="digest.md",
-            html="<html>digest.md</html>",
-            status_text="Viewing digest.md.",
-        )
-    )
-    browser.viewer_render_results.put(
-        app.ViewerRenderResult(
-            request_id=2,
-            artifact_name="run.json",
-            html="<html>run.json</html>",
-            status_text="Viewing run.json.",
-        )
-    )
-
-    app.ArtifactBrowserWindow._drain_pending_viewer_render(browser)
-
-    assert browser.status_output.text == "Viewing run.json."
-    assert browser.viewer.html == "<html>run.json</html>"
-
-
-def test_viewer_render_future_done_queues_result_and_wakes_ui(
-    monkeypatch,
-) -> None:
-    browser = object.__new__(app.ArtifactBrowserWindow)
-    browser.viewer_render_results = Queue()
-    awake_calls: list[str] = []
-    result = app.ViewerRenderResult(
-        request_id=1,
-        artifact_name="run.json",
-        html="<html>run.json</html>",
-        status_text="Viewing run.json.",
-    )
-
-    monkeypatch.setattr(
-        app,
-        "fltk",
-        SimpleNamespace(
-            Fl=SimpleNamespace(awake=lambda: awake_calls.append("awake"))
-        ),
-    )
-
-    future = SimpleNamespace(
-        cancelled=lambda: False,
-        result=lambda: result,
-    )
-
-    app.ArtifactBrowserWindow._on_viewer_render_future_done(
-        browser,
-        future,
-    )
-
-    queued_result = browser.viewer_render_results.get_nowait()
-    assert queued_result == result
-    assert awake_calls == ["awake"]
-
-
-def test_viewer_render_future_error_keeps_original_request_identity(
-    monkeypatch,
-) -> None:
-    browser = object.__new__(app.ArtifactBrowserWindow)
-    browser.viewer_render_results = Queue()
-    browser.pending_viewer_request_id = 2
-    browser.selected_artifact_name = "run.json"
-
-    monkeypatch.setattr(
-        app,
-        "fltk",
-        SimpleNamespace(
-            Fl=SimpleNamespace(awake=lambda: None)
-        ),
-    )
-
-    future = SimpleNamespace(
-        request_id=1,
-        artifact_name="digest.md",
-        cancelled=lambda: False,
-        result=lambda: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
-
-    app.ArtifactBrowserWindow._on_viewer_render_future_done(
-        browser,
-        future,
-    )
-
-    queued_result = browser.viewer_render_results.get_nowait()
-    assert queued_result.request_id == 1
-    assert queued_result.artifact_name == "digest.md"
-    assert queued_result.status_text == "Failed to render digest.md."
 
 
 def test_run_list_preferences_change_refreshes_rows_and_layout() -> None:

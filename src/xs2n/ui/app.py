@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,7 +60,6 @@ from xs2n.ui.theme import (
 )
 from xs2n.ui.viewer import (
     render_artifact_html,
-    render_loading_artifact_html,
     render_plain_text_html,
 )
 
@@ -162,14 +160,6 @@ class RunningCommandState:
         return worker_thread is not None and worker_thread.is_alive()
 
 
-@dataclass(slots=True)
-class ViewerRenderResult:
-    request_id: int
-    artifact_name: str
-    html: str
-    status_text: str
-
-
 class ArtifactBrowserWindow:
     def __init__(
         self,
@@ -193,18 +183,11 @@ class ArtifactBrowserWindow:
         self.cli_executable = self._resolve_cli_executable()
         self.command_progress_updates: Queue[CommandProgress] = Queue()
         self.command_results: Queue[CommandResult] = Queue()
-        self.viewer_render_results: Queue[ViewerRenderResult] = Queue()
         self.run_list_header_boxes: list[object] = []
         self.run_list_layout_signature: tuple[int, tuple[str, ...]] | None = None
         self.artifact_cache: dict[
             str, tuple[list[ArtifactRecord], list[ArtifactSectionRecord]]
         ] = {}
-        self.pending_viewer_request_id = 0
-        self.viewer_render_future: Future[ViewerRenderResult] | None = None
-        self.viewer_render_executor = ThreadPoolExecutor(
-            max_workers=1,
-            thread_name_prefix="xs2n-ui-preview",
-        )
         self.preferences_window = RunPreferencesWindow(
             appearance_mode=self.appearance_mode,
             digest_navigation_visible=self.digest_navigation_visible,
@@ -503,7 +486,6 @@ class ArtifactBrowserWindow:
         if not self.runs:
             self.selected_run_id = None
             self.selected_artifact_name = None
-            self._clear_artifact_viewer_state()
             self.artifacts = []
             self.sections = []
             self._set_run_browser_selection(
@@ -892,7 +874,6 @@ class ArtifactBrowserWindow:
 
         if not self.artifacts:
             self.selected_artifact_name = None
-            self._clear_artifact_viewer_state()
             self.sections_browser.value(0)
             self.raw_files_browser.value(0)
             self._set_viewer_html(
@@ -973,125 +954,24 @@ class ArtifactBrowserWindow:
             and digest_viewer is not None
             and digest_viewer.load_run(artifact.path.parent)
         ):
-            self._clear_artifact_viewer_state()
             self._show_digest_viewer()
             self._sync_digest_navigation_layout()
             self.status_output.value("Viewing digest overview.")
             return
 
         try:
-            loading_html = render_loading_artifact_html(
-                artifact,
-                theme=self._current_theme(),
-            )
-        except TypeError:
-            loading_html = render_loading_artifact_html(artifact)
-        self._set_viewer_html(loading_html)
-        self.status_output.value(f"Loading {artifact.name}...")
-        self._schedule_artifact_preview_render(artifact)
-
-    def _clear_artifact_viewer_state(self) -> None:
-        self.pending_viewer_request_id = getattr(
-            self,
-            "pending_viewer_request_id",
-            0,
-        ) + 1
-        future = getattr(self, "viewer_render_future", None)
-        if future is not None and not future.done():
-            future.cancel()
-
-    def _drain_pending_viewer_render(self) -> None:
-        latest_result: ViewerRenderResult | None = None
-        while True:
-            try:
-                result = self.viewer_render_results.get_nowait()
-            except Empty:
-                break
-
-            if result.request_id != self.pending_viewer_request_id:
-                continue
-            if self.selected_artifact_name != result.artifact_name:
-                continue
-            latest_result = result
-
-        if latest_result is None:
-            return
-
-        self._set_viewer_html(latest_result.html)
-        if self.selected_artifact_name == latest_result.artifact_name:
-            self.status_output.value(latest_result.status_text)
-
-    def _schedule_artifact_preview_render(self, artifact: ArtifactRecord) -> None:
-        self.pending_viewer_request_id += 1
-        request_id = self.pending_viewer_request_id
-        future = self.viewer_render_future
-        if future is not None and not future.done():
-            future.cancel()
-        self.viewer_render_future = self.viewer_render_executor.submit(
-            self._build_viewer_render_result,
-            request_id=request_id,
-            artifact=artifact,
-            theme=self._current_theme(),
-        )
-        self.viewer_render_future.request_id = request_id  # type: ignore[attr-defined]
-        self.viewer_render_future.artifact_name = artifact.name  # type: ignore[attr-defined]
-        self.viewer_render_future.add_done_callback(
-            self._on_viewer_render_future_done
-        )
-
-    @staticmethod
-    def _build_viewer_render_result(
-        *,
-        request_id: int,
-        artifact: ArtifactRecord,
-        theme: UiTheme,
-    ) -> ViewerRenderResult:
-        try:
-            html = render_artifact_html(artifact, theme=theme)
+            html = render_artifact_html(artifact, theme=self._current_theme())
             status_text = f"Viewing {artifact.name}."
         except Exception as error:
             html = render_plain_text_html(
                 title=f"Failed to render {artifact.name}",
                 body=f"{error.__class__.__name__}: {error}\n",
                 metadata={"path": str(artifact.path)},
-                theme=theme,
+                theme=self._current_theme(),
             )
             status_text = f"Failed to render {artifact.name}."
-        return ViewerRenderResult(
-            request_id=request_id,
-            artifact_name=artifact.name,
-            html=html,
-            status_text=status_text,
-        )
-
-    def _on_viewer_render_future_done(self, future: Future[ViewerRenderResult]) -> None:
-        if future.cancelled():
-            return
-        try:
-            result = future.result()
-        except Exception as error:
-            request_id = getattr(
-                future,
-                "request_id",
-                self.pending_viewer_request_id,
-            )
-            artifact_name = getattr(
-                future,
-                "artifact_name",
-                self.selected_artifact_name or "unknown",
-            )
-            result = ViewerRenderResult(
-                request_id=request_id,
-                artifact_name=artifact_name,
-                html=render_plain_text_html(
-                    title=f"Failed to render {artifact_name}",
-                    body=f"{error.__class__.__name__}: {error}\n",
-                    theme=self._current_theme(),
-                ),
-                status_text=f"Failed to render {artifact_name}.",
-            )
-        self.viewer_render_results.put(result)
-        self._wake_ui()
+        self._set_viewer_html(html)
+        self.status_output.value(status_text)
 
     @staticmethod
     def _wake_ui() -> None:
@@ -1120,7 +1000,6 @@ class ArtifactBrowserWindow:
         command = [self.cli_executable, *args]
         running_command = RunningCommandState(label=label, command=command)
         self.running_command = running_command
-        self._clear_artifact_viewer_state()
         if starting_status is not None:
             self.status_output.value(starting_status)
         elif show_transcript:
@@ -1288,7 +1167,6 @@ class ArtifactBrowserWindow:
                 self.running_run_id = None
 
             if result.show_transcript:
-                self._clear_artifact_viewer_state()
                 self._set_viewer_html(
                     render_plain_text_html(
                         title=result.label,
@@ -1314,8 +1192,6 @@ class ArtifactBrowserWindow:
 
         if self.runs_refresh_pending:
             self.refresh_runs()
-
-        self._drain_pending_viewer_render()
         self._sync_run_list_layout()
 
     def _on_refresh_clicked(self, widget=None, data=None) -> None:  # noqa: ANN001
@@ -1599,9 +1475,6 @@ class ArtifactBrowserWindow:
             return
 
         self._terminate_running_command()
-        executor = getattr(self, "viewer_render_executor", None)
-        if executor is not None:
-            executor.shutdown(wait=False, cancel_futures=True)
         self.preferences_window.hide()
         auth_window = getattr(self, "auth_window", None)
         if auth_window is not None:

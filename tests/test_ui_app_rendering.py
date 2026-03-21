@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from queue import Queue
 from types import SimpleNamespace
 
 import pytest
@@ -201,23 +200,11 @@ def test_apply_selected_artifact_name_schedules_preview_render(
     browser.raw_files_browser = FakeBrowser()
     browser.viewer = FakeViewer()
     browser.status_output = FakeStatus()
-    browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_request_id = 0
-    scheduled_artifacts: list[str] = []
-
-    browser._schedule_artifact_preview_render = lambda artifact: (
-        scheduled_artifacts.append(artifact.name),
-        setattr(
-            browser,
-            "pending_viewer_request_id",
-            browser.pending_viewer_request_id + 1,
-        ),
-    )
     monkeypatch.setattr(
         app,
-        "render_loading_artifact_html",
-        lambda artifact: f"<loading>{artifact.name}</loading>",
+        "render_artifact_html",
+        lambda artifact, *, theme=None: f"<rendered>{artifact.name}</rendered>",
     )
 
     app.ArtifactBrowserWindow._apply_selected_artifact_name(browser, "run.json")
@@ -225,11 +212,10 @@ def test_apply_selected_artifact_name_schedules_preview_render(
     assert browser.selected_artifact_name == "run.json"
     assert browser.sections_browser.selection == 2
     assert browser.raw_files_browser.selection == 2
-    assert browser.viewer.html == "<loading>run.json</loading>"
+    assert browser.viewer.html == "<rendered>run.json</rendered>"
     assert browser.viewer.top == 0
     assert browser.viewer.left == 0
-    assert browser.status_output.text == "Loading run.json..."
-    assert scheduled_artifacts == ["run.json"]
+    assert browser.status_output.text == "Viewing run.json."
 
 
 def test_apply_selected_artifact_name_routes_digest_html_to_native_viewer() -> None:
@@ -259,13 +245,7 @@ def test_apply_selected_artifact_name_routes_digest_html_to_native_viewer() -> N
     browser.focus_mode_enabled = False
     browser.digest_navigation_visible = False
     browser.status_output = FakeStatus()
-    browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_request_id = 0
-    browser.viewer_render_future = None
-    browser._schedule_artifact_preview_render = lambda artifact: (_ for _ in ()).throw(
-        AssertionError("digest viewer should not schedule generic preview render")
-    )
 
     app.ArtifactBrowserWindow._apply_selected_artifact_name(browser, "digest.html")
 
@@ -298,10 +278,7 @@ def test_apply_selected_artifact_name_keeps_navigation_when_preference_enabled()
     browser.focus_mode_enabled = False
     browser.digest_navigation_visible = True
     browser.status_output = FakeStatus()
-    browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_request_id = 0
-    browser.viewer_render_future = None
 
     app.ArtifactBrowserWindow._apply_selected_artifact_name(browser, "digest.html")
 
@@ -332,23 +309,11 @@ def test_apply_selected_artifact_name_falls_back_when_digest_viewer_cannot_load(
     browser.focus_mode_enabled = False
     browser.digest_navigation_visible = False
     browser.status_output = FakeStatus()
-    browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_request_id = 0
-    browser.viewer_render_future = None
-    scheduled_artifacts: list[str] = []
-    browser._schedule_artifact_preview_render = lambda artifact: (
-        scheduled_artifacts.append(artifact.name),
-        setattr(
-            browser,
-            "pending_viewer_request_id",
-            browser.pending_viewer_request_id + 1,
-        ),
-    )
     monkeypatch.setattr(
         app,
-        "render_loading_artifact_html",
-        lambda artifact: f"<loading>{artifact.name}</loading>",
+        "render_artifact_html",
+        lambda artifact, *, theme=None: f"<rendered>{artifact.name}</rendered>",
     )
 
     app.ArtifactBrowserWindow._apply_selected_artifact_name(browser, "digest.html")
@@ -356,68 +321,5 @@ def test_apply_selected_artifact_name_falls_back_when_digest_viewer_cannot_load(
     assert browser.digest_viewer.loaded_run_dirs == [app.Path("data/report_runs/demo")]
     assert browser.viewer.visible is True
     assert browser.digest_viewer.visible is False
-    assert browser.viewer.html == "<loading>digest.html</loading>"
-    assert scheduled_artifacts == ["digest.html"]
-
-
-def test_drain_pending_viewer_render_uses_latest_completed_result() -> None:
-    browser = object.__new__(app.ArtifactBrowserWindow)
-    browser.viewer = FakeViewer()
-    browser.status_output = FakeStatus()
-    browser.viewer_render_results = Queue()
-    browser.selected_artifact_name = "run.json"
-    browser.pending_viewer_request_id = 2
-    browser.viewer_render_results.put(
-        app.ViewerRenderResult(
-            request_id=1,
-            artifact_name="digest.md",
-            html="<html>digest.md</html>",
-            status_text="Viewing digest.md.",
-        )
-    )
-    browser.viewer_render_results.put(
-        app.ViewerRenderResult(
-            request_id=2,
-            artifact_name="run.json",
-            html="<html>run.json</html>",
-            status_text="Viewing run.json.",
-        )
-    )
-
-    app.ArtifactBrowserWindow._drain_pending_viewer_render(browser)
-
-    assert browser.status_output.text == "Viewing run.json."
-    assert browser.viewer.html == "<html>run.json</html>"
-
-
-def test_viewer_render_future_done_queues_result_and_wakes_ui(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    browser = object.__new__(app.ArtifactBrowserWindow)
-    browser.viewer_render_results = Queue()
-    awake_calls: list[str] = []
-    result = app.ViewerRenderResult(
-        request_id=1,
-        artifact_name="run.json",
-        html="<html>run.json</html>",
-        status_text="Viewing run.json.",
-    )
-
-    monkeypatch.setattr(
-        app,
-        "fltk",
-        SimpleNamespace(
-            Fl=SimpleNamespace(awake=lambda: awake_calls.append("awake"))
-        ),
-    )
-
-    future = SimpleNamespace(
-        cancelled=lambda: False,
-        result=lambda: result,
-    )
-
-    app.ArtifactBrowserWindow._on_viewer_render_future_done(browser, future)
-
-    queued_result = browser.viewer_render_results.get_nowait()
-    assert queued_result == result
-    assert awake_calls == ["awake"]
+    assert browser.viewer.html == "<rendered>digest.html</rendered>"
+    assert browser.status_output.text == "Viewing digest.html."
