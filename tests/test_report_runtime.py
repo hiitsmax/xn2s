@@ -5,8 +5,62 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from xs2n.report_runtime import LatestRunArguments, run_latest_report
+from xs2n.report_runtime import (
+    IssuesRunArguments,
+    LatestRunArguments,
+    run_latest_report,
+)
 from xs2n.schemas.run_events import RunEvent
+
+
+def test_issues_run_arguments_match_report_issues_cli_contract() -> None:
+    arguments = IssuesRunArguments.from_form(
+        timeline_file="",
+        output_dir="",
+        model="",
+    )
+
+    assert arguments.to_cli_args() == [
+        "report",
+        "issues",
+        "--timeline-file",
+        "data/timeline.json",
+        "--output-dir",
+        "data/report_runs",
+        "--model",
+        "gpt-5.4-mini",
+    ]
+    assert arguments.to_command().label == "report issues"
+
+
+def test_latest_run_arguments_drop_dead_storage_fields() -> None:
+    arguments = LatestRunArguments.from_form(
+        since="2026-03-18T00:00:00Z",
+        lookback_hours="24",
+        cookies_file="cookies.json",
+        limit="100",
+        timeline_file="data/timeline.json",
+        sources_file="data/sources.json",
+        home_latest=False,
+        output_dir="data/report_runs",
+        taxonomy_file="docs/codex/report_taxonomy.json",
+        model="gpt-5.4-mini",
+        parallel_workers="3",
+    )
+
+    assert arguments.to_storage_doc() == {
+        "since": "2026-03-18T00:00:00Z",
+        "lookback_hours": 24,
+        "cookies_file": "cookies.json",
+        "limit": 100,
+        "timeline_file": "data/timeline.json",
+        "sources_file": "data/sources.json",
+        "home_latest": False,
+        "output_dir": "data/report_runs",
+        "model": "gpt-5.4-mini",
+    }
+    assert "--taxonomy-file" not in arguments.to_cli_args()
+    assert "--parallel-workers" not in arguments.to_cli_args()
 
 
 def test_run_latest_report_runs_timeline_then_windowed_issues_then_render(
@@ -58,9 +112,7 @@ def test_run_latest_report_runs_timeline_then_windowed_issues_then_render(
         sources_file=tmp_path / "sources.json",
         home_latest=True,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
-        parallel_workers=5,
     )
 
     result = run_latest_report(
@@ -142,7 +194,6 @@ def test_run_latest_report_emits_progress_events(
         timeline_file=tmp_path / "timeline.json",
         sources_file=tmp_path / "sources.json",
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4-mini",
     )
 

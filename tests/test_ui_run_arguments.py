@@ -8,6 +8,7 @@ from xs2n.ui.run_arguments import (
     DEFAULT_COOKIES_PATH,
     IssuesRunArguments,
     LatestRunArguments,
+    __all__ as run_arguments_exports,
 )
 
 
@@ -39,6 +40,10 @@ def test_digest_run_arguments_reject_invalid_parallel_workers() -> None:
     )
 
     assert arguments.model == "gpt-5.4-mini"
+
+
+def test_ui_run_arguments_exports_only_honest_issue_surface() -> None:
+    assert "DigestRunArguments" not in run_arguments_exports
 
 
 def test_latest_run_arguments_omit_blank_optional_since() -> None:

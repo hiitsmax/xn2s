@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -10,9 +10,7 @@ import typer
 
 from xs2n.agents import (
     DEFAULT_REPORT_MODEL,
-    DEFAULT_REPORT_PARALLEL_WORKERS,
     DEFAULT_REPORT_RUNS_PATH,
-    DEFAULT_TAXONOMY_PATH,
 )
 from xs2n.cli.timeline import parse_since_datetime, run_timeline_ingestion
 from xs2n.profile.timeline import DEFAULT_IMPORT_TIMELINE
@@ -40,12 +38,10 @@ class LatestReportResult:
 
 
 @dataclass(slots=True)
-class DigestRunArguments:
+class IssuesRunArguments:
     timeline_file: Path = DEFAULT_TIMELINE_PATH
     output_dir: Path = DEFAULT_REPORT_RUNS_PATH
-    taxonomy_file: Path = DEFAULT_TAXONOMY_PATH
     model: str = DEFAULT_REPORT_MODEL
-    parallel_workers: int = DEFAULT_REPORT_PARALLEL_WORKERS
 
     @classmethod
     def from_form(
@@ -53,10 +49,8 @@ class DigestRunArguments:
         *,
         timeline_file: str | Path | None,
         output_dir: str | Path | None,
-        taxonomy_file: str | Path | None,
         model: str | None,
-        parallel_workers: str | int | None,
-    ) -> DigestRunArguments:
+    ) -> IssuesRunArguments:
         return cls(
             timeline_file=_coerce_path(
                 timeline_file,
@@ -66,36 +60,23 @@ class DigestRunArguments:
                 output_dir,
                 default=DEFAULT_REPORT_RUNS_PATH,
             ),
-            taxonomy_file=_coerce_path(
-                taxonomy_file,
-                default=DEFAULT_TAXONOMY_PATH,
-            ),
             model=_coerce_text(model, default=DEFAULT_REPORT_MODEL),
-            parallel_workers=_coerce_positive_int(
-                parallel_workers,
-                default=DEFAULT_REPORT_PARALLEL_WORKERS,
-                field_name="Parallel workers",
-            ),
         )
 
     def to_cli_args(self) -> list[str]:
         return [
             "report",
-            "digest",
+            "issues",
             "--timeline-file",
             str(self.timeline_file),
             "--output-dir",
             str(self.output_dir),
-            "--taxonomy-file",
-            str(self.taxonomy_file),
             "--model",
             self.model,
-            "--parallel-workers",
-            str(self.parallel_workers),
         ]
 
     def to_command(self) -> RunCommand:
-        return RunCommand(label="report digest", args=self.to_cli_args())
+        return RunCommand(label="report issues", args=self.to_cli_args())
 
 
 @dataclass(slots=True)
@@ -108,9 +89,9 @@ class LatestRunArguments:
     sources_file: Path = DEFAULT_SOURCES_PATH
     home_latest: bool = False
     output_dir: Path = DEFAULT_REPORT_RUNS_PATH
-    taxonomy_file: Path = DEFAULT_TAXONOMY_PATH
     model: str = DEFAULT_REPORT_MODEL
-    parallel_workers: int = DEFAULT_REPORT_PARALLEL_WORKERS
+    taxonomy_file: InitVar[str | Path | None] = None
+    parallel_workers: InitVar[str | int | None] = None
 
     @classmethod
     def from_form(
@@ -124,9 +105,9 @@ class LatestRunArguments:
         sources_file: str | Path | None,
         home_latest: bool,
         output_dir: str | Path | None,
-        taxonomy_file: str | Path | None,
         model: str | None,
-        parallel_workers: str | int | None,
+        taxonomy_file: str | Path | None = None,
+        parallel_workers: str | int | None = None,
     ) -> LatestRunArguments:
         normalized_since = _coerce_optional_text(since)
         return cls(
@@ -158,16 +139,7 @@ class LatestRunArguments:
                 output_dir,
                 default=DEFAULT_REPORT_RUNS_PATH,
             ),
-            taxonomy_file=_coerce_path(
-                taxonomy_file,
-                default=DEFAULT_TAXONOMY_PATH,
-            ),
             model=_coerce_text(model, default=DEFAULT_REPORT_MODEL),
-            parallel_workers=_coerce_positive_int(
-                parallel_workers,
-                default=DEFAULT_REPORT_PARALLEL_WORKERS,
-                field_name="Parallel workers",
-            ),
         )
 
     def to_cli_args(self) -> list[str]:
@@ -186,12 +158,8 @@ class LatestRunArguments:
             str(self.sources_file),
             "--output-dir",
             str(self.output_dir),
-            "--taxonomy-file",
-            str(self.taxonomy_file),
             "--model",
             self.model,
-            "--parallel-workers",
-            str(self.parallel_workers),
         ]
         if self.since is not None:
             args.extend(["--since", self.since])
@@ -225,9 +193,7 @@ class LatestRunArguments:
             "sources_file": str(self.sources_file),
             "home_latest": self.home_latest,
             "output_dir": str(self.output_dir),
-            "taxonomy_file": str(self.taxonomy_file),
             "model": self.model,
-            "parallel_workers": self.parallel_workers,
         }
 
     @classmethod
@@ -241,11 +207,7 @@ class LatestRunArguments:
             sources_file=Path(str(doc.get("sources_file", DEFAULT_SOURCES_PATH))),
             home_latest=bool(doc.get("home_latest", False)),
             output_dir=Path(str(doc.get("output_dir", DEFAULT_REPORT_RUNS_PATH))),
-            taxonomy_file=Path(str(doc.get("taxonomy_file", DEFAULT_TAXONOMY_PATH))),
             model=str(doc.get("model", DEFAULT_REPORT_MODEL)),
-            parallel_workers=int(
-                doc.get("parallel_workers", DEFAULT_REPORT_PARALLEL_WORKERS)
-            ),
         )
 
 
