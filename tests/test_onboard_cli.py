@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import typer
 
 from xs2n.cli.onboard import onboard
 from xs2n.profile.following import (
@@ -131,3 +132,24 @@ def test_onboard_refresh_following_allows_empty_following_result(
         ("Refreshed source catalog from the authenticated account's following list.", False),
         ("Stored 0 profiles in the sources catalog.", False),
     ]
+
+
+def test_onboard_rejects_dead_wizard_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "xs2n.cli.onboard.process_paste_parameters",
+        lambda parameters: (OnboardResult(added=0, skipped_duplicates=0, invalid=[]), []),
+    )
+
+    with pytest.raises(typer.BadParameter, match="--wizard"):
+        onboard(
+            paste=True,
+            from_following=None,
+            wizard=True,
+            refresh_following=False,
+            cookies_file=tmp_path / "cookies.json",
+            limit=DEFAULT_IMPORT_FOLLOWING_HANDLES,
+            sources_file=tmp_path / "sources.json",
+        )

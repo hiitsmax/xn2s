@@ -8,10 +8,12 @@ from typing import Any
 import typer
 from twikit.errors import Forbidden, TooManyRequests, UserNotFound
 
-from xs2n.cli.helpers import normalize_following_account
-from xs2n.cli.onboard import bootstrap_cookies_from_local_browser_with_choice
-from xs2n.profile.auth import is_cloudflare_block_error, prompt_login
-from xs2n.profile.playwright import bootstrap_cookies_via_browser
+from xs2n.cli.helpers import (
+    maybe_bootstrap_cookies_from_local_browser,
+    normalize_following_account,
+    retry_after_cloudflare_block,
+)
+from xs2n.profile.auth import prompt_login
 from xs2n.profile.timeline import (
     DEFAULT_IMPORT_TIMELINE,
     DEFAULT_THREAD_OTHER_REPLIES_LIMIT,
@@ -84,17 +86,7 @@ def import_timeline_with_recovery(
             thread_other_replies_limit=thread_other_replies_limit,
         )
 
-    if not cookies_file.exists():
-        typer.echo("Checking local browser cookies for logged-in X sessions...")
-        try:
-            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
-            typer.echo(f"Saved browser cookies to {saved_path}.")
-        except RuntimeError as local_cookie_error:
-            typer.echo(
-                "No usable local browser cookies were found. "
-                f"Details: {local_cookie_error}",
-                err=True,
-            )
+    maybe_bootstrap_cookies_from_local_browser(cookies_file)
 
     try:
         return retry_import()
@@ -109,58 +101,11 @@ def import_timeline_with_recovery(
         typer.echo(f"Retrying with @{account_screen_name}...")
         return retry_import()
     except Forbidden as error:
-        if not is_cloudflare_block_error(error):
-            raise
-
-        typer.echo(
-            "X blocked this automated login request (Cloudflare 403).",
-            err=True,
+        return retry_after_cloudflare_block(
+            retry_operation=retry_import,
+            cookies_file=cookies_file,
+            cloudflare_error=error,
         )
-        typer.echo(
-            "Trying to refresh cookies from your local browser first.",
-            err=True,
-        )
-        try:
-            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
-            typer.echo(f"Imported local browser cookies to {saved_path}. Retrying...")
-            return retry_import()
-        except RuntimeError as local_cookie_error:
-            typer.echo(
-                f"Could not import cookies from local browser: {local_cookie_error}",
-                err=True,
-            )
-        except Forbidden as local_retry_error:
-            if not is_cloudflare_block_error(local_retry_error):
-                raise
-            typer.echo(
-                "Still blocked by Cloudflare after importing local browser cookies.",
-                err=True,
-            )
-
-        typer.echo(
-            "We can open a real browser to refresh session cookies, then retry automatically.",
-            err=True,
-        )
-        recover_now = typer.confirm("Open browser login and retry now?", default=True)
-        if not recover_now:
-            raise typer.Exit(code=1)
-
-        try:
-            saved_path = bootstrap_cookies_via_browser(cookies_file)
-            typer.echo(f"Saved browser cookies to {saved_path}. Retrying...")
-            return retry_import()
-        except RuntimeError as bootstrap_error:
-            typer.echo(f"Could not bootstrap cookies: {bootstrap_error}", err=True)
-            raise typer.Exit(code=1) from bootstrap_error
-        except Forbidden as retry_error:
-            if is_cloudflare_block_error(retry_error):
-                typer.echo(
-                    "Still blocked by Cloudflare after browser login. "
-                    "Try again from a normal residential/mobile network.",
-                    err=True,
-                )
-                raise typer.Exit(code=1) from retry_error
-            raise
 
 
 def import_home_latest_with_recovery(
@@ -178,73 +123,16 @@ def import_home_latest_with_recovery(
             page_delay_seconds=page_delay_seconds,
         )
 
-    if not cookies_file.exists():
-        typer.echo("Checking local browser cookies for logged-in X sessions...")
-        try:
-            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
-            typer.echo(f"Saved browser cookies to {saved_path}.")
-        except RuntimeError as local_cookie_error:
-            typer.echo(
-                "No usable local browser cookies were found. "
-                f"Details: {local_cookie_error}",
-                err=True,
-            )
+    maybe_bootstrap_cookies_from_local_browser(cookies_file)
 
     try:
         return retry_import()
     except Forbidden as error:
-        if not is_cloudflare_block_error(error):
-            raise
-
-        typer.echo(
-            "X blocked this automated login request (Cloudflare 403).",
-            err=True,
+        return retry_after_cloudflare_block(
+            retry_operation=retry_import,
+            cookies_file=cookies_file,
+            cloudflare_error=error,
         )
-        typer.echo(
-            "Trying to refresh cookies from your local browser first.",
-            err=True,
-        )
-        try:
-            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
-            typer.echo(f"Imported local browser cookies to {saved_path}. Retrying...")
-            return retry_import()
-        except RuntimeError as local_cookie_error:
-            typer.echo(
-                f"Could not import cookies from local browser: {local_cookie_error}",
-                err=True,
-            )
-        except Forbidden as local_retry_error:
-            if not is_cloudflare_block_error(local_retry_error):
-                raise
-            typer.echo(
-                "Still blocked by Cloudflare after importing local browser cookies.",
-                err=True,
-            )
-
-        typer.echo(
-            "We can open a real browser to refresh session cookies, then retry automatically.",
-            err=True,
-        )
-        recover_now = typer.confirm("Open browser login and retry now?", default=True)
-        if not recover_now:
-            raise typer.Exit(code=1)
-
-        try:
-            saved_path = bootstrap_cookies_via_browser(cookies_file)
-            typer.echo(f"Saved browser cookies to {saved_path}. Retrying...")
-            return retry_import()
-        except RuntimeError as bootstrap_error:
-            typer.echo(f"Could not bootstrap cookies: {bootstrap_error}", err=True)
-            raise typer.Exit(code=1) from bootstrap_error
-        except Forbidden as retry_error:
-            if is_cloudflare_block_error(retry_error):
-                typer.echo(
-                    "Still blocked by Cloudflare after browser login. "
-                    "Try again from a normal residential/mobile network.",
-                    err=True,
-                )
-                raise typer.Exit(code=1) from retry_error
-            raise
 
 
 def _legacy_sources_path_for(path: Path) -> Path:

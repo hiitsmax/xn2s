@@ -6,19 +6,14 @@ from typing import Any
 import typer
 from twikit.errors import Forbidden, UserNotFound
 
-from xs2n.cli.helpers import normalize_following_account, sanitize_cli_parameters
+from xs2n.cli.helpers import (
+    maybe_bootstrap_cookies_from_local_browser,
+    normalize_following_account,
+    retry_after_cloudflare_block,
+    sanitize_cli_parameters,
+)
 from xs2n.cli.parameters import process_paste_parameters
-from xs2n.profile.auth import (
-    is_cloudflare_block_error,
-    prompt_login,
-)
-from xs2n.profile.browser_cookies import (
-    BrowserCookieCandidate,
-    describe_cookie_candidate,
-    discover_x_cookie_candidates,
-    maybe_warn_keychain_prompt,
-    write_cookie_candidate,
-)
+from xs2n.profile.auth import prompt_login
 from xs2n.profile.following import (
     AUTHENTICATED_ACCOUNT_SENTINEL,
     DEFAULT_IMPORT_FOLLOWING_HANDLES,
@@ -26,42 +21,7 @@ from xs2n.profile.following import (
     run_import_following_handles,
 )
 from xs2n.profile.helpers import build_entries_from_handles
-from xs2n.profile.playwright import bootstrap_cookies_via_browser
 from xs2n.storage import DEFAULT_SOURCES_PATH, merge_profiles, replace_profiles
-
-
-def choose_cookie_candidate(candidates: list[BrowserCookieCandidate]) -> BrowserCookieCandidate:
-    if len(candidates) == 1:
-        candidate = candidates[0]
-        typer.echo(
-            "Found logged-in browser session: "
-            f"{describe_cookie_candidate(candidate)}. Using it."
-        )
-        return candidate
-
-    typer.echo("Found multiple logged-in browser sessions:")
-    for index, candidate in enumerate(candidates, start=1):
-        typer.echo(f"{index}. {describe_cookie_candidate(candidate)}")
-
-    while True:
-        raw_choice = typer.prompt("Select session number", default="1")
-        try:
-            choice = int(raw_choice)
-        except ValueError:
-            typer.echo("Please enter a valid number.", err=True)
-            continue
-
-        if 1 <= choice <= len(candidates):
-            return candidates[choice - 1]
-
-        typer.echo("Choice out of range. Try again.", err=True)
-
-
-def bootstrap_cookies_from_local_browser_with_choice(cookies_file: Path) -> Path:
-    maybe_warn_keychain_prompt(echo=typer.echo)
-    candidates = discover_x_cookie_candidates(resolve_profiles=True)
-    selected = choose_cookie_candidate(candidates)
-    return write_cookie_candidate(selected, cookies_file)
 
 
 def import_following_with_recovery(
@@ -79,17 +39,7 @@ def import_following_with_recovery(
             prompt_login=prompt_login,
         )
 
-    if not cookies_file.exists():
-        typer.echo("Checking local browser cookies for logged-in X sessions...")
-        try:
-            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
-            typer.echo(f"Saved browser cookies to {saved_path}.")
-        except RuntimeError as local_cookie_error:
-            typer.echo(
-                "No usable local browser cookies were found. "
-                f"Details: {local_cookie_error}",
-                err=True,
-            )
+    maybe_bootstrap_cookies_from_local_browser(cookies_file)
 
     try:
         return retry_import()
@@ -104,58 +54,11 @@ def import_following_with_recovery(
         typer.echo(f"Retrying with @{account_screen_name}...")
         return retry_import()
     except Forbidden as error:
-        if not is_cloudflare_block_error(error):
-            raise
-
-        typer.echo(
-            "X blocked this automated login request (Cloudflare 403).",
-            err=True,
+        return retry_after_cloudflare_block(
+            retry_operation=retry_import,
+            cookies_file=cookies_file,
+            cloudflare_error=error,
         )
-        typer.echo(
-            "Trying to refresh cookies from your local browser first.",
-            err=True,
-        )
-        try:
-            saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
-            typer.echo(f"Imported local browser cookies to {saved_path}. Retrying...")
-            return retry_import()
-        except RuntimeError as local_cookie_error:
-            typer.echo(
-                f"Could not import cookies from local browser: {local_cookie_error}",
-                err=True,
-            )
-        except Forbidden as local_retry_error:
-            if not is_cloudflare_block_error(local_retry_error):
-                raise
-            typer.echo(
-                "Still blocked by Cloudflare after importing local browser cookies.",
-                err=True,
-            )
-
-        typer.echo(
-            "We can open a real browser to refresh session cookies, then retry automatically.",
-            err=True,
-        )
-        recover_now = typer.confirm("Open browser login and retry now?", default=True)
-        if not recover_now:
-            raise typer.Exit(code=1)
-
-        try:
-            saved_path = bootstrap_cookies_via_browser(cookies_file)
-            typer.echo(f"Saved browser cookies to {saved_path}. Retrying...")
-            return retry_import()
-        except RuntimeError as bootstrap_error:
-            typer.echo(f"Could not bootstrap cookies: {bootstrap_error}", err=True)
-            raise typer.Exit(code=1) from bootstrap_error
-        except Forbidden as retry_error:
-            if is_cloudflare_block_error(retry_error):
-                typer.echo(
-                    "Still blocked by Cloudflare after browser login. "
-                    "Try again from a normal residential/mobile network.",
-                    err=True,
-                )
-                raise typer.Exit(code=1) from retry_error
-            raise
 
 
 def onboard(
@@ -204,10 +107,16 @@ def onboard(
 ) -> None:
     """Onboard source profiles by pasting handles or importing followings."""
 
+    if wizard:
+        raise typer.BadParameter(
+            "--wizard is no longer a separate onboarding mode. "
+            "Run `xs2n onboard` for the interactive prompt, or choose "
+            "--paste, --from-following, or --refresh-following explicitly."
+        )
+
     parameters: dict[str, Any] = {
         "paste": paste,
         "from_following": from_following,
-        "wizard": wizard,
         "refresh_following": refresh_following,
         "cookies_file": cookies_file,
         "limit": limit,
@@ -218,7 +127,9 @@ def onboard(
 
     invalid: list[str] = []
     if parameters["paste"]:
-        _, invalid = process_paste_parameters(parameters)
+        _, invalid = process_paste_parameters(
+            sources_file=Path(parameters["sources_file"])
+        )
 
     if parameters["refresh_following"]:
         handles = import_following_with_recovery(

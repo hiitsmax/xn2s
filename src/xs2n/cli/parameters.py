@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import typer
 
@@ -11,7 +10,7 @@ from xs2n.profile.types import OnboardResult
 from xs2n.storage import merge_profiles
 
 
-def process_paste_parameters(parameters: dict[str, Any]) -> tuple[OnboardResult, list[str]]:
+def process_paste_parameters(*, sources_file: Path) -> tuple[OnboardResult, list[str]]:
     raw = collect_multiline_paste()
     handles, invalid = parse_handles(raw)
     if not handles:
@@ -20,7 +19,6 @@ def process_paste_parameters(parameters: dict[str, Any]) -> tuple[OnboardResult,
             typer.echo(f"Invalid tokens: {', '.join(invalid)}")
         raise typer.Exit(code=1)
 
-    sources_file = Path(parameters["sources_file"])
     result = merge_profiles(
         build_entries_from_handles(handles, source="paste"),
         path=sources_file,

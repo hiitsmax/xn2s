@@ -85,7 +85,7 @@ def test_import_timeline_with_recovery_bootstraps_local_cookies_before_first_att
         return cookies_file
 
     monkeypatch.setattr(
-        "xs2n.cli.timeline.bootstrap_cookies_from_local_browser_with_choice",
+        "xs2n.cli.timeline.maybe_bootstrap_cookies_from_local_browser",
         fake_bootstrap,
     )
     monkeypatch.setattr(
@@ -121,7 +121,7 @@ def test_import_timeline_with_recovery_retries_after_local_cookie_import(
         fake_run_import_timeline_entries,
     )
     monkeypatch.setattr(
-        "xs2n.cli.timeline.bootstrap_cookies_from_local_browser_with_choice",
+        "xs2n.cli.helpers.bootstrap_cookies_from_local_browser_with_choice",
         lambda cookies_file: cookies_file,
     )
 
@@ -130,7 +130,7 @@ def test_import_timeline_with_recovery_retries_after_local_cookie_import(
 
     monkeypatch.setattr("typer.confirm", fail_confirm)
     monkeypatch.setattr(
-        "xs2n.cli.timeline.bootstrap_cookies_via_browser",
+        "xs2n.cli.helpers.bootstrap_cookies_via_browser",
         lambda cookies_file: cookies_file,
     )
 

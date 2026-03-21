@@ -6,7 +6,8 @@ import pytest
 import typer
 from twikit.errors import Forbidden, UserNotFound
 
-from xs2n.cli.onboard import choose_cookie_candidate, import_following_with_recovery
+from xs2n.cli.helpers import choose_cookie_candidate
+from xs2n.cli.onboard import import_following_with_recovery
 from xs2n.profile.browser_cookies import BrowserCookieCandidate
 
 
@@ -71,7 +72,7 @@ def test_import_following_with_recovery_bootstraps_local_cookies_before_first_at
         return cookies_file
 
     monkeypatch.setattr(
-        "xs2n.cli.onboard.bootstrap_cookies_from_local_browser_with_choice",
+        "xs2n.cli.onboard.maybe_bootstrap_cookies_from_local_browser",
         fake_bootstrap,
     )
     monkeypatch.setattr(
@@ -106,7 +107,7 @@ def test_import_following_with_recovery_retries_after_local_cookie_import(
         fake_run_import_following_handles,
     )
     monkeypatch.setattr(
-        "xs2n.cli.onboard.bootstrap_cookies_from_local_browser_with_choice",
+        "xs2n.cli.helpers.bootstrap_cookies_from_local_browser_with_choice",
         lambda cookies_file: cookies_file,
     )
 
@@ -115,7 +116,7 @@ def test_import_following_with_recovery_retries_after_local_cookie_import(
 
     monkeypatch.setattr("typer.confirm", fail_confirm)
     monkeypatch.setattr(
-        "xs2n.cli.onboard.bootstrap_cookies_via_browser",
+        "xs2n.cli.helpers.bootstrap_cookies_via_browser",
         lambda cookies_file: cookies_file,
     )
 
@@ -146,12 +147,12 @@ def test_import_following_with_recovery_falls_back_to_browser_bootstrap(
         fake_run_import_following_handles,
     )
     monkeypatch.setattr(
-        "xs2n.cli.onboard.bootstrap_cookies_from_local_browser_with_choice",
+        "xs2n.cli.helpers.bootstrap_cookies_from_local_browser_with_choice",
         lambda cookies_file: (_ for _ in ()).throw(RuntimeError("no browser cookies")),
     )
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr(
-        "xs2n.cli.onboard.bootstrap_cookies_via_browser",
+        "xs2n.cli.helpers.bootstrap_cookies_via_browser",
         lambda cookies_file: cookies_file,
     )
 
@@ -182,12 +183,12 @@ def test_import_following_with_recovery_retries_browser_after_local_retry_cloudf
         fake_run_import_following_handles,
     )
     monkeypatch.setattr(
-        "xs2n.cli.onboard.bootstrap_cookies_from_local_browser_with_choice",
+        "xs2n.cli.helpers.bootstrap_cookies_from_local_browser_with_choice",
         lambda cookies_file: cookies_file,
     )
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr(
-        "xs2n.cli.onboard.bootstrap_cookies_via_browser",
+        "xs2n.cli.helpers.bootstrap_cookies_via_browser",
         lambda cookies_file: cookies_file,
     )
 
@@ -210,7 +211,7 @@ def test_import_following_with_recovery_exits_if_user_declines_bootstrap(
         lambda **kwargs: (_ for _ in ()).throw(_cloudflare_error()),
     )
     monkeypatch.setattr(
-        "xs2n.cli.onboard.bootstrap_cookies_from_local_browser_with_choice",
+        "xs2n.cli.helpers.bootstrap_cookies_from_local_browser_with_choice",
         lambda cookies_file: (_ for _ in ()).throw(RuntimeError("no browser cookies")),
     )
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: False)

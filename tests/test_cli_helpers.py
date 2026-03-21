@@ -5,8 +5,13 @@ from pathlib import Path
 
 import pytest
 import typer
+from twikit.errors import Forbidden
 
-from xs2n.cli.helpers import normalize_following_account, sanitize_cli_parameters
+from xs2n.cli.helpers import (
+    normalize_following_account,
+    retry_after_cloudflare_block,
+    sanitize_cli_parameters,
+)
 from xs2n.profile.browser_cookies import BrowserCookieCandidate
 
 
@@ -21,12 +26,11 @@ def isolate_onboard_state_path(
     )
 
 
-def test_sanitize_cli_parameters_defaults_to_interactive_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sanitize_cli_parameters_defaults_to_interactive_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "1")
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
     }
 
     sanitize_cli_parameters(parameters)
@@ -38,7 +42,6 @@ def test_sanitize_cli_parameters_normalizes_following_handle_with_at_prefix() ->
     parameters = {
         "paste": False,
         "from_following": "@mx",
-        "wizard": False,
     }
 
     sanitize_cli_parameters(parameters)
@@ -50,7 +53,6 @@ def test_sanitize_cli_parameters_normalizes_following_handle_from_url() -> None:
     parameters = {
         "paste": False,
         "from_following": "https://x.com/mx",
-        "wizard": False,
     }
 
     sanitize_cli_parameters(parameters)
@@ -58,20 +60,9 @@ def test_sanitize_cli_parameters_normalizes_following_handle_from_url() -> None:
     assert parameters["from_following"] == "mx"
 
 
-def test_sanitize_cli_parameters_wizard_allows_paste(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "1")
-    parameters = {
-        "paste": False,
-        "from_following": None,
-        "wizard": True,
-    }
-
-    sanitize_cli_parameters(parameters)
-
-    assert parameters["paste"] is True
-
-
-def test_sanitize_cli_parameters_wizard_requests_handle(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sanitize_cli_parameters_requests_handle_for_following_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     answers = iter(["2", "https://x.com/mx"])
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: next(answers))
     monkeypatch.setattr(
@@ -81,7 +72,6 @@ def test_sanitize_cli_parameters_wizard_requests_handle(monkeypatch: pytest.Monk
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": True,
     }
 
     sanitize_cli_parameters(parameters)
@@ -102,7 +92,6 @@ def test_sanitize_cli_parameters_refresh_following_skips_prompt_and_sets_mode(
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
         "refresh_following": True,
         "onboard_state_file": state_file,
     }
@@ -134,7 +123,6 @@ def test_sanitize_cli_parameters_uses_last_mode_as_prompt_default(
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
         "onboard_state_file": state_file,
     }
 
@@ -166,7 +154,6 @@ def test_sanitize_cli_parameters_uses_last_following_as_prompt_default(
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
         "onboard_state_file": state_file,
     }
 
@@ -182,7 +169,6 @@ def test_sanitize_cli_parameters_persists_following_input(tmp_path: Path) -> Non
     parameters = {
         "paste": False,
         "from_following": "@Neo",
-        "wizard": False,
         "onboard_state_file": state_file,
     }
 
@@ -211,7 +197,6 @@ def test_sanitize_cli_parameters_prefers_single_logged_in_profile(
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
     }
 
     sanitize_cli_parameters(parameters)
@@ -250,7 +235,6 @@ def test_sanitize_cli_parameters_allows_choosing_among_logged_in_profiles(
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
     }
 
     sanitize_cli_parameters(parameters)
@@ -287,7 +271,6 @@ def test_sanitize_cli_parameters_falls_back_to_manual_when_requested(
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
     }
 
     sanitize_cli_parameters(parameters)
@@ -330,7 +313,6 @@ def test_sanitize_cli_parameters_uses_authenticated_session_when_handle_is_unkno
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
         "cookies_file": cookies_file,
         "onboard_state_file": state_file,
     }
@@ -380,7 +362,6 @@ def test_sanitize_cli_parameters_uses_last_saved_handle_when_cookie_profile_is_u
     parameters = {
         "paste": False,
         "from_following": None,
-        "wizard": False,
         "cookies_file": cookies_file,
         "onboard_state_file": state_file,
     }
@@ -390,3 +371,32 @@ def test_sanitize_cli_parameters_uses_last_saved_handle_when_cookie_profile_is_u
     assert parameters["from_following"] == "vineyardsunset_"
     assert cookies_file.exists()
     assert prompts == ["Onboarding mode [1: paste, 2: following]"]
+
+
+def test_retry_after_cloudflare_block_uses_local_browser_before_browser_login(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    retry_calls = {"count": 0}
+
+    def retry_operation() -> str:
+        retry_calls["count"] += 1
+        return "ok"
+
+    def fail_confirm(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("confirm should not be called when local browser cookies work")
+
+    monkeypatch.setattr(
+        "xs2n.cli.helpers.bootstrap_cookies_from_local_browser_with_choice",
+        lambda cookies_file: cookies_file,
+    )
+    monkeypatch.setattr("typer.confirm", fail_confirm)
+
+    result = retry_after_cloudflare_block(
+        retry_operation=retry_operation,
+        cookies_file=tmp_path / "cookies.json",
+        cloudflare_error=Forbidden('status: 403, message: "Attention Required! | Cloudflare"'),
+    )
+
+    assert result == "ok"
+    assert retry_calls["count"] == 1

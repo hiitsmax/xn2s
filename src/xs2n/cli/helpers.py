@@ -1,9 +1,12 @@
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import typer
+from twikit.errors import Forbidden
 
 import xs2n.storage.onboard_state as onboard_state_storage
+from xs2n.profile.auth import is_cloudflare_block_error
 from xs2n.profile.browser_cookies import (
     BrowserCookieCandidate,
     describe_cookie_candidate,
@@ -13,6 +16,9 @@ from xs2n.profile.browser_cookies import (
     write_cookie_candidate,
 )
 from xs2n.profile.helpers import normalize_handle
+from xs2n.profile.playwright import bootstrap_cookies_via_browser
+
+T = TypeVar("T")
 
 
 def normalize_following_account(raw: str) -> str:
@@ -22,6 +28,116 @@ def normalize_following_account(raw: str) -> str:
             "Provide a valid X handle (with or without @) or profile URL (x.com/<handle>)."
         )
     return normalized
+
+
+def choose_cookie_candidate(candidates: list[BrowserCookieCandidate]) -> BrowserCookieCandidate:
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        typer.echo(
+            "Found logged-in browser session: "
+            f"{describe_cookie_candidate(candidate)}. Using it."
+        )
+        return candidate
+
+    typer.echo("Found multiple logged-in browser sessions:")
+    for index, candidate in enumerate(candidates, start=1):
+        typer.echo(f"{index}. {describe_cookie_candidate(candidate)}")
+
+    while True:
+        raw_choice = typer.prompt("Select session number", default="1")
+        try:
+            choice = int(raw_choice)
+        except ValueError:
+            typer.echo("Please enter a valid number.", err=True)
+            continue
+
+        if 1 <= choice <= len(candidates):
+            return candidates[choice - 1]
+
+        typer.echo("Choice out of range. Try again.", err=True)
+
+
+def bootstrap_cookies_from_local_browser_with_choice(cookies_file: Path) -> Path:
+    maybe_warn_keychain_prompt(echo=typer.echo)
+    candidates = discover_x_cookie_candidates(resolve_profiles=True)
+    selected = choose_cookie_candidate(candidates)
+    return write_cookie_candidate(selected, cookies_file)
+
+
+def maybe_bootstrap_cookies_from_local_browser(cookies_file: Path) -> None:
+    if cookies_file.exists():
+        return
+
+    typer.echo("Checking local browser cookies for logged-in X sessions...")
+    try:
+        saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
+        typer.echo(f"Saved browser cookies to {saved_path}.")
+    except RuntimeError as local_cookie_error:
+        typer.echo(
+            "No usable local browser cookies were found. "
+            f"Details: {local_cookie_error}",
+            err=True,
+        )
+
+
+def retry_after_cloudflare_block(
+    *,
+    retry_operation: Callable[[], T],
+    cookies_file: Path,
+    cloudflare_error: Forbidden,
+) -> T:
+    if not is_cloudflare_block_error(cloudflare_error):
+        raise cloudflare_error
+
+    typer.echo(
+        "X blocked this automated login request (Cloudflare 403).",
+        err=True,
+    )
+    typer.echo(
+        "Trying to refresh cookies from your local browser first.",
+        err=True,
+    )
+    try:
+        saved_path = bootstrap_cookies_from_local_browser_with_choice(cookies_file)
+        typer.echo(f"Imported local browser cookies to {saved_path}. Retrying...")
+        return retry_operation()
+    except RuntimeError as local_cookie_error:
+        typer.echo(
+            f"Could not import cookies from local browser: {local_cookie_error}",
+            err=True,
+        )
+    except Forbidden as local_retry_error:
+        if not is_cloudflare_block_error(local_retry_error):
+            raise
+        typer.echo(
+            "Still blocked by Cloudflare after importing local browser cookies.",
+            err=True,
+        )
+
+    typer.echo(
+        "We can open a real browser to refresh session cookies, then retry automatically.",
+        err=True,
+    )
+    recover_now = typer.confirm("Open browser login and retry now?", default=True)
+    if not recover_now:
+        raise typer.Exit(code=1)
+
+    try:
+        saved_path = bootstrap_cookies_via_browser(cookies_file)
+        typer.echo(f"Saved browser cookies to {saved_path}. Retrying...")
+        return retry_operation()
+    except RuntimeError as bootstrap_error:
+        typer.echo(f"Could not bootstrap cookies: {bootstrap_error}", err=True)
+        raise typer.Exit(code=1) from bootstrap_error
+    except Forbidden as retry_error:
+        if is_cloudflare_block_error(retry_error):
+            typer.echo(
+                "Still blocked by Cloudflare after browser login. "
+                "Try again from a normal residential/mobile network.",
+                err=True,
+            )
+            raise typer.Exit(code=1) from retry_error
+        raise
 
 
 def _choose_following_from_logged_in_profile() -> BrowserCookieCandidate | None:
