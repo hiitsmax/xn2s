@@ -127,11 +127,15 @@ def test_schedule_run_updates_last_run_on_success(
 
     run_schedule(name="morning-digest", schedules_file=schedules_file)
 
-    schedule = json.loads(schedules_file.read_text(encoding="utf-8"))["schedules"][0]
-    assert schedule["last_run"]["status"] == "succeeded"
-    assert schedule["last_run"]["exit_code"] == 0
-    assert schedule["last_run"]["run_id"] == "20260318T190000Z"
-    assert schedule["last_run"]["digest_path"].endswith("digest.md")
+    from xs2n.report_schedule.catalog import get_schedule_definition
+
+    schedule = get_schedule_definition("morning-digest", schedules_file=schedules_file)
+    assert schedule.last_run is not None
+    assert schedule.last_run.status == "succeeded"
+    assert schedule.last_run.exit_code == 0
+    assert schedule.last_run.run_id == "20260318T190000Z"
+    assert schedule.last_run.digest_path is not None
+    assert schedule.last_run.digest_path.endswith("digest.md")
 
 
 def test_schedule_run_records_locked_skip(
@@ -170,9 +174,12 @@ def test_schedule_run_records_locked_skip(
         lock_dir=lock_dir,
     )
 
-    schedule = json.loads(schedules_file.read_text(encoding="utf-8"))["schedules"][0]
-    assert schedule["last_run"]["status"] == "skipped_locked"
-    assert schedule["last_run"]["exit_code"] == 0
+    from xs2n.report_schedule.catalog import get_schedule_definition
+
+    schedule = get_schedule_definition("morning-digest", schedules_file=schedules_file)
+    assert schedule.last_run is not None
+    assert schedule.last_run.status == "skipped_locked"
+    assert schedule.last_run.exit_code == 0
     assert "already running" in capsys.readouterr().out
 
 
@@ -217,8 +224,11 @@ def test_schedule_run_reclaims_stale_lock(
         lock_dir=lock_dir,
     )
 
-    schedule = json.loads(schedules_file.read_text(encoding="utf-8"))["schedules"][0]
-    assert schedule["last_run"]["status"] == "succeeded"
+    from xs2n.report_schedule.catalog import get_schedule_definition
+
+    schedule = get_schedule_definition("morning-digest", schedules_file=schedules_file)
+    assert schedule.last_run is not None
+    assert schedule.last_run.status == "succeeded"
     assert not lock_path.exists()
 
 
@@ -254,9 +264,12 @@ def test_schedule_run_records_failure(
         run_schedule(name="morning-digest", schedules_file=schedules_file)
 
     assert error.value.exit_code == 1
-    schedule = json.loads(schedules_file.read_text(encoding="utf-8"))["schedules"][0]
-    assert schedule["last_run"]["status"] == "failed"
-    assert schedule["last_run"]["error_message"] == "digest exploded"
+    from xs2n.report_schedule.catalog import get_schedule_definition
+
+    schedule = get_schedule_definition("morning-digest", schedules_file=schedules_file)
+    assert schedule.last_run is not None
+    assert schedule.last_run.status == "failed"
+    assert schedule.last_run.error_message == "digest exploded"
 
 
 def test_schedule_export_prints_target_output(

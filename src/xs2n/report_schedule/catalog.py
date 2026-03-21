@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import shutil
+import json
 
 import typer
 
 from xs2n.report_runtime import LatestRunArguments
 from xs2n.schemas.report_schedule import (
-    LatestRunArgumentsDoc,
     ReportSchedule,
     ReportScheduleCatalog,
     ScheduleLastRun,
@@ -48,7 +48,7 @@ def build_schedule_definition(
         weekdays=weekday_values,
         interval_hours=interval_hours,
         cron_expression=cron_value,
-        latest_arguments=_latest_arguments_doc(latest_arguments),
+        latest_arguments=latest_arguments.to_storage_doc(),
         last_run=None,
     )
 
@@ -81,7 +81,7 @@ def list_schedule_definitions(
     *,
     schedules_file: Path = DEFAULT_REPORT_SCHEDULES_PATH,
 ) -> list[ReportSchedule]:
-    return _load_schedule_catalog(schedules_file).schedules
+    return [_attach_last_run(schedule) for schedule in _load_schedule_catalog(schedules_file).schedules]
 
 
 def get_schedule_definition(
@@ -92,7 +92,7 @@ def get_schedule_definition(
     normalized_name = _normalize_schedule_name(name)
     for schedule in _load_schedule_catalog(schedules_file).schedules:
         if schedule.name == normalized_name:
-            return schedule
+            return _attach_last_run(schedule)
     raise typer.BadParameter(f"Report schedule {normalized_name} does not exist.")
 
 
@@ -118,16 +118,9 @@ def update_schedule_last_run(
     *,
     schedules_file: Path = DEFAULT_REPORT_SCHEDULES_PATH,
 ) -> ReportSchedule:
-    normalized_name = _normalize_schedule_name(name)
-    catalog = _load_schedule_catalog(schedules_file)
-    for index, schedule in enumerate(catalog.schedules):
-        if schedule.name != normalized_name:
-            continue
-        updated = schedule.model_copy(update={"last_run": last_run})
-        catalog.schedules[index] = updated
-        save_report_schedules(catalog, path=schedules_file)
-        return updated
-    raise typer.BadParameter(f"Report schedule {normalized_name} does not exist.")
+    schedule = get_schedule_definition(name, schedules_file=schedules_file)
+    _save_last_run(schedule.name, last_run)
+    return schedule.model_copy(update={"last_run": last_run})
 
 
 def describe_schedule(schedule: ReportSchedule) -> str:
@@ -141,9 +134,7 @@ def describe_schedule(schedule: ReportSchedule) -> str:
 
 
 def latest_arguments_from_schedule(schedule: ReportSchedule) -> LatestRunArguments:
-    return LatestRunArguments.from_storage_doc(
-        schedule.latest_arguments.model_dump(mode="json")
-    )
+    return LatestRunArguments.from_storage_doc(schedule.latest_arguments)
 
 
 def resolve_schedule_working_directory() -> Path:
@@ -251,24 +242,36 @@ def _parse_weekdays(value: str | None) -> list[str]:
     return seen
 
 
-def _latest_arguments_doc(
-    latest_arguments: LatestRunArguments,
-) -> LatestRunArgumentsDoc:
-    return LatestRunArgumentsDoc(
-        since=latest_arguments.since,
-        lookback_hours=latest_arguments.lookback_hours,
-        cookies_file=str(latest_arguments.cookies_file),
-        limit=latest_arguments.limit,
-        timeline_file=str(latest_arguments.timeline_file),
-        sources_file=str(latest_arguments.sources_file),
-        home_latest=latest_arguments.home_latest,
-        output_dir=str(latest_arguments.output_dir),
-        model=latest_arguments.model,
-    )
-
-
 def _load_schedule_catalog(schedules_file: Path) -> ReportScheduleCatalog:
     try:
         return load_report_schedules(schedules_file)
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
+
+
+def _last_run_path(schedule_name: str) -> Path:
+    return resolve_schedule_log_dir(schedule_name) / "last_run.json"
+
+
+def _attach_last_run(schedule: ReportSchedule) -> ReportSchedule:
+    return schedule.model_copy(update={"last_run": _load_last_run(schedule.name)})
+
+
+def _load_last_run(schedule_name: str) -> ScheduleLastRun | None:
+    path = _last_run_path(schedule_name)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    try:
+        return ScheduleLastRun.model_validate(payload)
+    except ValueError:
+        return None
+
+
+def _save_last_run(schedule_name: str, last_run: ScheduleLastRun) -> None:
+    path = _last_run_path(schedule_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{last_run.model_dump_json(indent=2)}\n", encoding="utf-8")

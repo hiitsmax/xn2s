@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from xs2n.schemas.report_schedule import (
-    LatestRunArgumentsDoc,
     ReportSchedule,
     ReportScheduleCatalog,
     ScheduleLastRun,
@@ -26,16 +25,16 @@ def test_report_schedules_round_trip(tmp_path: Path) -> None:
                 weekdays=["mon", "wed", "fri"],
                 interval_hours=None,
                 cron_expression=None,
-                latest_arguments=LatestRunArgumentsDoc(
-                    lookback_hours=12,
-                    cookies_file="tmp/cookies.json",
-                    limit=100,
-                    timeline_file="tmp/timeline.json",
-                    sources_file="tmp/sources.json",
-                    home_latest=True,
-                    output_dir="tmp/report_runs",
-                    model="gpt-5.4",
-                ),
+                latest_arguments={
+                    "lookback_hours": 12,
+                    "cookies_file": "tmp/cookies.json",
+                    "limit": 100,
+                    "timeline_file": "tmp/timeline.json",
+                    "sources_file": "tmp/sources.json",
+                    "home_latest": True,
+                    "output_dir": "tmp/report_runs",
+                    "model": "gpt-5.4",
+                },
                 last_run=ScheduleLastRun(
                     status="succeeded",
                     started_at="2026-03-18T08:30:00+00:00",
@@ -51,8 +50,8 @@ def test_report_schedules_round_trip(tmp_path: Path) -> None:
 
     save_report_schedules(catalog, path=schedules_file)
     loaded = load_report_schedules(schedules_file)
-
-    assert loaded == catalog
+    assert loaded.schedules[0].latest_arguments == catalog.schedules[0].latest_arguments
+    assert loaded.schedules[0].last_run is None
 
 
 def test_load_report_schedules_rejects_invalid_json(tmp_path: Path) -> None:
@@ -135,3 +134,31 @@ def test_load_report_schedules_accepts_legacy_fields_and_rewrites_compact(
     assert "working_directory" not in schedule
     assert "launcher_argv" not in schedule
     assert "log_dir" not in schedule
+
+
+def test_save_report_schedules_strips_last_run_from_catalog(
+    tmp_path: Path,
+) -> None:
+    schedules_file = tmp_path / "report_schedules.json"
+    catalog = ReportScheduleCatalog(
+        schedules=[
+            ReportSchedule(
+                name="morning-digest",
+                cadence_kind="time",
+                time_local="08:30",
+                weekdays=[],
+                latest_arguments={"lookback_hours": 24},
+                last_run=ScheduleLastRun(
+                    status="succeeded",
+                    started_at="2026-03-18T08:30:00+00:00",
+                    finished_at="2026-03-18T08:31:00+00:00",
+                    exit_code=0,
+                ),
+            )
+        ]
+    )
+
+    save_report_schedules(catalog, path=schedules_file)
+    rewritten = json.loads(schedules_file.read_text(encoding="utf-8"))
+
+    assert "last_run" not in rewritten["schedules"][0] or rewritten["schedules"][0]["last_run"] is None
