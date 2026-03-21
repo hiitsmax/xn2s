@@ -1,2 +1,0 @@
-[console_scripts]
-xs2n = xs2n.cli:app
