@@ -71,6 +71,11 @@ COMMAND_HEIGHT = 36
 STATUS_HEIGHT = 24
 LEFT_PANE_WIDTH = 380
 MIDDLE_PANE_WIDTH = 340
+LEFT_PANE_WIDTH_MIN = 220
+MIDDLE_PANE_WIDTH_MIN = 200
+STANDARD_NAVIGATION_WIDTH_RATIO = (
+    LEFT_PANE_WIDTH + MIDDLE_PANE_WIDTH
+) / WINDOW_WIDTH
 NAVIGATION_HEADER_HEIGHT = 26
 NAVIGATION_PANE_GAP = 8
 SECTIONS_BROWSER_HEIGHT = 188
@@ -783,28 +788,45 @@ class ArtifactBrowserWindow:
         left_pane_width: int,
         middle_pane_width: int,
     ) -> tuple[int, int]:
-        left_width = max(1, left_pane_width)
-        middle_width = max(1, middle_pane_width)
+        requested_left_width = max(1, left_pane_width)
+        requested_middle_width = max(1, middle_pane_width)
+        requested_total_width = max(1, requested_left_width + requested_middle_width)
+        left_ratio = requested_left_width / requested_total_width
         viewer_min_width = min(
             VIEWER_MIN_WIDTH,
             max(1, tile_width - 2),
         )
         max_navigation_width = max(2, tile_width - viewer_min_width)
-
-        if left_width + middle_width <= max_navigation_width:
-            return left_width, middle_width
-
-        total_requested_width = max(1, left_width + middle_width)
-        scaled_left_width = max(
-            1,
-            int((left_width * max_navigation_width) / total_requested_width),
+        minimum_navigation_width = min(
+            max_navigation_width,
+            LEFT_PANE_WIDTH_MIN + MIDDLE_PANE_WIDTH_MIN,
         )
-        scaled_middle_width = max(1, max_navigation_width - scaled_left_width)
+        target_navigation_width = min(
+            max_navigation_width,
+            max(
+                minimum_navigation_width,
+                int(tile_width * STANDARD_NAVIGATION_WIDTH_RATIO),
+            ),
+        )
 
-        if scaled_left_width + scaled_middle_width > max_navigation_width:
-            scaled_middle_width = max(1, max_navigation_width - scaled_left_width)
+        left_width = max(1, int(target_navigation_width * left_ratio))
+        middle_width = max(1, target_navigation_width - left_width)
 
-        return scaled_left_width, scaled_middle_width
+        if target_navigation_width >= minimum_navigation_width:
+            left_width = max(LEFT_PANE_WIDTH_MIN, left_width)
+            middle_width = max(MIDDLE_PANE_WIDTH_MIN, middle_width)
+
+        if left_width + middle_width > target_navigation_width:
+            overflow = left_width + middle_width - target_navigation_width
+            if left_width >= middle_width:
+                left_width = max(1, left_width - overflow)
+            else:
+                middle_width = max(1, middle_width - overflow)
+
+        if left_width + middle_width < target_navigation_width:
+            middle_width = max(1, target_navigation_width - left_width)
+
+        return left_width, middle_width
 
     def _sync_focus_mode_button(self) -> None:
         self.focus_mode_button.value(int(self.focus_mode_enabled))

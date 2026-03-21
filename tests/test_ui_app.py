@@ -796,24 +796,36 @@ def test_set_focus_mode_shows_only_viewer_and_restores_layout() -> None:
     assert browser.focus_mode_enabled is False
     assert browser.run_list_group.hidden is False
     assert browser.navigation_group.hidden is False
+    expected_left_width, expected_middle_width = (
+        app.ArtifactBrowserWindow._resolve_standard_pane_widths(
+            tile_width=1600,
+            left_pane_width=380,
+            middle_pane_width=340,
+        )
+    )
     assert (
         browser.run_list_group.x(),
         browser.run_list_group.y(),
         browser.run_list_group.w(),
         browser.run_list_group.h(),
-    ) == (0, 68, 380, 860)
+    ) == (0, 68, expected_left_width, 860)
     assert (
         browser.navigation_group.x(),
         browser.navigation_group.y(),
         browser.navigation_group.w(),
         browser.navigation_group.h(),
-    ) == (380, 68, 340, 860)
+    ) == (expected_left_width, 68, expected_middle_width, 860)
     assert (
         browser.viewer.x(),
         browser.viewer.y(),
         browser.viewer.w(),
         browser.viewer.h(),
-    ) == (720, 68, 880, 860)
+    ) == (
+        expected_left_width + expected_middle_width,
+        68,
+        1600 - expected_left_width - expected_middle_width,
+        860,
+    )
     assert browser.raw_files_browser.h() == 612
     assert browser.focus_mode_button.value() == 0
     assert "show only the viewer pane" in browser.focus_mode_button.tooltip()
@@ -823,6 +835,29 @@ def test_set_focus_mode_shows_only_viewer_and_restores_layout() -> None:
     assert browser.status_output.messages[-1] == (
         "Focus mode disabled. Restored all three panes."
     )
+
+
+def test_resolve_standard_pane_widths_scales_navigation_columns_with_tile_width() -> None:
+    narrow_left, narrow_middle = app.ArtifactBrowserWindow._resolve_standard_pane_widths(
+        tile_width=900,
+        left_pane_width=app.LEFT_PANE_WIDTH,
+        middle_pane_width=app.MIDDLE_PANE_WIDTH,
+    )
+    default_left, default_middle = app.ArtifactBrowserWindow._resolve_standard_pane_widths(
+        tile_width=app.WINDOW_WIDTH,
+        left_pane_width=app.LEFT_PANE_WIDTH,
+        middle_pane_width=app.MIDDLE_PANE_WIDTH,
+    )
+    wide_left, wide_middle = app.ArtifactBrowserWindow._resolve_standard_pane_widths(
+        tile_width=1600,
+        left_pane_width=app.LEFT_PANE_WIDTH,
+        middle_pane_width=app.MIDDLE_PANE_WIDTH,
+    )
+
+    assert narrow_left < default_left
+    assert narrow_middle < default_middle
+    assert wide_left > default_left
+    assert wide_middle > default_middle
 
 
 def test_close_browser_warns_if_run_is_still_active_and_user_stays(

@@ -98,6 +98,10 @@ The notes below are chronological history. Older references to `report digest` o
   - once the lower pane becomes a real card stack, the left issue navigator width can no longer stay hard-coded if the overall viewer is expected to resize gracefully,
   - a proportional width with clamp bounds worked better than a fixed `320px`: it keeps the navigator usable on narrow windows without starving the reader surface, and it does not let the navigator become comically wide on large windows,
   - geometry regressions here are worth locking with widget-level tests, not just screenshots, because the bug showed up as an unhealthy ratio between navigator and reader rather than as a logic failure.
+- Follow-up app-container pass after another human review:
+  - the digest viewer can be perfectly responsive in isolation and still feel broken if the surrounding three-pane app shell keeps feeding it rigid pane widths,
+  - the real fix was to make the app-level run list and middle navigation columns scale proportionally with the window width, while still respecting minimum widths and leaving room for the viewer,
+  - when a resize bug shows up only in the full app screenshots, debug the outer container first before assuming the inner viewer widget is still at fault.
 - The reusable lesson here is twofold:
   - this UI does not need more stored ranking metadata to feel prioritized,
   - once `Fl_Help_View` starts parsing richer, repeated structures, the correct fix is often to stop feeding it HTML and move that surface to native FLTK widgets.
