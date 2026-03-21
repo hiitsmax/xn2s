@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from xs2n.profile.types import OnboardResult, ProfileEntry
 
@@ -15,15 +15,30 @@ def _empty_doc() -> dict[str, Any]:
     return {"profiles": []}
 
 
-def load_sources(path: Path | None = None) -> dict[str, Any]:
-    storage_path = path or DEFAULT_SOURCES_PATH
-    if not storage_path.exists():
-        return _empty_doc()
+def _load_json_doc(path: Path, *, default_factory: Callable[[], Any]) -> Any:
+    if not path.exists():
+        return default_factory()
 
     try:
-        data = json.loads(storage_path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        return _empty_doc()
+        return default_factory()
+
+
+def _save_json_doc(doc: Any, path: Path, *, sort_keys: bool = False) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.tmp")
+    # Write atomically through a sibling temp file to avoid partial updates.
+    temp_path.write_text(
+        f"{json.dumps(doc, ensure_ascii=False, indent=2, sort_keys=sort_keys)}\n",
+        encoding="utf-8",
+    )
+    temp_path.replace(path)
+
+
+def load_sources(path: Path | None = None) -> dict[str, Any]:
+    storage_path = path or DEFAULT_SOURCES_PATH
+    data = _load_json_doc(storage_path, default_factory=_empty_doc)
 
     if not isinstance(data, dict):
         return _empty_doc()
@@ -35,11 +50,7 @@ def load_sources(path: Path | None = None) -> dict[str, Any]:
 
 def save_sources(doc: dict[str, Any], path: Path | None = None) -> None:
     storage_path = path or DEFAULT_SOURCES_PATH
-    storage_path.parent.mkdir(parents=True, exist_ok=True)
-    storage_path.write_text(
-        f"{json.dumps(doc, ensure_ascii=False, indent=2)}\n",
-        encoding="utf-8",
-    )
+    _save_json_doc(doc, storage_path)
 
 
 def _strip_yaml_scalar(value: str) -> str:
@@ -97,7 +108,7 @@ def migrate_legacy_sources_yaml(
 
     profiles = _parse_legacy_sources_yaml(legacy_path.read_text(encoding="utf-8"))
     if not profiles:
-        save_sources(_empty_doc(), path=storage_path)
+        _save_json_doc(_empty_doc(), storage_path)
         return 0
 
     deduped_profiles: list[dict[str, str]] = []
@@ -118,7 +129,7 @@ def migrate_legacy_sources_yaml(
             }
         )
 
-    save_sources({"profiles": deduped_profiles}, path=storage_path)
+    _save_json_doc({"profiles": deduped_profiles}, storage_path)
     return len(deduped_profiles)
 
 

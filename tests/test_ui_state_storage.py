@@ -13,6 +13,16 @@ def test_load_ui_state_defaults_to_system_when_missing(tmp_path: Path) -> None:
     }
 
 
+def test_load_ui_state_defaults_to_system_for_invalid_json(tmp_path: Path) -> None:
+    state_path = tmp_path / "ui_state.json"
+    state_path.write_text("{not json", encoding="utf-8")
+
+    assert load_ui_state(state_path) == {
+        "appearance_mode": "system",
+        "digest_navigation_visible": False,
+    }
+
+
 def test_save_ui_state_roundtrips_appearance_mode(tmp_path: Path) -> None:
     state_path = tmp_path / "ui_state.json"
 

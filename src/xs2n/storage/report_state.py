@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
+
+from .sources import _load_json_doc, _save_json_doc
 
 
 DEFAULT_REPORT_STATE_PATH = Path("data/report_state.json")
@@ -14,13 +15,7 @@ def _empty_doc() -> dict[str, Any]:
 
 def load_report_state(path: Path | None = None) -> dict[str, Any]:
     storage_path = path or DEFAULT_REPORT_STATE_PATH
-    if not storage_path.exists():
-        return _empty_doc()
-
-    try:
-        data = json.loads(storage_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return _empty_doc()
+    data = _load_json_doc(storage_path, default_factory=_empty_doc)
 
     if not isinstance(data, dict):
         return _empty_doc()
@@ -34,8 +29,4 @@ def load_report_state(path: Path | None = None) -> dict[str, Any]:
 
 def save_report_state(doc: dict[str, Any], path: Path | None = None) -> None:
     storage_path = path or DEFAULT_REPORT_STATE_PATH
-    storage_path.parent.mkdir(parents=True, exist_ok=True)
-    storage_path.write_text(
-        f"{json.dumps(doc, ensure_ascii=False, indent=2)}\n",
-        encoding="utf-8",
-    )
+    _save_json_doc(doc, storage_path)

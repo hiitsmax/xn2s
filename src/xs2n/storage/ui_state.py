@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from .sources import _load_json_doc, _save_json_doc
 
 
 DEFAULT_UI_STATE_PATH = Path("data/ui_state.json")
@@ -16,13 +17,7 @@ def _default_doc() -> dict[str, str | bool]:
 
 def load_ui_state(path: Path | None = None) -> dict[str, str | bool]:
     storage_path = path or DEFAULT_UI_STATE_PATH
-    if not storage_path.exists():
-        return _default_doc()
-
-    try:
-        payload = json.loads(storage_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return _default_doc()
+    payload = _load_json_doc(storage_path, default_factory=_default_doc)
 
     if not isinstance(payload, dict):
         return _default_doc()
@@ -41,10 +36,4 @@ def load_ui_state(path: Path | None = None) -> dict[str, str | bool]:
 
 def save_ui_state(state: dict[str, str | bool], path: Path | None = None) -> None:
     storage_path = path or DEFAULT_UI_STATE_PATH
-    storage_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = storage_path.with_name(f".{storage_path.name}.tmp")
-    temp_path.write_text(
-        f"{json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True)}\n",
-        encoding="utf-8",
-    )
-    temp_path.replace(storage_path)
+    _save_json_doc(state, storage_path, sort_keys=True)

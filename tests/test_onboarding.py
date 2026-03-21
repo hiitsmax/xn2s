@@ -3,7 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from xs2n.profile.helpers import build_entries_from_handles as build_entries, parse_handles
-from xs2n.storage import load_sources, merge_profiles, replace_profiles
+from xs2n.storage import (
+    load_onboard_state,
+    load_sources,
+    merge_profiles,
+    replace_profiles,
+    save_onboard_state,
+)
 
 
 def test_parse_handles_accepts_handles_and_urls() -> None:
@@ -73,3 +79,27 @@ def test_replace_profiles_overwrites_stale_entries(tmp_path: Path) -> None:
             "added_at": doc["profiles"][1]["added_at"],
         },
     ]
+
+
+def test_save_onboard_state_roundtrips(tmp_path: Path) -> None:
+    state_file = tmp_path / "onboard_state.json"
+
+    save_onboard_state(
+        {
+            "step": "completed",
+            "handle": "alpha",
+        },
+        state_file,
+    )
+
+    assert load_onboard_state(state_file) == {
+        "step": "completed",
+        "handle": "alpha",
+    }
+
+
+def test_load_onboard_state_defaults_to_empty_for_invalid_json(tmp_path: Path) -> None:
+    state_file = tmp_path / "onboard_state.json"
+    state_file.write_text("{not json", encoding="utf-8")
+
+    assert load_onboard_state(state_file) == {}

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
+
+from .sources import _load_json_doc, _save_json_doc
 
 
 DEFAULT_ONBOARD_STATE_PATH = Path("data/onboard_state.json")
@@ -10,13 +11,7 @@ DEFAULT_ONBOARD_STATE_PATH = Path("data/onboard_state.json")
 
 def load_onboard_state(path: Path | None = None) -> dict[str, str]:
     storage_path = path or DEFAULT_ONBOARD_STATE_PATH
-    if not storage_path.exists():
-        return {}
-
-    try:
-        data = json.loads(storage_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
+    data = _load_json_doc(storage_path, default_factory=dict)
 
     if not isinstance(data, dict):
         return {}
@@ -29,11 +24,7 @@ def load_onboard_state(path: Path | None = None) -> dict[str, str]:
 
 def save_onboard_state(state: dict[str, str], path: Path | None = None) -> None:
     storage_path = path or DEFAULT_ONBOARD_STATE_PATH
-    storage_path.parent.mkdir(parents=True, exist_ok=True)
-    storage_path.write_text(
-        f"{json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True)}\n",
-        encoding="utf-8",
-    )
+    _save_json_doc(state, storage_path, sort_keys=True)
 
 
 def resolve_onboard_state_path(
