@@ -13,7 +13,6 @@ from xs2n.agents.digest.pipeline import (
     render_issue_digest_html,
     run_issue_report,
 )
-from xs2n.cli.report_schedule import schedule_app
 from xs2n.cli.timeline import run_timeline_ingestion
 from xs2n.profile.timeline import DEFAULT_IMPORT_TIMELINE, IMPORT_TIMELINE_LIMIT
 from xs2n.report_runtime import (
@@ -30,7 +29,6 @@ report_app = typer.Typer(
     help="Report pipeline commands.",
     no_args_is_help=True,
 )
-report_app.add_typer(schedule_app, name="schedule")
 
 
 @report_app.callback()

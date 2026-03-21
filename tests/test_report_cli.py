@@ -228,6 +228,13 @@ def test_report_latest_help_tightens_home_latest_description() -> None:
     )
 
 
+def test_report_schedule_command_is_no_longer_available() -> None:
+    result = runner.invoke(report_app, ["schedule", "--help"])
+
+    assert result.exit_code != 0
+    assert "No such command 'schedule'" in result.stdout or "No such command 'schedule'" in result.stderr
+
+
 def test_resolve_latest_since_prefers_explicit_since() -> None:
     now = datetime(2026, 3, 8, 20, 0, tzinfo=timezone.utc)
 

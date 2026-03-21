@@ -18,7 +18,7 @@ In scope today:
 - Persist deduplicated timeline entries for downstream processing (`data/timeline.json`), including engagement metrics used for virality.
 - Build issue artifacts from timeline data (`xs2n report issues`).
 - Render a simple HTML digest from a saved run (`xs2n report html`, with `xs2n report render` kept as a compatibility alias).
-- Define portable schedule definitions for the active issue flow (`xs2n report schedule ...`).
+- Run the latest issue flow directly from external schedulers such as `cron`, `launchd`, or `systemd`.
 
 Out of scope for now:
 - Final production ranking/tuning.
@@ -33,8 +33,6 @@ The active report surface today is:
 - `xs2n report issues`
 - `xs2n report html`
 - `xs2n report latest`
-- `xs2n report schedule`
-
 Working now:
 - `xs2n onboard --paste`
 - `xs2n onboard --from-following <handle>`
@@ -47,7 +45,6 @@ Working now:
 - `xs2n report issues` (loose filter + sequential issue-building with per-step artifacts)
 - `xs2n report html` (deterministic HTML render from saved issue artifacts, with `report render` kept as a compatibility alias)
 - `xs2n report latest` (one command: ingest latest from onboarded sources, build issues, then render HTML)
-- `xs2n report schedule` (portable schedule definitions, overlap-safe runner, and export-only OS job output)
 - `xs2n ui` (optional native desktop artifact browser for digest runs)
 - Desktop auth center with separate `Codex` and `X / Twitter` sections plus pre-run auth guard
 - Interactive mode selection when no onboarding mode is provided
@@ -60,7 +57,7 @@ Known gaps / WIP:
 - No full integration/e2e test for real X account flow in CI
 - The new issue builder still needs editorial tuning and stronger real-world prompting
 - No delivery automation yet (email/LaTeX are future steps)
-- No native scheduler installation yet; `report schedule` only exports install-ready `cron` / `launchd` / `systemd` output in v1
+- No built-in scheduler subsystem; use `xs2n report latest` from your existing scheduler of choice
 
 ## Quickstart (`uv`)
 
@@ -241,20 +238,17 @@ uv run xs2n report latest --home-latest --lookback-hours 24
 
 `xs2n report latest` first runs timeline ingestion (from `data/sources.json` by default, or Home -> Following when `--home-latest` is enabled), then snapshots only the requested time window into the run folder, builds issues from that snapshot, and renders `digest.html`.
 
-Define and export named schedules for the active issue flow:
+Run the latest issue flow from your own scheduler:
 
 ```bash
-uv run xs2n report schedule create morning --at 08:30 --weekdays mon,wed,fri --lookback-hours 24
-uv run xs2n report schedule list
-uv run xs2n report schedule show morning
-uv run xs2n report schedule run morning
-uv run xs2n report schedule export morning --target cron
-uv run xs2n report schedule export morning --target launchd
-uv run xs2n report schedule export morning --target systemd
-uv run xs2n report schedule delete morning
+uv run xs2n report latest --lookback-hours 24
 ```
 
-`xs2n report schedule` stores named definitions in `data/report_schedules.json`, uses `data/report_schedule_locks/<name>.lock` to prevent overlap, records `last_run` on success/failure/lock-skip, and prints install-ready scheduler output without mutating the OS in v1.
+Example `cron` entry:
+
+```cron
+30 8 * * 1,3,5 cd /Users/you/path/to/xs2n && uv run xs2n report latest --lookback-hours 24
+```
 
 Browse run artifacts in a native desktop app:
 

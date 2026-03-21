@@ -6,9 +6,9 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 
 ## Current Report Surface
 
-The active report contract is `xs2n report issues`, `xs2n report html`, `xs2n report latest`, and `xs2n report schedule`.
+The active report contract is `xs2n report issues`, `xs2n report html`, and `xs2n report latest`.
 
-The notes below are chronological history. Older references to `report digest` are intentionally preserved where they describe the pre-simplification surface or earlier milestones.
+The notes below are chronological history. Older references to `report digest` or `report schedule` are intentionally preserved where they describe the pre-simplification surface or earlier milestones.
 
 ## Loop
 
