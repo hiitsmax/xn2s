@@ -5,15 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xs2n"
 version = "0.1.0"
-description = "CLI pipeline tools for timeline summarization"
+description = "Minimal Codex-authenticated digest pipeline base"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "typer>=0.12.3",
-  "twikit>=2.3.3",
-  "tenacity>=9.1.4",
-  "playwright>=1.58.0",
-  "browser-cookie3>=0.20.1",
   "openai>=1.68.0",
   "pydantic>=2.10.6",
 ]
@@ -22,13 +17,6 @@ dependencies = [
 dev = [
   "pytest>=8.3.0",
 ]
-gui = [
-  "markdown>=3.8",
-  "pyfltk>=1.4.4.0",
-]
-
-[project.scripts]
-xs2n = "xs2n.cli.cli:app"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
