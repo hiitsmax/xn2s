@@ -7,7 +7,7 @@ import typer
 from xs2n.cli.helpers import collect_multiline_paste
 from xs2n.profile.helpers import build_entries_from_handles, parse_handles
 from xs2n.profile.types import OnboardResult
-from xs2n.storage import merge_profiles
+from xs2n.storage.sources import merge_profiles
 
 
 def process_paste_parameters(*, sources_file: Path) -> tuple[OnboardResult, list[str]]:

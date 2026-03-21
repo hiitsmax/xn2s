@@ -188,23 +188,11 @@ def test_report_html_command_writes_html(
     assert "digest.html" in result.stdout
 
 
-def test_report_render_command_remains_compatibility_alias(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    run_dir = tmp_path / "report_runs" / "20260318T120000Z"
-    run_dir.mkdir(parents=True)
+def test_report_render_command_is_no_longer_available() -> None:
+    result = runner.invoke(report_app, ["render", "--help"])
 
-    monkeypatch.setattr(
-        "xs2n.cli.report.render_issue_digest_html",
-        lambda **kwargs: run_dir / "digest.html",
-    )
-
-    result = runner.invoke(report_app, ["render", "--run-dir", str(run_dir)])
-
-    assert result.exit_code == 0
-    assert "Rendered HTML digest to" in result.stdout
-    assert "digest.html" in result.stdout
+    assert result.exit_code != 0
+    assert "No such command 'render'" in result.stdout or "No such command 'render'" in result.stderr
 
 
 def test_report_html_surfaces_runtime_error(

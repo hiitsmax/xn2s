@@ -21,7 +21,11 @@ from xs2n.profile.following import (
     run_import_following_handles,
 )
 from xs2n.profile.helpers import build_entries_from_handles
-from xs2n.storage import DEFAULT_SOURCES_PATH, merge_profiles, replace_profiles
+from xs2n.storage.sources import (
+    DEFAULT_SOURCES_PATH,
+    merge_profiles,
+    replace_profiles,
+)
 
 
 def import_following_with_recovery(

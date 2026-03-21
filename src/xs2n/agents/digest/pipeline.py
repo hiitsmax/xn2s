@@ -18,8 +18,6 @@ from .helpers import write_json
 
 DEFAULT_REPORT_RUNS_PATH = Path("data/report_runs")
 DEFAULT_REPORT_MODEL = "gpt-5.4-mini"
-DEFAULT_REPORT_PARALLEL_WORKERS = 1
-DEFAULT_TAXONOMY_PATH = Path("docs/codex/report_taxonomy.json")
 
 
 def _duration_ms(started_at: datetime, finished_at: datetime) -> int:

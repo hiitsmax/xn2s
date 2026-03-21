@@ -8,14 +8,17 @@ from typing import Callable
 
 import typer
 
-from xs2n.agents import (
+from xs2n.agents.digest.pipeline import (
     DEFAULT_REPORT_MODEL,
     DEFAULT_REPORT_RUNS_PATH,
+    render_issue_digest_html,
+    run_issue_report,
 )
 from xs2n.cli.timeline import parse_since_datetime, run_timeline_ingestion
 from xs2n.profile.timeline import DEFAULT_IMPORT_TIMELINE
 from xs2n.schemas.run_events import RunEvent
-from xs2n.storage import DEFAULT_SOURCES_PATH, DEFAULT_TIMELINE_PATH, load_timeline
+from xs2n.storage.sources import DEFAULT_SOURCES_PATH
+from xs2n.storage.timeline import DEFAULT_TIMELINE_PATH, load_timeline
 
 
 DEFAULT_COOKIES_PATH = Path("cookies.json")
@@ -234,13 +237,10 @@ def run_latest_report(
     emit_event: Callable[[RunEvent], None] | None = None,
 ) -> LatestReportResult:
     run_timeline_ingestion_fn = run_timeline_ingestion_fn or run_timeline_ingestion
-    if run_issue_report_fn is None or render_issue_digest_html_fn is None:
-        from xs2n.agents import render_issue_digest_html, run_issue_report
-
-        run_issue_report_fn = run_issue_report_fn or run_issue_report
-        render_issue_digest_html_fn = (
-            render_issue_digest_html_fn or render_issue_digest_html
-        )
+    run_issue_report_fn = run_issue_report_fn or run_issue_report
+    render_issue_digest_html_fn = (
+        render_issue_digest_html_fn or render_issue_digest_html
+    )
 
     since_datetime = resolve_latest_since(
         since=arguments.since,

@@ -8,13 +8,10 @@ import threading
 
 import pytest
 
-from xs2n.agents.digest import (
-    TimelineRecord,
-    _load_threads,
-    _virality_score,
-    render_issue_digest_html,
-    run_issue_report,
-)
+from xs2n.agents.digest import render_issue_digest_html, run_issue_report
+from xs2n.agents.digest.helpers import virality_score
+from xs2n.agents.digest.steps.load_threads import run as load_threads
+from xs2n.schemas.digest import TimelineRecord
 from xs2n.schemas.run_events import RunEvent
 
 
@@ -299,7 +296,7 @@ def test_load_threads_groups_source_authored_conversations_and_exposes_primary_p
         encoding="utf-8",
     )
 
-    threads = _load_threads(timeline_file=timeline_file)
+    threads = load_threads(timeline_file=timeline_file)
 
     assert len(threads) == 1
     assert threads[0].thread_id == "conv-1"
@@ -331,45 +328,16 @@ def test_virality_score_weights_multi_metric_signal() -> None:
         view_count=10000,
     )
 
-    assert _virality_score(high) > _virality_score(low)
+    assert virality_score(high) > virality_score(low)
 
 
 def test_agents_package_exports_only_active_report_entrypoints() -> None:
     import xs2n.agents as agents_module
     import xs2n.agents.digest as digest_module
 
-    assert "run_digest_report" not in agents_module.__all__
     assert not hasattr(agents_module, "run_digest_report")
     assert "run_digest_report" not in digest_module.__all__
-
-
-def test_digest_run_digest_report_warns_and_delegates(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import xs2n.agents.digest as digest_module
-
-    expected_result = object()
-    observed_kwargs: dict[str, object] = {}
-
-    def fake_run_issue_report(**kwargs):  # noqa: ANN003, ANN201
-        observed_kwargs.update(kwargs)
-        return expected_result
-
-    monkeypatch.setattr(digest_module, "run_issue_report", fake_run_issue_report)
-
-    with pytest.deprecated_call(
-        match="run_digest_report is deprecated; use run_issue_report",
-    ):
-        result = digest_module.run_digest_report(
-            timeline_file=Path("timeline.json"),
-            output_dir=Path("report_runs"),
-        )
-
-    assert result is expected_result
-    assert observed_kwargs == {
-        "timeline_file": Path("timeline.json"),
-        "output_dir": Path("report_runs"),
-    }
+    assert not hasattr(digest_module, "run_digest_report")
 
 
 def test_run_issue_report_writes_artifacts_and_issue_json(tmp_path: Path) -> None:

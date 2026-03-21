@@ -7,7 +7,7 @@ import sys
 import typer
 from typer.models import OptionInfo
 
-from xs2n.agents import (
+from xs2n.agents.digest.pipeline import (
     DEFAULT_REPORT_MODEL,
     DEFAULT_REPORT_RUNS_PATH,
     render_issue_digest_html,
@@ -23,7 +23,8 @@ from xs2n.report_runtime import (
     run_latest_report,
 )
 from xs2n.schemas.run_events import RunEvent
-from xs2n.storage import DEFAULT_SOURCES_PATH, DEFAULT_TIMELINE_PATH
+from xs2n.storage.sources import DEFAULT_SOURCES_PATH
+from xs2n.storage.timeline import DEFAULT_TIMELINE_PATH
 
 report_app = typer.Typer(
     help="Report pipeline commands.",
@@ -187,23 +188,6 @@ def html_render(
 
     html_path = _render_saved_issue_run_html(run_dir=run_dir)
     typer.echo(f"Rendered HTML digest to {html_path}.")
-
-
-@report_app.command("render", deprecated=True)
-def render(
-    run_dir: Path = typer.Option(
-        ...,
-        "--run-dir",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        readable=True,
-        help="Existing run directory containing issues.json and issue_assignments.json.",
-    ),
-) -> None:
-    """Compatibility alias for `html`."""
-
-    html_render(run_dir=run_dir)
 
 
 @report_app.command("latest")

@@ -3,13 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from xs2n.profile.helpers import build_entries_from_handles as build_entries, parse_handles
-from xs2n.storage import (
-    load_onboard_state,
-    load_sources,
-    merge_profiles,
-    replace_profiles,
-    save_onboard_state,
-)
+from xs2n.storage.onboard_state import load_onboard_state, save_onboard_state
+from xs2n.storage.sources import load_sources, merge_profiles, replace_profiles
 
 
 def test_parse_handles_accepts_handles_and_urls() -> None:

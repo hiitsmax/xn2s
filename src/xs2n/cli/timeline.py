@@ -24,13 +24,12 @@ from xs2n.profile.timeline import (
     run_import_home_latest_timeline_entries,
     run_import_timeline_entries,
 )
-from xs2n.storage import (
+from xs2n.storage.sources import (
     DEFAULT_SOURCES_PATH,
-    DEFAULT_TIMELINE_PATH,
     load_sources,
-    merge_timeline_entries,
     migrate_legacy_sources_yaml,
 )
+from xs2n.storage.timeline import DEFAULT_TIMELINE_PATH, merge_timeline_entries
 
 DEFAULT_SLOW_FETCH_SECONDS = 1.0
 DEFAULT_PAGE_DELAY_SECONDS = 0.4

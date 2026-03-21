@@ -28,7 +28,7 @@ gui = [
 ]
 
 [project.scripts]
-xs2n = "xs2n.cli:app"
+xs2n = "xs2n.cli.cli:app"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

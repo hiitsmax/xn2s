@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from xs2n.schemas.digest import ThreadInput, TimelineRecord
-from xs2n.storage import load_timeline
+from xs2n.storage.timeline import load_timeline
 
 
 def run(*, timeline_file: Path) -> list[ThreadInput]:

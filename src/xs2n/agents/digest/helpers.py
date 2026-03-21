@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 import json
 import math
@@ -13,26 +12,8 @@ from pydantic import BaseModel
 from xs2n.schemas.digest import (
     FilteredThread,
     Issue,
-    TaxonomyConfig,
     TimelineRecord,
 )
-
-
-DEFAULT_TAXONOMY_DOC = {
-    "categories": [
-        {
-            "slug": "analysis",
-            "label": "Analysis",
-            "description": "Thoughtful interpretation, synthesis, or second-order thinking.",
-        },
-        {
-            "slug": "breaking_news",
-            "label": "Breaking News",
-            "description": "Fresh developments, disclosures, or events people need to know now.",
-        },
-    ],
-    "drop_categories": [],
-}
 
 
 def to_jsonable(value: Any) -> Any:
@@ -55,17 +36,6 @@ def write_json(path: Path, payload: Any) -> None:
         f"{json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2)}\n",
         encoding="utf-8",
     )
-
-
-def load_taxonomy(path: Path) -> TaxonomyConfig:
-    if path.exists():
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            payload = DEFAULT_TAXONOMY_DOC
-    else:
-        payload = DEFAULT_TAXONOMY_DOC
-    return TaxonomyConfig.model_validate(payload)
 
 
 def virality_score(record: TimelineRecord) -> float:
@@ -103,14 +73,3 @@ def filtered_thread_payload(thread: FilteredThread) -> dict[str, Any]:
         "virality_score": sum(virality_score(tweet) for tweet in thread.tweets),
     }
 
-
-def map_in_thread_pool(
-    *,
-    items: list[Any],
-    worker,
-    max_workers: int,
-) -> list[Any]:
-    if max_workers <= 1:
-        return [worker(item) for item in items]
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        return list(executor.map(worker, items))

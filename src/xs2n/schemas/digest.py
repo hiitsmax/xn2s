@@ -8,17 +8,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class CategorySpec(BaseModel):
-    slug: str
-    label: str
-    description: str
-
-
-class TaxonomyConfig(BaseModel):
-    categories: list[CategorySpec] = Field(default_factory=list)
-    drop_categories: list[str] = Field(default_factory=list)
-
-
 class TimelineMedia(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
