@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,9 +39,7 @@ def test_schedule_create_persists_definition(
         sources_file=tmp_path / "sources.json",
         home_latest=True,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
-        parallel_workers=4,
         schedules_file=schedules_file,
     )
 
@@ -52,9 +51,11 @@ def test_schedule_create_persists_definition(
     assert schedule["time_local"] == "08:30"
     assert schedule["weekdays"] == ["mon", "wed", "fri"]
     assert schedule["latest_arguments"]["home_latest"] is True
-    assert schedule["launcher_argv"][0].startswith("/")
-    assert schedule["working_directory"].startswith("/")
-    assert schedule["log_dir"].endswith("data/report_schedule_logs/morning-digest")
+    assert "taxonomy_file" not in schedule["latest_arguments"]
+    assert "parallel_workers" not in schedule["latest_arguments"]
+    assert "launcher_argv" not in schedule
+    assert "working_directory" not in schedule
+    assert "log_dir" not in schedule
     assert "Created report schedule morning-digest." in capsys.readouterr().out
 
 
@@ -78,9 +79,7 @@ def test_schedule_list_show_and_delete(
         sources_file=tmp_path / "sources.json",
         home_latest=False,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
-        parallel_workers=4,
         schedules_file=schedules_file,
     )
 
@@ -115,9 +114,7 @@ def test_schedule_run_updates_last_run_on_success(
         sources_file=tmp_path / "sources.json",
         home_latest=False,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
-        parallel_workers=4,
         schedules_file=schedules_file,
     )
     monkeypatch.setattr(
@@ -157,14 +154,15 @@ def test_schedule_run_records_locked_skip(
         sources_file=tmp_path / "sources.json",
         home_latest=False,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
-        parallel_workers=4,
         schedules_file=schedules_file,
     )
     lock_dir = tmp_path / "report_schedule_locks"
     lock_dir.mkdir(parents=True, exist_ok=True)
-    (lock_dir / "morning-digest.lock").write_text("busy\n", encoding="utf-8")
+    (lock_dir / "morning-digest.lock").write_text(
+        f"{os.getpid()}\n",
+        encoding="utf-8",
+    )
 
     run_schedule(
         name="morning-digest",
@@ -176,6 +174,52 @@ def test_schedule_run_records_locked_skip(
     assert schedule["last_run"]["status"] == "skipped_locked"
     assert schedule["last_run"]["exit_code"] == 0
     assert "already running" in capsys.readouterr().out
+
+
+def test_schedule_run_reclaims_stale_lock(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    schedules_file = tmp_path / "report_schedules.json"
+    create(
+        name="morning-digest",
+        at=None,
+        weekdays=None,
+        every_hours=6,
+        cron_expression=None,
+        replace=False,
+        since=None,
+        lookback_hours=24,
+        cookies_file=tmp_path / "cookies.json",
+        limit=120,
+        timeline_file=tmp_path / "timeline.json",
+        sources_file=tmp_path / "sources.json",
+        home_latest=False,
+        output_dir=tmp_path / "report_runs",
+        model="gpt-5.4",
+        schedules_file=schedules_file,
+    )
+    lock_dir = tmp_path / "report_schedule_locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / "morning-digest.lock"
+    lock_path.write_text("999999\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "xs2n.report_schedule.runner.run_latest_report",
+        lambda arguments: SimpleNamespace(
+            run_id="20260318T190000Z",
+            digest_path=tmp_path / "report_runs" / "20260318T190000Z" / "digest.md",
+        ),
+    )
+
+    run_schedule(
+        name="morning-digest",
+        schedules_file=schedules_file,
+        lock_dir=lock_dir,
+    )
+
+    schedule = json.loads(schedules_file.read_text(encoding="utf-8"))["schedules"][0]
+    assert schedule["last_run"]["status"] == "succeeded"
+    assert not lock_path.exists()
 
 
 def test_schedule_run_records_failure(
@@ -198,9 +242,7 @@ def test_schedule_run_records_failure(
         sources_file=tmp_path / "sources.json",
         home_latest=False,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
-        parallel_workers=4,
         schedules_file=schedules_file,
     )
     monkeypatch.setattr(
@@ -237,9 +279,7 @@ def test_schedule_export_prints_target_output(
         sources_file=tmp_path / "sources.json",
         home_latest=False,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
-        parallel_workers=4,
         schedules_file=schedules_file,
     )
 
@@ -277,9 +317,7 @@ def test_schedule_export_rejects_raw_cron_for_non_cron_targets(
         sources_file=tmp_path / "sources.json",
         home_latest=False,
         output_dir=tmp_path / "report_runs",
-        taxonomy_file=tmp_path / "taxonomy.json",
         model="gpt-5.4",
-        parallel_workers=4,
         schedules_file=schedules_file,
     )
 

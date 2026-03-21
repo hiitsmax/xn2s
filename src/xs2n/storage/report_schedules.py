@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import tempfile
 
 from xs2n.schemas.report_schedule import ReportScheduleCatalog
 
@@ -17,8 +19,10 @@ def load_report_schedules(path: Path | None = None) -> ReportScheduleCatalog:
         return ReportScheduleCatalog.model_validate_json(
             storage_path.read_text(encoding="utf-8")
         )
-    except ValueError:
-        return ReportScheduleCatalog()
+    except ValueError as error:
+        raise ValueError(
+            f"Could not load report schedule catalog from {storage_path}: {error}"
+        ) from error
 
 
 def save_report_schedules(
@@ -28,7 +32,22 @@ def save_report_schedules(
 ) -> None:
     storage_path = path or DEFAULT_REPORT_SCHEDULES_PATH
     storage_path.parent.mkdir(parents=True, exist_ok=True)
-    storage_path.write_text(
-        f"{catalog.model_dump_json(indent=2)}\n",
-        encoding="utf-8",
-    )
+    serialized_catalog = f"{catalog.model_dump_json(indent=2)}\n"
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=storage_path.parent,
+            prefix=f".{storage_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_file.write(serialized_catalog)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_path = Path(temp_file.name)
+        os.replace(temp_path, storage_path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)

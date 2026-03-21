@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LatestRunArgumentsDoc(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     since: str | None = None
     lookback_hours: int = 24
     cookies_file: str = "cookies.json"
@@ -12,12 +14,12 @@ class LatestRunArgumentsDoc(BaseModel):
     sources_file: str = "data/sources.json"
     home_latest: bool = False
     output_dir: str = "data/report_runs"
-    taxonomy_file: str = "docs/codex/report_taxonomy.json"
     model: str = "gpt-5.4"
-    parallel_workers: int = 4
 
 
 class ScheduleLastRun(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     status: str
     started_at: str | None = None
     finished_at: str | None = None
@@ -28,7 +30,7 @@ class ScheduleLastRun(BaseModel):
 
 
 class ReportSchedule(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     name: str
     cadence_kind: str
@@ -37,9 +39,6 @@ class ReportSchedule(BaseModel):
     interval_hours: int | None = None
     cron_expression: str | None = None
     latest_arguments: LatestRunArgumentsDoc
-    working_directory: str
-    launcher_argv: list[str]
-    log_dir: str
     last_run: ScheduleLastRun | None = None
 
 

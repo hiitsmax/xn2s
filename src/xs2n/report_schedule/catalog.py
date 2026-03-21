@@ -10,6 +10,7 @@ from xs2n.report_runtime import LatestRunArguments
 from xs2n.schemas.report_schedule import (
     LatestRunArgumentsDoc,
     ReportSchedule,
+    ReportScheduleCatalog,
     ScheduleLastRun,
 )
 from xs2n.storage.report_schedules import (
@@ -40,12 +41,6 @@ def build_schedule_definition(
         every_hours=every_hours,
         cron_expression=cron_expression,
     )
-    launcher_argv = _resolve_launcher_argv()
-    working_directory = str(_REPO_ROOT)
-    log_dir = str(
-        (_REPO_ROOT / "data" / "report_schedule_logs" / normalized_name).resolve()
-    )
-
     return ReportSchedule(
         name=normalized_name,
         cadence_kind=cadence_kind,
@@ -53,12 +48,7 @@ def build_schedule_definition(
         weekdays=weekday_values,
         interval_hours=interval_hours,
         cron_expression=cron_value,
-        latest_arguments=LatestRunArgumentsDoc.model_validate(
-            latest_arguments.to_storage_doc()
-        ),
-        working_directory=working_directory,
-        launcher_argv=launcher_argv,
-        log_dir=log_dir,
+        latest_arguments=_latest_arguments_doc(latest_arguments),
         last_run=None,
     )
 
@@ -69,7 +59,7 @@ def save_schedule_definition(
     schedules_file: Path = DEFAULT_REPORT_SCHEDULES_PATH,
     replace: bool = False,
 ) -> ReportSchedule:
-    catalog = load_report_schedules(schedules_file)
+    catalog = _load_schedule_catalog(schedules_file)
     for index, existing in enumerate(catalog.schedules):
         if existing.name != schedule.name:
             continue
@@ -91,7 +81,7 @@ def list_schedule_definitions(
     *,
     schedules_file: Path = DEFAULT_REPORT_SCHEDULES_PATH,
 ) -> list[ReportSchedule]:
-    return load_report_schedules(schedules_file).schedules
+    return _load_schedule_catalog(schedules_file).schedules
 
 
 def get_schedule_definition(
@@ -100,7 +90,7 @@ def get_schedule_definition(
     schedules_file: Path = DEFAULT_REPORT_SCHEDULES_PATH,
 ) -> ReportSchedule:
     normalized_name = _normalize_schedule_name(name)
-    for schedule in load_report_schedules(schedules_file).schedules:
+    for schedule in _load_schedule_catalog(schedules_file).schedules:
         if schedule.name == normalized_name:
             return schedule
     raise typer.BadParameter(f"Report schedule {normalized_name} does not exist.")
@@ -112,7 +102,7 @@ def delete_schedule_definition(
     schedules_file: Path = DEFAULT_REPORT_SCHEDULES_PATH,
 ) -> ReportSchedule:
     normalized_name = _normalize_schedule_name(name)
-    catalog = load_report_schedules(schedules_file)
+    catalog = _load_schedule_catalog(schedules_file)
     for index, schedule in enumerate(catalog.schedules):
         if schedule.name != normalized_name:
             continue
@@ -129,7 +119,7 @@ def update_schedule_last_run(
     schedules_file: Path = DEFAULT_REPORT_SCHEDULES_PATH,
 ) -> ReportSchedule:
     normalized_name = _normalize_schedule_name(name)
-    catalog = load_report_schedules(schedules_file)
+    catalog = _load_schedule_catalog(schedules_file)
     for index, schedule in enumerate(catalog.schedules):
         if schedule.name != normalized_name:
             continue
@@ -153,6 +143,28 @@ def describe_schedule(schedule: ReportSchedule) -> str:
 def latest_arguments_from_schedule(schedule: ReportSchedule) -> LatestRunArguments:
     return LatestRunArguments.from_storage_doc(
         schedule.latest_arguments.model_dump(mode="json")
+    )
+
+
+def resolve_schedule_working_directory() -> Path:
+    return _REPO_ROOT
+
+
+def resolve_schedule_log_dir(schedule_name: str) -> Path:
+    return (_REPO_ROOT / "data" / "report_schedule_logs" / schedule_name).resolve()
+
+
+def resolve_schedule_launcher_argv() -> list[str]:
+    for command in ("uv", "xs2n"):
+        resolved = shutil.which(command)
+        if resolved is None:
+            continue
+        executable = str(Path(resolved).resolve())
+        if command == "uv":
+            return [executable, "run", "xs2n"]
+        return [executable]
+    raise typer.BadParameter(
+        "Could not resolve a runnable `uv` or `xs2n` binary for schedule execution."
     )
 
 
@@ -239,15 +251,24 @@ def _parse_weekdays(value: str | None) -> list[str]:
     return seen
 
 
-def _resolve_launcher_argv() -> list[str]:
-    for command in ("uv", "xs2n"):
-        resolved = shutil.which(command)
-        if resolved is None:
-            continue
-        executable = str(Path(resolved).resolve())
-        if command == "uv":
-            return [executable, "run", "xs2n"]
-        return [executable]
-    raise typer.BadParameter(
-        "Could not resolve a runnable `uv` or `xs2n` binary for schedule execution."
+def _latest_arguments_doc(
+    latest_arguments: LatestRunArguments,
+) -> LatestRunArgumentsDoc:
+    return LatestRunArgumentsDoc(
+        since=latest_arguments.since,
+        lookback_hours=latest_arguments.lookback_hours,
+        cookies_file=str(latest_arguments.cookies_file),
+        limit=latest_arguments.limit,
+        timeline_file=str(latest_arguments.timeline_file),
+        sources_file=str(latest_arguments.sources_file),
+        home_latest=latest_arguments.home_latest,
+        output_dir=str(latest_arguments.output_dir),
+        model=latest_arguments.model,
     )
+
+
+def _load_schedule_catalog(schedules_file: Path) -> ReportScheduleCatalog:
+    try:
+        return load_report_schedules(schedules_file)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error

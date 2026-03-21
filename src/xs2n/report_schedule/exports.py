@@ -7,6 +7,12 @@ import shlex
 
 from xs2n.schemas.report_schedule import ReportSchedule
 
+from .catalog import (
+    resolve_schedule_launcher_argv,
+    resolve_schedule_log_dir,
+    resolve_schedule_working_directory,
+)
+
 
 _SYSTEMD_DAY_NAMES = {
     "mon": "Mon",
@@ -58,12 +64,13 @@ def _render_cron_export(schedule: ReportSchedule) -> str:
 
 def _render_launchd_export(schedule: ReportSchedule) -> str:
     _require_friendly_cadence(schedule, target="launchd")
+    log_dir = resolve_schedule_log_dir(schedule.name)
     plist_doc: dict[str, object] = {
         "Label": _schedule_unit_name(schedule.name, prefix="xs2n.report.schedule."),
         "ProgramArguments": _schedule_command_argv(schedule),
-        "WorkingDirectory": schedule.working_directory,
-        "StandardOutPath": str(Path(schedule.log_dir) / "launchd.stdout.log"),
-        "StandardErrorPath": str(Path(schedule.log_dir) / "launchd.stderr.log"),
+        "WorkingDirectory": str(resolve_schedule_working_directory()),
+        "StandardOutPath": str(log_dir / "launchd.stdout.log"),
+        "StandardErrorPath": str(log_dir / "launchd.stderr.log"),
     }
     if schedule.cadence_kind == "time":
         hour, minute = _split_time(schedule.time_local)
@@ -90,6 +97,7 @@ def _render_launchd_export(schedule: ReportSchedule) -> str:
 def _render_systemd_export(schedule: ReportSchedule) -> str:
     _require_friendly_cadence(schedule, target="systemd")
     unit_name = _schedule_unit_name(schedule.name, prefix="xs2n-report-schedule-")
+    log_dir = resolve_schedule_log_dir(schedule.name)
     service = "\n".join(
         [
             f"# {unit_name}.service",
@@ -98,10 +106,10 @@ def _render_systemd_export(schedule: ReportSchedule) -> str:
             "",
             "[Service]",
             "Type=oneshot",
-            f"WorkingDirectory={schedule.working_directory}",
+            f"WorkingDirectory={resolve_schedule_working_directory()}",
             f"ExecStart={shlex.join(_schedule_command_argv(schedule))}",
-            f"StandardOutput=append:{Path(schedule.log_dir) / 'systemd.stdout.log'}",
-            f"StandardError=append:{Path(schedule.log_dir) / 'systemd.stderr.log'}",
+            f"StandardOutput=append:{log_dir / 'systemd.stdout.log'}",
+            f"StandardError=append:{log_dir / 'systemd.stderr.log'}",
         ]
     )
     if schedule.cadence_kind == "time":
@@ -138,19 +146,19 @@ def _render_systemd_export(schedule: ReportSchedule) -> str:
 
 
 def _render_shell_command(schedule: ReportSchedule) -> str:
-    log_dir = Path(schedule.log_dir)
+    log_dir = resolve_schedule_log_dir(schedule.name)
     stdout_path = log_dir / "cron.stdout.log"
     stderr_path = log_dir / "cron.stderr.log"
     command = shlex.join(_schedule_command_argv(schedule))
     return (
-        f"cd {shlex.quote(schedule.working_directory)} && "
+        f"cd {shlex.quote(str(resolve_schedule_working_directory()))} && "
         f"{command} >> {shlex.quote(str(stdout_path))} "
         f"2>> {shlex.quote(str(stderr_path))}"
     )
 
 
 def _schedule_command_argv(schedule: ReportSchedule) -> list[str]:
-    return [*schedule.launcher_argv, "report", "schedule", "run", schedule.name]
+    return [*resolve_schedule_launcher_argv(), "report", "schedule", "run", schedule.name]
 
 
 def _split_time(value: str | None) -> tuple[int, int]:

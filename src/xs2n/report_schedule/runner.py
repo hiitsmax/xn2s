@@ -15,6 +15,7 @@ from xs2n.storage.report_schedules import DEFAULT_REPORT_SCHEDULES_PATH
 from .catalog import (
     get_schedule_definition,
     latest_arguments_from_schedule,
+    resolve_schedule_log_dir,
     update_schedule_last_run,
 )
 
@@ -47,7 +48,6 @@ def run_named_schedule(
     return run_schedule_definition(
         schedule_name=schedule.name,
         latest_arguments=latest_arguments_from_schedule(schedule),
-        log_dir=Path(schedule.log_dir),
         schedules_file=schedules_file,
         lock_dir=lock_dir,
     )
@@ -57,17 +57,12 @@ def run_schedule_definition(
     *,
     schedule_name: str,
     latest_arguments,
-    log_dir: Path,
     schedules_file: Path,
     lock_dir: Path,
 ) -> ScheduleLastRun:
     started_at = datetime.now(timezone.utc)
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = lock_dir / f"{schedule_name}.lock"
-
-    try:
-        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
+    lock_fd = _acquire_schedule_lock(schedule_name=schedule_name, lock_dir=lock_dir)
+    if lock_fd is None:
         last_run = ScheduleLastRun(
             status="skipped_locked",
             started_at=started_at.isoformat(),
@@ -85,6 +80,8 @@ def run_schedule_definition(
         typer.echo(f"Report schedule {schedule_name} is already running; skipping.")
         return last_run
 
+    lock_path = lock_dir / f"{schedule_name}.lock"
+    log_dir = resolve_schedule_log_dir(schedule_name)
     try:
         os.write(lock_fd, f"{os.getpid()}\n".encode("utf-8"))
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -153,3 +150,41 @@ def run_schedule_definition(
     finally:
         os.close(lock_fd)
         lock_path.unlink(missing_ok=True)
+
+
+def _acquire_schedule_lock(*, schedule_name: str, lock_dir: Path) -> int | None:
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / f"{schedule_name}.lock"
+    try:
+        return os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        if not _lock_file_is_stale(lock_path):
+            return None
+        lock_path.unlink(missing_ok=True)
+        try:
+            return os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return None
+
+
+def _lock_file_is_stale(lock_path: Path) -> bool:
+    try:
+        raw_lock = lock_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+
+    try:
+        lock_pid = int(raw_lock)
+    except ValueError:
+        return True
+
+    if lock_pid < 1:
+        return True
+
+    try:
+        os.kill(lock_pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False

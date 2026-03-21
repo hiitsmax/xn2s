@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
+
+import pytest
 
 from xs2n.schemas.report_schedule import (
     LatestRunArgumentsDoc,
@@ -30,13 +34,8 @@ def test_report_schedules_round_trip(tmp_path: Path) -> None:
                     sources_file="tmp/sources.json",
                     home_latest=True,
                     output_dir="tmp/report_runs",
-                    taxonomy_file="tmp/taxonomy.json",
                     model="gpt-5.4",
-                    parallel_workers=6,
                 ),
-                working_directory="/tmp/xs2n",
-                launcher_argv=["/opt/homebrew/bin/uv", "run", "xs2n"],
-                log_dir="/tmp/xs2n/data/report_schedule_logs/morning-digest",
                 last_run=ScheduleLastRun(
                     status="succeeded",
                     started_at="2026-03-18T08:30:00+00:00",
@@ -54,3 +53,85 @@ def test_report_schedules_round_trip(tmp_path: Path) -> None:
     loaded = load_report_schedules(schedules_file)
 
     assert loaded == catalog
+
+
+def test_load_report_schedules_rejects_invalid_json(tmp_path: Path) -> None:
+    schedules_file = tmp_path / "report_schedules.json"
+    schedules_file.write_text("{not json}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="report schedule catalog"):
+        load_report_schedules(schedules_file)
+
+
+def test_save_report_schedules_keeps_previous_file_on_replace_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    schedules_file = tmp_path / "report_schedules.json"
+    schedules_file.write_text('{"schedules":[{"name":"before"}]}\n', encoding="utf-8")
+    catalog = ReportScheduleCatalog()
+    replace_sources: list[Path] = []
+
+    def fail_replace(source: str | os.PathLike[str], destination: str | os.PathLike[str]) -> None:
+        replace_sources.append(Path(source))
+        raise OSError("disk full")
+
+    monkeypatch.setattr("xs2n.storage.report_schedules.os.replace", fail_replace)
+
+    with pytest.raises(OSError, match="disk full"):
+        save_report_schedules(catalog, path=schedules_file)
+
+    assert (
+        schedules_file.read_text(encoding="utf-8")
+        == '{"schedules":[{"name":"before"}]}\n'
+    )
+    assert replace_sources
+    assert all(not source.exists() for source in replace_sources)
+
+
+def test_load_report_schedules_accepts_legacy_fields_and_rewrites_compact(
+    tmp_path: Path,
+) -> None:
+    schedules_file = tmp_path / "report_schedules.json"
+    schedules_file.write_text(
+        json.dumps(
+            {
+                "schedules": [
+                    {
+                        "name": "morning-digest",
+                        "cadence_kind": "hours",
+                        "interval_hours": 6,
+                        "latest_arguments": {
+                            "lookback_hours": 24,
+                            "cookies_file": "tmp/cookies.json",
+                            "limit": 100,
+                            "timeline_file": "tmp/timeline.json",
+                            "sources_file": "tmp/sources.json",
+                            "home_latest": False,
+                            "output_dir": "tmp/report_runs",
+                            "taxonomy_file": "tmp/taxonomy.json",
+                            "model": "gpt-5.4",
+                            "parallel_workers": 6,
+                        },
+                        "working_directory": "/tmp/xs2n",
+                        "launcher_argv": ["/opt/homebrew/bin/uv", "run", "xs2n"],
+                        "log_dir": "/tmp/xs2n/data/report_schedule_logs/morning-digest",
+                    }
+                ]
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_report_schedules(schedules_file)
+    save_report_schedules(loaded, path=schedules_file)
+    rewritten = json.loads(schedules_file.read_text(encoding="utf-8"))
+
+    schedule = rewritten["schedules"][0]
+    assert "taxonomy_file" not in schedule["latest_arguments"]
+    assert "parallel_workers" not in schedule["latest_arguments"]
+    assert "working_directory" not in schedule
+    assert "launcher_argv" not in schedule
+    assert "log_dir" not in schedule

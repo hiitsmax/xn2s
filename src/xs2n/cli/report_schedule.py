@@ -8,9 +8,7 @@ from typer.models import OptionInfo
 
 from xs2n.agents import (
     DEFAULT_REPORT_MODEL,
-    DEFAULT_REPORT_PARALLEL_WORKERS,
     DEFAULT_REPORT_RUNS_PATH,
-    DEFAULT_TAXONOMY_PATH,
 )
 from xs2n.profile.timeline import DEFAULT_IMPORT_TIMELINE
 from xs2n.report_runtime import DEFAULT_COOKIES_PATH, LatestRunArguments
@@ -111,21 +109,10 @@ def create(
         "--output-dir",
         help="Directory where report run artifacts are written.",
     ),
-    taxonomy_file: Path = typer.Option(
-        DEFAULT_TAXONOMY_PATH,
-        "--taxonomy-file",
-        help="Editable taxonomy JSON file.",
-    ),
     model: str = typer.Option(
         DEFAULT_REPORT_MODEL,
         "--model",
         help="OpenAI model name used for structured digest steps.",
-    ),
-    parallel_workers: int = typer.Option(
-        DEFAULT_REPORT_PARALLEL_WORKERS,
-        "--parallel-workers",
-        min=1,
-        help="Worker count for parallel categorize/filter/process digest steps.",
     ),
     schedules_file: Path = typer.Option(
         DEFAULT_REPORT_SCHEDULES_PATH,
@@ -144,9 +131,7 @@ def create(
         sources_file=sources_file,
         home_latest=home_latest,
         output_dir=output_dir,
-        taxonomy_file=taxonomy_file,
         model=model,
-        parallel_workers=parallel_workers,
     )
     schedule = build_schedule_definition(
         name=name,
