@@ -11,13 +11,16 @@ from twikit.errors import NotFound, TweetNotAvailable
 
 from xs2n.profile.auth import LoginPrompt, ensure_authenticated_client
 from xs2n.profile.helpers import normalize_handle
-from xs2n.profile.types import TimelineEntry, TimelineFetchResult
+from xs2n.profile.types import (
+    AUTHENTICATED_ACCOUNT_SENTINEL,
+    TimelineEntry,
+    TimelineFetchResult,
+)
 
 
 IMPORT_TIMELINE_PAGE_SIZE = 40
 IMPORT_TIMELINE_LIMIT = 5000
 DEFAULT_IMPORT_TIMELINE = 500
-AUTHENTICATED_ACCOUNT_SENTINEL = "__self__"
 TIMELINE_FEEDS = ("Tweets", "Replies")
 DEFAULT_THREAD_PARENT_LIMIT = 120
 DEFAULT_THREAD_REPLIES_LIMIT = 240
@@ -109,13 +112,11 @@ def _tweet_conversation_id(tweet: Any) -> str | None:
         if normalized_direct_id:
             return normalized_direct_id
 
-    legacy = getattr(tweet, "_legacy", None)
-    if isinstance(legacy, dict):
-        raw_legacy_id = legacy.get("conversation_id_str")
-        if isinstance(raw_legacy_id, str):
-            normalized_legacy_id = raw_legacy_id.strip()
-            if normalized_legacy_id:
-                return normalized_legacy_id
+    raw_legacy_id = _tweet_private_legacy_payload(tweet).get("conversation_id_str")
+    if isinstance(raw_legacy_id, str):
+        normalized_legacy_id = raw_legacy_id.strip()
+        if normalized_legacy_id:
+            return normalized_legacy_id
 
     return None
 
@@ -125,6 +126,16 @@ def _optional_text(value: Any) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _tweet_private_legacy_payload(tweet: Any) -> dict[str, Any]:
+    try:
+        legacy = getattr(tweet, "_legacy", None)
+    except Exception:
+        return {}
+    if isinstance(legacy, dict):
+        return legacy
+    return {}
 
 
 def _tweet_media(tweet: Any) -> list[dict[str, object]]:
@@ -137,7 +148,7 @@ def _tweet_media(tweet: Any) -> list[dict[str, object]]:
     if isinstance(resolved_media, list):
         media_entries = resolved_media
     else:
-        legacy = getattr(tweet, "_legacy", None)
+        legacy = _tweet_private_legacy_payload(tweet)
         if isinstance(legacy, dict):
             entities = legacy.get("entities")
             if isinstance(entities, dict):

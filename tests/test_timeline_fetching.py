@@ -494,6 +494,61 @@ def test_import_timeline_entries_captures_media_metadata(
     ]
 
 
+def test_import_timeline_entries_tolerates_unreadable_private_legacy_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _BrokenLegacyTweet:
+        def __init__(self) -> None:
+            created_at = datetime(2026, 1, 5, tzinfo=timezone.utc)
+            self.id = "broken-legacy"
+            self.created_at_datetime = created_at
+            self.created_at = created_at.strftime("%a %b %d %H:%M:%S %z %Y")
+            self.text = "post with unreadable private payload"
+            self.full_text = self.text
+            self.user = _DummyUserRef("mx")
+            self.retweeted_tweet = None
+            self.in_reply_to = None
+            self.conversation_id = None
+
+        @property
+        def _legacy(self) -> dict[str, object]:
+            raise RuntimeError("private payload unavailable")
+
+    since = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    batch = _DummyBatch([_BrokenLegacyTweet()])
+    dummy_user = _DummyUser(screen_name="mx", tweets_batch=batch)
+
+    def fake_client(locale: str) -> _DummyClient:
+        return _DummyClient(locale=locale, user=dummy_user)
+
+    async def fake_ensure_authenticated_client(**kwargs):  # noqa: ANN202
+        return None
+
+    monkeypatch.setattr("xs2n.profile.timeline.Client", fake_client)
+    monkeypatch.setattr(
+        "xs2n.profile.timeline.ensure_authenticated_client",
+        fake_ensure_authenticated_client,
+    )
+
+    result = asyncio.run(
+        import_timeline_entries(
+            account_screen_name="mx",
+            cookies_file=Path("cookies.json"),
+            since_datetime=since,
+            limit=10,
+            prompt_login=lambda *_: ("u", "e", "p"),
+            thread_parent_limit=0,
+            thread_replies_limit=0,
+            thread_other_replies_limit=0,
+        )
+    )
+
+    entry = result.entries[0]
+    assert entry.tweet_id == "broken-legacy"
+    assert entry.conversation_id is None
+    assert entry.media == []
+
+
 def test_import_timeline_entries_applies_page_delay_between_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

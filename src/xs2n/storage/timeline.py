@@ -57,26 +57,7 @@ def merge_timeline_entries(
     added = 0
     skipped = 0
     for entry in new_entries:
-        serialized_entry = {
-            "tweet_id": entry.tweet_id,
-            "account_handle": entry.account_handle,
-            "author_handle": entry.author_handle,
-            "kind": entry.kind,
-            "created_at": entry.created_at,
-            "text": entry.text,
-            "retweeted_tweet_id": entry.retweeted_tweet_id,
-            "retweeted_author_handle": entry.retweeted_author_handle,
-            "retweeted_created_at": entry.retweeted_created_at,
-            "in_reply_to_tweet_id": entry.in_reply_to_tweet_id,
-            "conversation_id": entry.conversation_id,
-            "timeline_source": entry.timeline_source,
-            "favorite_count": entry.favorite_count,
-            "retweet_count": entry.retweet_count,
-            "reply_count": entry.reply_count,
-            "quote_count": entry.quote_count,
-            "view_count": entry.view_count,
-            "media": entry.media or [],
-        }
+        serialized_entry = entry.to_storage_row()
 
         existing_index = existing_indexes.get(entry.tweet_id)
         if existing_index is not None:

@@ -5,12 +5,12 @@ from pathlib import Path
 
 from twikit import Client
 
-from xs2n.profile.helpers import normalize_handle
 from xs2n.profile.auth import LoginPrompt, ensure_authenticated_client
+from xs2n.profile.helpers import normalize_handle
+from xs2n.profile.types import AUTHENTICATED_ACCOUNT_SENTINEL
 
 IMPORT_FOLLOWING_HANDLES_LIMIT = 2000
 DEFAULT_IMPORT_FOLLOWING_HANDLES = 2000
-AUTHENTICATED_ACCOUNT_SENTINEL = "__self__"
 
 
 async def import_following_handles(
@@ -56,6 +56,7 @@ async def import_following_handles(
             break
 
     return handles
+
 
 def run_import_following_handles(
     account_screen_name: str,

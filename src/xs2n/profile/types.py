@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Literal
+
+
+AUTHENTICATED_ACCOUNT_SENTINEL = "__self__"
 
 
 @dataclass(slots=True)
@@ -49,6 +52,11 @@ class TimelineEntry:
     view_count: int | None = None
     media: list[dict[str, object]] | None = None
 
+    def to_storage_row(self) -> dict[str, object]:
+        row = asdict(self)
+        row["media"] = row["media"] or []
+        return row
+
 
 @dataclass(slots=True)
 class TimelineFetchResult:
@@ -61,4 +69,3 @@ class TimelineFetchResult:
 class TimelineMergeResult:
     added: int
     skipped_duplicates: int
-
