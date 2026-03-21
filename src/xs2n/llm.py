@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import re
 from typing import Any, TypeVar, cast
@@ -35,12 +33,7 @@ def _strict_json_schema(fragment: Any) -> Any:
 
 
 class DigestLLM:
-    def __init__(
-        self,
-        *,
-        model: str,
-        api_key: str | None = None,
-    ) -> None:
+    def __init__(self, *, model: str, api_key: str | None = None) -> None:
         credentials = resolve_model_credentials(api_key)
         self._model = model
         self._source = credentials.source
