@@ -7,6 +7,7 @@ import fltk
 
 from xs2n.ui.digest_browser_preview import (
     build_issue_summary_panel,
+    render_issue_canvas_styles,
     render_issue_canvas_text,
     render_issue_placeholder_text,
 )
@@ -16,12 +17,16 @@ from xs2n.ui.theme import CLASSIC_LIGHT_THEME, UiTheme, to_fltk_color
 
 HEADER_HEIGHT = 28
 SUBTITLE_HEIGHT = 24
-SUMMARY_HEIGHT = 126
+SUMMARY_HEIGHT = 154
 TOOLBAR_HEIGHT = 30
 ISSUE_LIST_WIDTH = 320
 PADDING = 8
-SUMMARY_TITLE_HEIGHT = 34
-SUMMARY_META_HEIGHT = 22
+SUMMARY_SURFACE_PADDING_X = 14
+SUMMARY_SURFACE_PADDING_Y = 10
+SUMMARY_VERTICAL_GAP = 6
+SUMMARY_TITLE_HEIGHT = 28
+SUMMARY_META_HEIGHT = 18
+RIGHT_COLUMN_INSET = 10
 
 
 class DigestBrowser:
@@ -43,12 +48,16 @@ class DigestBrowser:
         self.header = fltk.Fl_Box(x, y, width, HEADER_HEIGHT, "")
         self.subtitle = fltk.Fl_Box(x, y + HEADER_HEIGHT, width, SUBTITLE_HEIGHT, "")
         self.issue_list = fltk.Fl_Hold_Browser(x, y, ISSUE_LIST_WIDTH, height)
+        self.issue_summary_surface = fltk.Fl_Box(x, y, width, SUMMARY_HEIGHT, "")
         self.issue_title = fltk.Fl_Box(x, y, width, SUMMARY_TITLE_HEIGHT, "")
         self.issue_meta = fltk.Fl_Box(x, y, width, SUMMARY_META_HEIGHT, "")
         self.issue_blurb = fltk.Fl_Box(x, y, width, SUMMARY_HEIGHT - SUMMARY_TITLE_HEIGHT - SUMMARY_META_HEIGHT, "")
         self.open_button = fltk.Fl_Button(x, y, 132, TOOLBAR_HEIGHT, "Open lead thread")
         self.issue_canvas = fltk.Fl_Text_Display(x, y, width, height)
         self.issue_canvas_buffer = fltk.Fl_Text_Buffer()
+        self.issue_canvas_style_buffer = fltk.Fl_Text_Buffer()
+        self._issue_canvas_style_entries = []
+        self._issue_canvas_style_callback = lambda *args: None
         self.issue_canvas.buffer(self.issue_canvas_buffer)
         self.group.end()
         self.group.resizable(self.issue_canvas)
@@ -62,6 +71,15 @@ class DigestBrowser:
             self.issue_blurb,
         ):
             box.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE | fltk.FL_ALIGN_WRAP)
+        if hasattr(self.issue_canvas, "highlight_data"):
+            self.issue_canvas.highlight_data(
+                self.issue_canvas_style_buffer,
+                self._issue_canvas_style_entries,
+                0,
+                "A",
+                self._issue_canvas_style_callback,
+                None,
+            )
         self.issue_list.callback(self._on_issue_selected, None)
         self.open_button.callback(self._on_open_clicked, None)
         if hasattr(self.issue_list, "column_char"):
@@ -77,6 +95,8 @@ class DigestBrowser:
             )
         if hasattr(self.issue_canvas, "linenumber_width"):
             self.issue_canvas.linenumber_width(0)
+        if hasattr(self.issue_canvas, "hide_cursor"):
+            self.issue_canvas.hide_cursor()
         self._layout()
         self.apply_theme(self._theme)
 
@@ -97,20 +117,23 @@ class DigestBrowser:
         self.header.color(to_fltk_color(fltk, theme.viewer_panel_bg))
         self.subtitle.box(fltk.FL_FLAT_BOX)
         self.subtitle.color(to_fltk_color(fltk, theme.header_bg))
-        self.issue_title.box(fltk.FL_DOWN_BOX)
+        self.issue_summary_surface.box(fltk.FL_DOWN_BOX)
+        self.issue_summary_surface.color(to_fltk_color(fltk, theme.viewer_plain_bg))
+        self.issue_title.box(fltk.FL_FLAT_BOX)
         self.issue_title.color(to_fltk_color(fltk, theme.viewer_plain_bg))
         self.issue_meta.box(fltk.FL_FLAT_BOX)
         self.issue_meta.color(to_fltk_color(fltk, theme.viewer_plain_bg))
         self.issue_blurb.box(fltk.FL_FLAT_BOX)
         self.issue_blurb.color(to_fltk_color(fltk, theme.viewer_plain_bg))
-        self.issue_canvas.box(fltk.FL_BORDER_BOX)
-        self.issue_canvas.color(to_fltk_color(fltk, theme.viewer_bg))
+        self.issue_canvas.box(fltk.FL_DOWN_BOX)
+        self.issue_canvas.color(to_fltk_color(fltk, theme.viewer_plain_bg))
         if hasattr(self.issue_canvas, "textcolor"):
             self.issue_canvas.textcolor(text_color)
         if hasattr(self.issue_canvas, "textsize"):
-            self.issue_canvas.textsize(16)
+            self.issue_canvas.textsize(15)
         if hasattr(self.issue_canvas, "textfont"):
             self.issue_canvas.textfont(fltk.FL_HELVETICA)
+        self._apply_issue_canvas_style_theme(theme)
         for widget in (
             self.header,
             self.subtitle,
@@ -124,7 +147,7 @@ class DigestBrowser:
             if hasattr(widget, "textcolor"):
                 widget.textcolor(text_color)
         if hasattr(self.issue_title, "labelsize"):
-            self.issue_title.labelsize(20)
+            self.issue_title.labelsize(21)
         if hasattr(self.issue_title, "labelfont"):
             self.issue_title.labelfont(fltk.FL_HELVETICA_BOLD)
         if hasattr(self.issue_meta, "labelsize"):
@@ -133,6 +156,8 @@ class DigestBrowser:
             self.issue_meta.labelcolor(to_fltk_color(fltk, theme.muted_text))
         if hasattr(self.issue_blurb, "labelsize"):
             self.issue_blurb.labelsize(14)
+        if hasattr(self.issue_blurb, "labelfont"):
+            self.issue_blurb.labelfont(fltk.FL_HELVETICA)
         self.issue_list.color(to_fltk_color(fltk, theme.panel_bg2))
         self.issue_list.selection_color(to_fltk_color(fltk, theme.selection_bg))
         if hasattr(self.issue_list, "textsize"):
@@ -146,12 +171,71 @@ class DigestBrowser:
             self.open_button.labelsize(12)
         self.group.redraw()
 
+    def _apply_issue_canvas_style_theme(self, theme: UiTheme) -> None:
+        foreground_color = _issue_canvas_foreground_color(theme)
+        muted_color = _issue_canvas_muted_color(theme)
+        self._issue_canvas_style_entries = [
+            _style_entry(
+                color=foreground_color,
+                font=fltk.FL_HELVETICA,
+                size=14,
+            ),
+            _style_entry(
+                color=foreground_color,
+                font=fltk.FL_TIMES_BOLD,
+                size=21,
+            ),
+            _style_entry(
+                color=foreground_color,
+                font=fltk.FL_HELVETICA,
+                size=15,
+            ),
+            _style_entry(
+                color=muted_color,
+                font=fltk.FL_HELVETICA_ITALIC,
+                size=13,
+            ),
+            _style_entry(
+                color=muted_color,
+                font=fltk.FL_HELVETICA_BOLD,
+                size=11,
+            ),
+            _style_entry(
+                color=foreground_color,
+                font=fltk.FL_HELVETICA,
+                size=14,
+            ),
+        ]
+        if hasattr(self.issue_canvas, "highlight_data"):
+            self.issue_canvas.highlight_data(
+                self.issue_canvas_style_buffer,
+                self._issue_canvas_style_entries,
+                len(self._issue_canvas_style_entries),
+                "A",
+                self._issue_canvas_style_callback,
+                None,
+            )
+
+    def _set_issue_canvas_content(
+        self,
+        *,
+        text: str,
+        styles: str | None,
+    ) -> None:
+        self.issue_canvas_buffer.text(text)
+        if styles is None or len(styles) != len(text):
+            styles = "A" * len(text)
+        self.issue_canvas_style_buffer.text(styles)
+        self.issue_canvas.insert_position(0)
+        self.issue_canvas.show_insert_position()
+
     def load_run(self, run_dir: Path) -> bool:
         preview = load_saved_digest_preview(run_dir=run_dir)
         if preview is None:
             self._state = None
             self.issue_list.clear()
             self.issue_canvas_buffer.text("")
+            self.issue_canvas_style_buffer.text("")
             return False
         self._state = DigestBrowserState(preview)
         self._render()
@@ -162,12 +246,21 @@ class DigestBrowser:
         y = self.group.y()
         width = self.group.w()
         height = self.group.h()
-        right_x = x + ISSUE_LIST_WIDTH + PADDING
-        right_width = max(1, width - ISSUE_LIST_WIDTH - PADDING)
+        right_x = x + ISSUE_LIST_WIDTH + PADDING + RIGHT_COLUMN_INSET
+        right_width = max(1, width - ISSUE_LIST_WIDTH - (PADDING * 2) - RIGHT_COLUMN_INSET)
         summary_y = y + HEADER_HEIGHT + SUBTITLE_HEIGHT
         button_y = summary_y + SUMMARY_HEIGHT + PADDING
         canvas_y = button_y + TOOLBAR_HEIGHT + PADDING
         canvas_height = max(1, height - (canvas_y - y))
+        summary_inner_x = right_x + SUMMARY_SURFACE_PADDING_X
+        summary_inner_y = summary_y + SUMMARY_SURFACE_PADDING_Y
+        summary_inner_width = max(1, right_width - (SUMMARY_SURFACE_PADDING_X * 2))
+        meta_y = summary_inner_y + SUMMARY_TITLE_HEIGHT + SUMMARY_VERTICAL_GAP
+        blurb_y = meta_y + SUMMARY_META_HEIGHT + SUMMARY_VERTICAL_GAP
+        blurb_height = max(
+            1,
+            (summary_y + SUMMARY_HEIGHT - SUMMARY_SURFACE_PADDING_Y) - blurb_y,
+        )
 
         self.header.resize(x, y, width, HEADER_HEIGHT)
         self.subtitle.resize(x, y + HEADER_HEIGHT, width, SUBTITLE_HEIGHT)
@@ -177,20 +270,26 @@ class DigestBrowser:
             ISSUE_LIST_WIDTH,
             height - HEADER_HEIGHT - SUBTITLE_HEIGHT,
         )
-        self.issue_title.resize(right_x, summary_y, right_width, SUMMARY_TITLE_HEIGHT)
+        self.issue_summary_surface.resize(right_x, summary_y, right_width, SUMMARY_HEIGHT)
+        self.issue_title.resize(
+            summary_inner_x,
+            summary_inner_y,
+            summary_inner_width,
+            SUMMARY_TITLE_HEIGHT,
+        )
         self.issue_meta.resize(
-            right_x,
-            summary_y + SUMMARY_TITLE_HEIGHT,
-            right_width,
+            summary_inner_x,
+            meta_y,
+            summary_inner_width,
             SUMMARY_META_HEIGHT,
         )
         self.issue_blurb.resize(
-            right_x,
-            summary_y + SUMMARY_TITLE_HEIGHT + SUMMARY_META_HEIGHT,
-            right_width,
-            SUMMARY_HEIGHT - SUMMARY_TITLE_HEIGHT - SUMMARY_META_HEIGHT,
+            summary_inner_x,
+            blurb_y,
+            summary_inner_width,
+            blurb_height,
         )
-        self.open_button.resize(right_x, button_y, 132, TOOLBAR_HEIGHT)
+        self.open_button.resize(summary_inner_x, button_y, 132, TOOLBAR_HEIGHT)
         self.issue_canvas.resize(right_x, canvas_y, right_width, canvas_height)
         self._configure_issue_list_columns()
 
@@ -219,25 +318,25 @@ class DigestBrowser:
         issue_preview = self._state.selected_issue_preview()
         if issue_preview is None:
             panel = build_issue_summary_panel(issue_preview)
-            self.issue_title.label(f" {panel.title}")
+            self.issue_title.label(panel.title)
             self.issue_meta.label("")
-            self.issue_blurb.label("")
-            self.issue_canvas_buffer.text(
-                render_issue_placeholder_text(
+            self.issue_blurb.label(panel.blurb)
+            self._set_issue_canvas_content(
+                text=render_issue_placeholder_text(
                     issue_title="Selected issue",
-                )
+                ),
+                styles=None,
             )
             self.open_button.deactivate()
         else:
             panel = build_issue_summary_panel(issue_preview)
-            self.issue_title.label(f" {panel.title}")
-            self.issue_meta.label(f" {panel.meta}")
-            self.issue_blurb.label(f" {panel.blurb}")
-            self.issue_canvas_buffer.text(
-                render_issue_canvas_text(issue_preview)
+            self.issue_title.label(panel.title)
+            self.issue_meta.label(panel.meta)
+            self.issue_blurb.label(panel.blurb)
+            self._set_issue_canvas_content(
+                text=render_issue_canvas_text(issue_preview),
+                styles=render_issue_canvas_styles(issue_preview),
             )
-            self.issue_canvas.insert_position(0)
-            self.issue_canvas.show_insert_position()
             if issue_preview.lead_open_url:
                 self.open_button.activate()
             else:
@@ -282,3 +381,24 @@ class DigestBrowser:
 
 def _format_issue_row_label(issue_row) -> str:  # noqa: ANN001
     return issue_row.render_label()
+
+
+def _style_entry(*, color: int, font: int, size: int):
+    entry = fltk.Style_Table_Entry()
+    entry.color = color
+    entry.font = font
+    entry.size = size
+    entry.attr = 0
+    return entry
+
+
+def _issue_canvas_foreground_color(theme: UiTheme) -> int:
+    if theme.name == "classic_dark":
+        return fltk.FL_WHITE
+    return fltk.FL_BLACK
+
+
+def _issue_canvas_muted_color(theme: UiTheme) -> int:
+    if theme.name == "classic_dark":
+        return fltk.FL_LIGHT2
+    return fltk.FL_DARK3

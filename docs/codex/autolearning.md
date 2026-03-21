@@ -55,6 +55,10 @@ The notes below are chronological history. Older references to `report digest` o
   - the secondary summary column now carries only title, compact meta, and one blurb line instead of reprinting timestamps and verbose metadata,
   - the lower viewer drops repeated issue-level headers and heavy field labels such as `Summary:` and `Why this matters:`,
   - `Fl_Text_Display` now uses a cleaner proportional text face and slightly larger body size so the digest reads more like an editorial surface than a terminal dump.
+- Follow-up typographic pass after another human review:
+  - the issue summary area now renders as one inset surface with internal padding instead of stacking title/meta/blurb directly against the right-pane edge,
+  - the lower issue canvas no longer repeats the issue blurb before the thread list, which reduces the feeling of duplicated copy at the top of the reading surface,
+  - thread rendering now carries a dedicated FLTK style buffer so thread titles, thread summaries, editorial context, tweet metadata, and tweet text can read as different text roles rather than one flat block.
 - The reusable lesson here is twofold:
   - this UI does not need more stored ranking metadata to feel prioritized,
   - once `Fl_Help_View` starts parsing richer, repeated structures, the correct fix is often to stop feeding it HTML and move that surface to native FLTK widgets.

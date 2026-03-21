@@ -3,6 +3,7 @@ from __future__ import annotations
 from xs2n.schemas.digest import Issue, IssueThread
 from xs2n.ui.digest_browser_preview import (
     build_issue_summary_panel,
+    render_issue_canvas_styles,
     render_issue_canvas_text,
     render_issue_placeholder_text,
 )
@@ -251,6 +252,36 @@ def test_render_issue_canvas_text_shows_all_threads_for_selected_issue() -> None
     assert "Packaging constraints are now spilling directly into cloud roadmap timing." in rendered
     assert "@realmcore_" in rendered
     assert "It adds concrete evidence to the chip-capacity issue." in rendered
+    assert "Supply constraints keep shaping AI infra." not in rendered
+    assert (
+        "01. Foundry capacity is still the gating factor\n\n"
+        "A short report on why foundry capacity still drives the roadmap."
+    ) in rendered
+
+
+def test_render_issue_canvas_styles_give_titles_and_metadata_distinct_treatment() -> None:
+    state = DigestBrowserState(_preview())
+    rendered = render_issue_canvas_text(state.selected_issue_preview())
+    styles = render_issue_canvas_styles(state.selected_issue_preview())
+
+    title_index = rendered.index("01. Foundry capacity is still the gating factor")
+    summary_index = rendered.index(
+        "A short report on why foundry capacity still drives the roadmap."
+    )
+    why_index = rendered.index(
+        "It adds concrete evidence to the chip-capacity issue."
+    )
+    tweet_meta_index = rendered.index("  01. @realmcore_ | retweet | 2026-03-13 00:01 UTC")
+    tweet_text_index = rendered.index(
+        "      Foundry capacity is still the gating factor for every major roadmap shift."
+    )
+
+    assert len(styles) == len(rendered)
+    assert styles[title_index] == "B"
+    assert styles[summary_index] == "C"
+    assert styles[why_index] == "D"
+    assert styles[tweet_meta_index] == "E"
+    assert styles[tweet_text_index] == "F"
 
 
 def test_render_issue_placeholder_text_guides_the_user() -> None:
