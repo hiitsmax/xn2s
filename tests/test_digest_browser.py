@@ -23,3 +23,18 @@ def test_digest_browser_layout_insets_the_issue_summary_surface() -> None:
     assert browser.open_button.y() > (
         browser.issue_summary_surface.y() + browser.issue_summary_surface.h()
     )
+
+
+def test_digest_browser_layout_places_sort_headers_above_issue_list() -> None:
+    browser = DigestBrowser(
+        x=0,
+        y=0,
+        width=1000,
+        height=700,
+        on_open_url=lambda _url: None,
+    )
+
+    assert browser.issue_title_header.x() == browser.issue_list.x()
+    assert browser.issue_thread_count_header.y() == browser.issue_title_header.y()
+    assert browser.issue_thread_count_header.x() > browser.issue_title_header.x()
+    assert browser.issue_list.y() > browser.issue_title_header.y()

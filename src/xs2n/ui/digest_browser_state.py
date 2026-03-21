@@ -2,9 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from xs2n.schemas.digest import Issue, IssueThread, TimelineRecord
 from xs2n.ui.saved_digest import SavedDigestPreview
+
+
+DigestIssueSortKey = Literal["title", "thread_count"]
+
+
+@dataclass(frozen=True, slots=True)
+class DigestIssueSort:
+    key: DigestIssueSortKey
+    ascending: bool
 
 
 @dataclass(slots=True)
@@ -19,14 +29,8 @@ class DigestIssueRow:
     latest_created_at: datetime | None
 
     def render_label(self) -> str:
-        density = f"{self.thread_count}T/{self.tweet_count}P"
-        title = _truncate_text(self.title, limit=34)
-        return (
-            f"{self.rank:02d}\t"
-            f"{self.priority_label}\t"
-            f"{density}\t"
-            f"{title}"
-        )
+        title = _truncate_text(self.title, limit=40)
+        return f"{title}\t{self.thread_count}"
 
 
 @dataclass(slots=True)
@@ -72,9 +76,11 @@ class DigestBrowserState:
             issue.slug: self._ordered_issue_threads(issue)
             for issue in preview.issues
         }
-        self._issue_rows = self._build_issue_rows()
-        self._issue_rows_by_slug = {row.slug: row for row in self._issue_rows}
-        self._selected_issue_slug = self._issue_rows[0].slug if self._issue_rows else None
+        self._issue_sort = DigestIssueSort(key="thread_count", ascending=False)
+        self._issue_rows: list[DigestIssueRow] = []
+        self._issue_rows_by_slug: dict[str, DigestIssueRow] = {}
+        self._selected_issue_slug: str | None = None
+        self._refresh_issue_rows()
 
     @property
     def digest_title(self) -> str:
@@ -95,9 +101,25 @@ class DigestBrowserState:
     def issue_rows(self) -> list[DigestIssueRow]:
         return list(self._issue_rows)
 
+    def issue_sort(self) -> DigestIssueSort:
+        return self._issue_sort
+
     def select_issue(self, slug: str) -> None:
         if slug in self._issues_by_slug:
             self._selected_issue_slug = slug
+
+    def toggle_issue_sort(self, key: DigestIssueSortKey) -> None:
+        if self._issue_sort.key == key:
+            self._issue_sort = DigestIssueSort(
+                key=key,
+                ascending=not self._issue_sort.ascending,
+            )
+        else:
+            self._issue_sort = DigestIssueSort(
+                key=key,
+                ascending=_default_issue_sort_ascending(key),
+            )
+        self._refresh_issue_rows()
 
     def selected_issue(self) -> Issue:
         if self._selected_issue_slug is None:
@@ -142,56 +164,54 @@ class DigestBrowserState:
         )
 
     def _build_issue_rows(self) -> list[DigestIssueRow]:
-        ranked_rows: list[tuple[int, int, int, DigestIssueRow]] = []
-
-        for issue_index, issue in enumerate(self.preview.issues):
+        issue_rows: list[DigestIssueRow] = []
+        for issue in self.preview.issues:
             issue_threads = self._issue_threads_by_slug.get(issue.slug, [])
             thread_count = issue.thread_count or len(issue.thread_ids) or len(issue_threads)
             tweet_count = sum(len(thread.tweets) for thread in issue_threads)
             latest_created_at = (
                 max((thread.latest_created_at for thread in issue_threads), default=None)
             )
-            ranked_rows.append(
-                (
-                    -thread_count,
-                    -tweet_count,
-                    issue_index,
-                    DigestIssueRow(
-                        slug=issue.slug,
-                        title=issue.title,
-                        summary=issue.summary,
-                        rank=0,
-                        priority_label="Brief",
-                        thread_count=thread_count,
-                        tweet_count=tweet_count,
-                        latest_created_at=latest_created_at,
-                    ),
+            issue_rows.append(
+                DigestIssueRow(
+                    slug=issue.slug,
+                    title=issue.title,
+                    summary=issue.summary,
+                    rank=0,
+                    priority_label="Brief",
+                    thread_count=thread_count,
+                    tweet_count=tweet_count,
+                    latest_created_at=latest_created_at,
                 )
             )
 
-        ranked_rows.sort(key=lambda item: (item[0], item[1], item[2]))
-
-        issue_rows: list[DigestIssueRow] = []
-        for rank, (_thread_sort, _tweet_sort, _index, row) in enumerate(
+        ranked_rows = sorted(
+            issue_rows,
+            key=lambda row: (
+                -row.thread_count,
+                -row.tweet_count,
+                row.title.casefold(),
+            ),
+        )
+        for rank, row in enumerate(
             ranked_rows,
             start=1,
         ):
-            issue_rows.append(
-                DigestIssueRow(
-                    slug=row.slug,
-                    title=row.title,
-                    summary=row.summary,
-                    rank=rank,
-                    priority_label=_priority_label(
-                        thread_count=row.thread_count,
-                        tweet_count=row.tweet_count,
-                    ),
-                    thread_count=row.thread_count,
-                    tweet_count=row.tweet_count,
-                    latest_created_at=row.latest_created_at,
-                )
+            row.rank = rank
+            row.priority_label = _priority_label(
+                thread_count=row.thread_count,
+                tweet_count=row.tweet_count,
             )
-        return issue_rows
+        return _sort_issue_rows_for_display(
+            ranked_rows,
+            sort_state=self._issue_sort,
+        )
+
+    def _refresh_issue_rows(self) -> None:
+        self._issue_rows = self._build_issue_rows()
+        self._issue_rows_by_slug = {row.slug: row for row in self._issue_rows}
+        if self._selected_issue_slug is None and self._issue_rows:
+            self._selected_issue_slug = self._issue_rows[0].slug
 
     def _ordered_issue_threads(self, issue: Issue) -> list[IssueThread]:
         ordered_threads: list[IssueThread] = []
@@ -210,6 +230,34 @@ def _priority_label(*, thread_count: int, tweet_count: int) -> str:
     if thread_count >= 2 or tweet_count >= 2:
         return "Track"
     return "Brief"
+
+
+def _default_issue_sort_ascending(key: DigestIssueSortKey) -> bool:
+    if key == "title":
+        return True
+    return False
+
+
+def _sort_issue_rows_for_display(
+    issue_rows: list[DigestIssueRow],
+    *,
+    sort_state: DigestIssueSort,
+) -> list[DigestIssueRow]:
+    if sort_state.key == "title":
+        return sorted(
+            issue_rows,
+            key=lambda row: row.title.casefold(),
+            reverse=not sort_state.ascending,
+        )
+    if sort_state.ascending:
+        return sorted(
+            issue_rows,
+            key=lambda row: (row.thread_count, row.title.casefold()),
+        )
+    return sorted(
+        issue_rows,
+        key=lambda row: (-row.thread_count, row.title.casefold()),
+    )
 
 
 def _truncate_text(value: str, *, limit: int) -> str:

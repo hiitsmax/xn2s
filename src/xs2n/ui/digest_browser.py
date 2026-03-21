@@ -17,9 +17,11 @@ from xs2n.ui.theme import CLASSIC_LIGHT_THEME, UiTheme, to_fltk_color
 
 HEADER_HEIGHT = 28
 SUBTITLE_HEIGHT = 24
+ISSUE_HEADER_HEIGHT = 24
 SUMMARY_HEIGHT = 154
 TOOLBAR_HEIGHT = 30
 ISSUE_LIST_WIDTH = 320
+ISSUE_THREAD_COUNT_WIDTH = 68
 PADDING = 8
 SUMMARY_SURFACE_PADDING_X = 14
 SUMMARY_SURFACE_PADDING_Y = 10
@@ -47,6 +49,8 @@ class DigestBrowser:
         self.group.begin()
         self.header = fltk.Fl_Box(x, y, width, HEADER_HEIGHT, "")
         self.subtitle = fltk.Fl_Box(x, y + HEADER_HEIGHT, width, SUBTITLE_HEIGHT, "")
+        self.issue_title_header = fltk.Fl_Button(x, y, ISSUE_LIST_WIDTH, ISSUE_HEADER_HEIGHT, "")
+        self.issue_thread_count_header = fltk.Fl_Button(x, y, ISSUE_THREAD_COUNT_WIDTH, ISSUE_HEADER_HEIGHT, "")
         self.issue_list = fltk.Fl_Hold_Browser(x, y, ISSUE_LIST_WIDTH, height)
         self.issue_summary_surface = fltk.Fl_Box(x, y, width, SUMMARY_HEIGHT, "")
         self.issue_title = fltk.Fl_Box(x, y, width, SUMMARY_TITLE_HEIGHT, "")
@@ -71,6 +75,8 @@ class DigestBrowser:
             self.issue_blurb,
         ):
             box.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE | fltk.FL_ALIGN_WRAP)
+        self.issue_title_header.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE)
+        self.issue_thread_count_header.align(fltk.FL_ALIGN_CENTER | fltk.FL_ALIGN_INSIDE)
         if hasattr(self.issue_canvas, "highlight_data"):
             self.issue_canvas.highlight_data(
                 self.issue_canvas_style_buffer,
@@ -81,6 +87,8 @@ class DigestBrowser:
                 None,
             )
         self.issue_list.callback(self._on_issue_selected, None)
+        self.issue_title_header.callback(self._on_title_sort_clicked, None)
+        self.issue_thread_count_header.callback(self._on_thread_count_sort_clicked, None)
         self.open_button.callback(self._on_open_clicked, None)
         if hasattr(self.issue_list, "column_char"):
             self.issue_list.column_char("\t")
@@ -99,6 +107,7 @@ class DigestBrowser:
             self.issue_canvas.hide_cursor()
         self._layout()
         self.apply_theme(self._theme)
+        self._render_issue_sort_headers()
 
     def show(self) -> None:
         self.group.show()
@@ -119,6 +128,20 @@ class DigestBrowser:
         self.subtitle.color(to_fltk_color(fltk, theme.header_bg))
         self.issue_summary_surface.box(fltk.FL_DOWN_BOX)
         self.issue_summary_surface.color(to_fltk_color(fltk, theme.viewer_plain_bg))
+        for header_button in (
+            self.issue_title_header,
+            self.issue_thread_count_header,
+        ):
+            header_button.box(fltk.FL_THIN_UP_BOX)
+            header_button.color(to_fltk_color(fltk, theme.header_cell_bg))
+            header_button.selection_color(
+                to_fltk_color(fltk, theme.control_pressed_bg)
+            )
+            header_button.labelcolor(text_color)
+            if hasattr(header_button, "labelsize"):
+                header_button.labelsize(12)
+            if hasattr(header_button, "labelfont"):
+                header_button.labelfont(fltk.FL_HELVETICA_BOLD)
         self.issue_title.box(fltk.FL_FLAT_BOX)
         self.issue_title.color(to_fltk_color(fltk, theme.viewer_plain_bg))
         self.issue_meta.box(fltk.FL_FLAT_BOX)
@@ -141,6 +164,8 @@ class DigestBrowser:
             self.issue_meta,
             self.issue_blurb,
             self.issue_list,
+            self.issue_title_header,
+            self.issue_thread_count_header,
         ):
             if hasattr(widget, "labelcolor"):
                 widget.labelcolor(text_color)
@@ -248,7 +273,8 @@ class DigestBrowser:
         height = self.group.h()
         right_x = x + ISSUE_LIST_WIDTH + PADDING + RIGHT_COLUMN_INSET
         right_width = max(1, width - ISSUE_LIST_WIDTH - (PADDING * 2) - RIGHT_COLUMN_INSET)
-        summary_y = y + HEADER_HEIGHT + SUBTITLE_HEIGHT
+        issue_header_y = y + HEADER_HEIGHT + SUBTITLE_HEIGHT
+        summary_y = issue_header_y
         button_y = summary_y + SUMMARY_HEIGHT + PADDING
         canvas_y = button_y + TOOLBAR_HEIGHT + PADDING
         canvas_height = max(1, height - (canvas_y - y))
@@ -264,11 +290,24 @@ class DigestBrowser:
 
         self.header.resize(x, y, width, HEADER_HEIGHT)
         self.subtitle.resize(x, y + HEADER_HEIGHT, width, SUBTITLE_HEIGHT)
+        title_header_width, thread_count_header_width = self._issue_header_widths()
+        self.issue_title_header.resize(
+            x,
+            issue_header_y,
+            title_header_width,
+            ISSUE_HEADER_HEIGHT,
+        )
+        self.issue_thread_count_header.resize(
+            x + title_header_width,
+            issue_header_y,
+            thread_count_header_width,
+            ISSUE_HEADER_HEIGHT,
+        )
         self.issue_list.resize(
             x,
-            y + HEADER_HEIGHT + SUBTITLE_HEIGHT,
+            issue_header_y + ISSUE_HEADER_HEIGHT,
             ISSUE_LIST_WIDTH,
-            height - HEADER_HEIGHT - SUBTITLE_HEIGHT,
+            height - HEADER_HEIGHT - SUBTITLE_HEIGHT - ISSUE_HEADER_HEIGHT,
         )
         self.issue_summary_surface.resize(right_x, summary_y, right_width, SUMMARY_HEIGHT)
         self.issue_title.resize(
@@ -299,6 +338,7 @@ class DigestBrowser:
 
         self.header.label(f" {self._state.digest_title}")
         self.subtitle.label(f" {self._state.run_summary}")
+        self._render_issue_sort_headers()
         self._issue_rows = self._state.issue_rows()
         self.issue_list.clear()
         for issue_row in self._issue_rows:
@@ -348,17 +388,41 @@ class DigestBrowser:
             return
 
         list_width = self.issue_list.w()
-        rank_width = 34
-        priority_width = 54
-        density_width = 66
-        title_width = max(1, list_width - rank_width - priority_width - density_width - 18)
+        _title_header_width, thread_count_width = self._issue_header_widths()
+        title_width = max(1, list_width - thread_count_width - 18)
         self.issue_list.column_widths(
             (
-                rank_width,
-                priority_width,
-                density_width,
                 title_width,
+                thread_count_width,
                 0,
+            )
+        )
+
+    def _issue_header_widths(self) -> tuple[int, int]:
+        thread_count_width = ISSUE_THREAD_COUNT_WIDTH
+        title_width = max(1, ISSUE_LIST_WIDTH - thread_count_width)
+        return title_width, thread_count_width
+
+    def _render_issue_sort_headers(self) -> None:
+        sort_key = "thread_count"
+        ascending = False
+        if self._state is not None:
+            sort_state = self._state.issue_sort()
+            sort_key = sort_state.key
+            ascending = sort_state.ascending
+
+        self.issue_title_header.label(
+            _format_sort_header_label(
+                "Title",
+                active=sort_key == "title",
+                ascending=ascending,
+            )
+        )
+        self.issue_thread_count_header.label(
+            _format_sort_header_label(
+                "Threads",
+                active=sort_key == "thread_count",
+                ascending=ascending,
             )
         )
 
@@ -378,9 +442,33 @@ class DigestBrowser:
         if issue_preview is not None and issue_preview.lead_open_url:
             self._on_open_url(issue_preview.lead_open_url)
 
+    def _on_title_sort_clicked(self, widget=None, data=None) -> None:  # noqa: ANN001
+        if self._state is None:
+            return
+        self._state.toggle_issue_sort("title")
+        self._render()
+
+    def _on_thread_count_sort_clicked(self, widget=None, data=None) -> None:  # noqa: ANN001
+        if self._state is None:
+            return
+        self._state.toggle_issue_sort("thread_count")
+        self._render()
+
 
 def _format_issue_row_label(issue_row) -> str:  # noqa: ANN001
     return issue_row.render_label()
+
+
+def _format_sort_header_label(
+    label: str,
+    *,
+    active: bool,
+    ascending: bool,
+) -> str:
+    if not active:
+        return label
+    arrow = "^" if ascending else "v"
+    return f"{label} {arrow}"
 
 
 def _style_entry(*, color: int, font: int, size: int):

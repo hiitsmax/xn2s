@@ -18,6 +18,33 @@ The notes below are chronological history. Older references to `report digest` o
 4. Add one operational hardening step in the next milestone.
 5. Repeat.
 
+## UI Digest Issue List Table Sorting (2026-03-21)
+
+- Simplified the digest viewer issue list to the literal data the user wanted in the middle column:
+  - one `Title` column,
+  - one `Threads` column,
+  - no rank badge, no density token, no extra sort control.
+- Kept the classic desktop interaction model instead of introducing dropdowns or mode toggles:
+  - clicking `Title` sorts alphabetically and flips between ascending and descending,
+  - clicking `Threads` sorts numerically and flips between descending and ascending,
+  - the active header shows its current direction directly in the label.
+- Decoupled display order from the existing issue density rank:
+  - `DigestIssueRow.rank` still tracks the original density-based digest priority used by the right-side summary surface,
+  - the visible row order is now controlled by explicit UI sort state in `DigestBrowserState`.
+- Preserved selection stability while reordering:
+  - changing sort order does not kick the user onto a different issue if the currently selected issue is still present.
+- Verified with:
+  - `uv run pytest tests/test_digest_browser.py tests/test_digest_browser_state.py -q`
+  - `uv run pytest tests/test_digest_browser_probe.py tests/test_ui_app_rendering.py -q`
+  - `uv run python -m xs2n.ui.digest_browser_probe --run-dir data/report_runs/20260318T225654Z --issue-limit 3`
+- Current measured probe output on that saved run:
+  - `load_run_ms: 30.44`
+  - `issue_timings_ms: [1.03, 3.05, 0.73]`
+  - `issue_count: 110`
+- The reusable lesson here is straightforward:
+  - when the user asks for a classic sortable table, the cleanest UI is usually the obvious one,
+  - keep semantic ranking metadata for the reading surface, but do not force that ranking vocabulary into the navigation list.
+
 ## UI Digest Issue Reading Surface (2026-03-19)
 
 - Reframed the native digest viewer around issue-level reading instead of thread-level drilling:
