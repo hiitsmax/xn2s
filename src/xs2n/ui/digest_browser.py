@@ -281,17 +281,4 @@ class DigestBrowser:
 
 
 def _format_issue_row_label(issue_row) -> str:  # noqa: ANN001
-    density = f"{issue_row.thread_count}T/{issue_row.tweet_count}P"
-    title = _truncate_text(issue_row.title, limit=34)
-    return (
-        f"{issue_row.rank:02d}\t"
-        f"{issue_row.priority_label}\t"
-        f"{density}\t"
-        f"{title}"
-    )
-
-
-def _truncate_text(value: str, *, limit: int) -> str:
-    if len(value) <= limit:
-        return value
-    return f"{value[: max(0, limit - 3)].rstrip()}..."
+    return issue_row.render_label()

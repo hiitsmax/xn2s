@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import fltk
 
 from xs2n.ui.run_arguments import DigestRunArguments, LatestRunArguments, RunCommand
+from xs2n.ui.fltk_style import apply_widget_theme, style_widget
 from xs2n.ui.run_list import (
     DEFAULT_RUN_LIST_COLUMN_KEYS,
     RUN_LIST_COLUMNS,
@@ -31,6 +33,15 @@ ACTION_BUTTON_WIDTH = 88
 ACTION_BUTTON_GAP = 8
 
 
+@dataclass(slots=True)
+class _AppliedPreferencesState:
+    digest_arguments: DigestRunArguments
+    latest_arguments: LatestRunArguments
+    run_list_column_keys: tuple[str, ...]
+    appearance_mode: str
+    digest_navigation_visible: bool
+
+
 class RunPreferencesWindow:
     def __init__(
         self,
@@ -54,11 +65,13 @@ class RunPreferencesWindow:
         self.form_checkboxes: list[object] = []
         self.form_selects: list[object] = []
         self.static_labels: list[object] = []
-        self.applied_digest_arguments = DigestRunArguments()
-        self.applied_latest_arguments = LatestRunArguments()
-        self.applied_run_list_column_keys = DEFAULT_RUN_LIST_COLUMN_KEYS
-        self.applied_appearance_mode = normalize_appearance_mode(appearance_mode)
-        self.applied_digest_navigation_visible = bool(digest_navigation_visible)
+        self.applied_state = _AppliedPreferencesState(
+            digest_arguments=DigestRunArguments(),
+            latest_arguments=LatestRunArguments(),
+            run_list_column_keys=DEFAULT_RUN_LIST_COLUMN_KEYS,
+            appearance_mode=normalize_appearance_mode(appearance_mode),
+            digest_navigation_visible=bool(digest_navigation_visible),
+        )
         self.window = fltk.Fl_Double_Window(
             PREFERENCES_WINDOW_WIDTH,
             PREFERENCES_WINDOW_HEIGHT,
@@ -94,29 +107,29 @@ class RunPreferencesWindow:
         self.show()
 
     def current_digest_command(self) -> RunCommand:
-        return self.applied_digest_arguments.to_command()
+        return self.applied_state.digest_arguments.to_command()
 
     def current_issues_command(self) -> RunCommand:
         return self.current_digest_command()
 
     def current_latest_command(self) -> RunCommand:
-        return self.applied_latest_arguments.to_command()
+        return self.applied_state.latest_arguments.to_command()
 
     def current_following_refresh_command(self) -> RunCommand:
-        return self.applied_latest_arguments.to_following_refresh_command()
+        return self.applied_state.latest_arguments.to_following_refresh_command()
 
     def current_run_list_column_keys(self) -> tuple[str, ...]:
-        return self.applied_run_list_column_keys
+        return self.applied_state.run_list_column_keys
 
     def current_appearance_mode(self) -> str:
-        return self.applied_appearance_mode
+        return self.applied_state.appearance_mode
 
     def current_digest_navigation_visible(self) -> bool:
-        return self.applied_digest_navigation_visible
+        return self.applied_state.digest_navigation_visible
 
     def _build_window(self) -> None:
         self.window.begin()
-        self._style_widget(self.window, label_size=14)
+        style_widget(self.window, label_size=14)
 
         tabs_width = PREFERENCES_WINDOW_WIDTH - (WINDOW_PADDING * 2)
         tabs_height = PREFERENCES_WINDOW_HEIGHT - (
@@ -136,7 +149,7 @@ class RunPreferencesWindow:
             tabs_width,
             tabs_height,
         )
-        self._style_widget(self.tabs, label_size=13, text_size=13)
+        style_widget(self.tabs, label_size=13, text_size=13)
         self.tabs.begin()
 
         self.appearance_tab = fltk.Fl_Group(
@@ -213,7 +226,7 @@ class RunPreferencesWindow:
             ACTION_ROW_HEIGHT,
             "Apply",
         )
-        self._style_widget(self.apply_button, label_size=12, bold=True)
+        style_widget(self.apply_button, label_size=12, bold=True)
         self.apply_button.callback(self._on_apply_clicked, None)
 
         self.cancel_button = fltk.Fl_Button(
@@ -223,7 +236,7 @@ class RunPreferencesWindow:
             ACTION_ROW_HEIGHT,
             "Cancel",
         )
-        self._style_widget(self.cancel_button, label_size=12)
+        style_widget(self.cancel_button, label_size=12)
         self.cancel_button.callback(self._on_cancel_clicked, None)
 
         self.window.end()
@@ -245,7 +258,7 @@ class RunPreferencesWindow:
             "Choose whether the desktop UI follows the system appearance or uses an explicit classic theme override.",
         )
         intro.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE | fltk.FL_ALIGN_WRAP)
-        self._style_widget(intro, label_size=12)
+        style_widget(intro, label_size=12)
         self.static_labels.append(intro)
 
         self.appearance_mode_choice = self._create_choice_input(
@@ -254,7 +267,7 @@ class RunPreferencesWindow:
             width=width,
             label="Mode",
             options=APPEARANCE_MODE_OPTIONS,
-            value=self.applied_appearance_mode,
+            value=self.applied_state.appearance_mode,
             tooltip="`System` follows the OS appearance at launch. The classic overrides force the app theme immediately.",
         )
         self.digest_navigation_toggle = self._create_checkbox_input(
@@ -262,7 +275,7 @@ class RunPreferencesWindow:
             y=y + (FORM_ROW_HEIGHT * 3) + (FORM_ROW_GAP * 2),
             width=width,
             label="Keep middle navigation column visible in digest viewer",
-            value=self.applied_digest_navigation_visible,
+            value=self.applied_state.digest_navigation_visible,
             tooltip=(
                 "When disabled, selecting `digest.html` hides the middle column "
                 "and lets the digest viewer take that space."
@@ -421,7 +434,7 @@ class RunPreferencesWindow:
             "Choose which columns appear in the left run list.\nChanges apply only when you click Apply.",
         )
         intro.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE | fltk.FL_ALIGN_CLIP)
-        self._style_widget(intro, label_size=12)
+        style_widget(intro, label_size=12)
         self.static_labels.append(intro)
 
         column_width = (width - FORM_COLUMN_GAP) // 2
@@ -469,30 +482,33 @@ class RunPreferencesWindow:
         appearance_mode = self._draft_appearance_mode()
         digest_navigation_visible = self._draft_digest_navigation_visible()
 
-        run_list_changed = (
-            run_list_column_keys != self.applied_run_list_column_keys
-        )
-        appearance_changed = appearance_mode != self.applied_appearance_mode
+        applied_state = self.applied_state
+        run_list_changed = run_list_column_keys != applied_state.run_list_column_keys
+        appearance_changed = appearance_mode != applied_state.appearance_mode
         digest_navigation_changed = (
-            digest_navigation_visible != self.applied_digest_navigation_visible
+            digest_navigation_visible != applied_state.digest_navigation_visible
         )
-        self.applied_digest_arguments = digest_arguments
-        self.applied_latest_arguments = latest_arguments
-        self.applied_run_list_column_keys = run_list_column_keys
-        self.applied_appearance_mode = appearance_mode
-        self.applied_digest_navigation_visible = digest_navigation_visible
+        self.applied_state = _AppliedPreferencesState(
+            digest_arguments=digest_arguments,
+            latest_arguments=latest_arguments,
+            run_list_column_keys=run_list_column_keys,
+            appearance_mode=appearance_mode,
+            digest_navigation_visible=digest_navigation_visible,
+        )
         self._reset_draft_to_applied()
 
         if run_list_changed and self.on_run_list_preferences_changed is not None:
-            self.on_run_list_preferences_changed(self.applied_run_list_column_keys)
+            self.on_run_list_preferences_changed(
+                self.applied_state.run_list_column_keys
+            )
         if appearance_changed and self.on_appearance_mode_changed is not None:
-            self.on_appearance_mode_changed(self.applied_appearance_mode)
+            self.on_appearance_mode_changed(self.applied_state.appearance_mode)
         if (
             digest_navigation_changed
             and self.on_digest_navigation_preference_changed is not None
         ):
             self.on_digest_navigation_preference_changed(
-                self.applied_digest_navigation_visible
+                self.applied_state.digest_navigation_visible
             )
 
     def _on_cancel_clicked(
@@ -547,11 +563,13 @@ class RunPreferencesWindow:
         return bool(self.digest_navigation_toggle.value())
 
     def _reset_draft_to_applied(self) -> None:
-        self._write_digest_arguments(self.applied_digest_arguments)
-        self._write_latest_arguments(self.applied_latest_arguments)
-        self._write_run_list_column_keys(self.applied_run_list_column_keys)
-        self._write_appearance_mode(self.applied_appearance_mode)
-        self._write_digest_navigation_visible(self.applied_digest_navigation_visible)
+        self._write_digest_arguments(self.applied_state.digest_arguments)
+        self._write_latest_arguments(self.applied_state.latest_arguments)
+        self._write_run_list_column_keys(self.applied_state.run_list_column_keys)
+        self._write_appearance_mode(self.applied_state.appearance_mode)
+        self._write_digest_navigation_visible(
+            self.applied_state.digest_navigation_visible
+        )
 
     def _write_digest_arguments(self, arguments: DigestRunArguments) -> None:
         self.digest_timeline_input.value(str(arguments.timeline_file))
@@ -616,7 +634,7 @@ class RunPreferencesWindow:
         widget.box(fltk.FL_BORDER_BOX)
         widget.value(value)
         widget.tooltip(tooltip)
-        self._style_widget(widget, label_size=12, text_size=13)
+        style_widget(widget, label_size=12, text_size=13)
         self.form_inputs.append(widget)
         return widget
 
@@ -639,7 +657,7 @@ class RunPreferencesWindow:
         )
         widget.value(int(value))
         widget.tooltip(tooltip)
-        self._style_widget(widget, label_size=12)
+        style_widget(widget, label_size=12)
         self.form_checkboxes.append(widget)
         return widget
 
@@ -665,7 +683,7 @@ class RunPreferencesWindow:
         for option_label, _option_value in options:
             widget.add(option_label)
         widget.tooltip(tooltip)
-        self._style_widget(widget, label_size=12, text_size=13)
+        style_widget(widget, label_size=12, text_size=13)
         self.form_selects.append(widget)
         normalized_value = normalize_appearance_mode(value)
         selected_index = next(
@@ -689,83 +707,53 @@ class RunPreferencesWindow:
         muted_text_color = to_fltk_color(fltk, theme.muted_text)
         selection_color = to_fltk_color(fltk, theme.selection_bg)
 
-        if hasattr(self.window, "color"):
-            self.window.color(window_color)
-        if hasattr(self.tabs, "color"):
-            self.tabs.color(panel_color)
-        if hasattr(self.tabs, "selection_color"):
-            self.tabs.selection_color(selection_color)
-        if hasattr(self.tabs, "labelcolor"):
-            self.tabs.labelcolor(text_color)
-
-        for tab_group in (
-            self.appearance_tab,
-            self.digest_tab,
-            self.latest_tab,
-            self.run_list_tab,
-        ):
-            if hasattr(tab_group, "color"):
-                tab_group.color(window_color)
-            if hasattr(tab_group, "labelcolor"):
-                tab_group.labelcolor(text_color)
-
-        for label in self.static_labels:
-            if hasattr(label, "color"):
-                label.color(window_color)
-            if hasattr(label, "labelcolor"):
-                label.labelcolor(muted_text_color)
-
-        for widget in self.form_inputs:
-            if hasattr(widget, "color"):
-                widget.color(panel_bg2_color)
-            if hasattr(widget, "selection_color"):
-                widget.selection_color(selection_color)
-            if hasattr(widget, "textcolor"):
-                widget.textcolor(text_color)
-            if hasattr(widget, "labelcolor"):
-                widget.labelcolor(text_color)
-
-        for widget in self.form_selects:
-            if hasattr(widget, "color"):
-                widget.color(panel_bg2_color)
-            if hasattr(widget, "selection_color"):
-                widget.selection_color(selection_color)
-            if hasattr(widget, "textcolor"):
-                widget.textcolor(text_color)
-            if hasattr(widget, "labelcolor"):
-                widget.labelcolor(text_color)
-
-        for widget in self.form_checkboxes:
-            if hasattr(widget, "color"):
-                widget.color(window_color)
-            if hasattr(widget, "selection_color"):
-                widget.selection_color(selection_color)
-            if hasattr(widget, "labelcolor"):
-                widget.labelcolor(text_color)
-
-        for button in (self.apply_button, self.cancel_button):
-            if hasattr(button, "color"):
-                button.color(panel_color)
-            if hasattr(button, "selection_color"):
-                button.selection_color(pressed_color)
-            if hasattr(button, "labelcolor"):
-                button.labelcolor(text_color)
+        apply_widget_theme((self.window,), color=window_color)
+        apply_widget_theme(
+            (self.tabs,),
+            color=panel_color,
+            selection_color=selection_color,
+            label_color=text_color,
+        )
+        apply_widget_theme(
+            (
+                self.appearance_tab,
+                self.digest_tab,
+                self.latest_tab,
+                self.run_list_tab,
+            ),
+            color=window_color,
+            label_color=text_color,
+        )
+        apply_widget_theme(
+            self.static_labels,
+            color=window_color,
+            label_color=muted_text_color,
+        )
+        apply_widget_theme(
+            self.form_inputs,
+            color=panel_bg2_color,
+            selection_color=selection_color,
+            text_color=text_color,
+            label_color=text_color,
+        )
+        apply_widget_theme(
+            self.form_selects,
+            color=panel_bg2_color,
+            selection_color=selection_color,
+            text_color=text_color,
+            label_color=text_color,
+        )
+        apply_widget_theme(
+            self.form_checkboxes,
+            color=window_color,
+            selection_color=selection_color,
+            label_color=text_color,
+        )
+        apply_widget_theme(
+            (self.apply_button, self.cancel_button),
+            color=panel_color,
+            selection_color=pressed_color,
+            label_color=text_color,
+        )
 
         self.window.redraw()
-
-    @staticmethod
-    def _style_widget(  # noqa: ANN001
-        widget,
-        *,
-        label_size: int | None = None,
-        text_size: int | None = None,
-        bold: bool = False,
-    ) -> None:
-        font = fltk.FL_HELVETICA_BOLD if bold else fltk.FL_HELVETICA
-        if hasattr(widget, "labelfont"):
-            widget.labelfont(font)
-        if label_size is not None and hasattr(widget, "labelsize"):
-            widget.labelsize(label_size)
-        if text_size is not None and hasattr(widget, "textfont"):
-            widget.textfont(font)
-            widget.textsize(text_size)

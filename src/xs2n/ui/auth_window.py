@@ -9,6 +9,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - depends on optional GUI extra
     fltk = None
 
+from xs2n.ui.fltk_style import apply_widget_theme, style_widget
 from xs2n.ui.theme import CLASSIC_LIGHT_THEME, UiTheme, to_fltk_color
 
 if TYPE_CHECKING:
@@ -63,7 +64,7 @@ class AuthWindow:
 
     def _build_window(self) -> None:
         self.window.begin()
-        self._style_widget(self.window, label_size=14)
+        style_widget(self.window, label_size=14)
 
         content_width = AUTH_WINDOW_WIDTH - (WINDOW_PADDING * 2)
         section_width = (content_width - SECTION_GAP) // 2
@@ -80,7 +81,7 @@ class AuthWindow:
     def _build_codex_section(self, *, x: int, y: int, width: int) -> None:
         self.codex_header = fltk.Fl_Box(x, y, width, SECTION_HEADER_HEIGHT, "Codex")
         self.codex_header.box(fltk.FL_THIN_UP_BOX)
-        self._style_widget(self.codex_header, label_size=12, bold=True)
+        style_widget(self.codex_header, label_size=12, bold=True)
 
         self.codex_status_output = fltk.Fl_Multiline_Output(
             x,
@@ -89,7 +90,7 @@ class AuthWindow:
             STATUS_HEIGHT,
             "",
         )
-        self._style_widget(self.codex_status_output, text_size=12)
+        style_widget(self.codex_status_output, text_size=12)
 
         row_y = y + SECTION_HEADER_HEIGHT + 6 + STATUS_HEIGHT + 8
         refresh_button = self._create_button(
@@ -119,7 +120,7 @@ class AuthWindow:
     def _build_x_section(self, *, x: int, y: int, width: int) -> None:
         self.x_header = fltk.Fl_Box(x, y, width, SECTION_HEADER_HEIGHT, "X / Twitter")
         self.x_header.box(fltk.FL_THIN_UP_BOX)
-        self._style_widget(self.x_header, label_size=12, bold=True)
+        style_widget(self.x_header, label_size=12, bold=True)
 
         self.x_status_output = fltk.Fl_Multiline_Output(
             x,
@@ -128,12 +129,12 @@ class AuthWindow:
             STATUS_HEIGHT,
             "",
         )
-        self._style_widget(self.x_status_output, text_size=12)
+        style_widget(self.x_status_output, text_size=12)
 
         path_y = y + SECTION_HEADER_HEIGHT + 6 + STATUS_HEIGHT + 8
         self.path_label = fltk.Fl_Box(x, path_y, 72, ROW_HEIGHT, "Cookies")
         self.path_label.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE)
-        self._style_widget(self.path_label, label_size=12, bold=True)
+        style_widget(self.path_label, label_size=12, bold=True)
 
         self.x_cookies_path_output = fltk.Fl_Output(
             x + 72,
@@ -142,7 +143,7 @@ class AuthWindow:
             ROW_HEIGHT,
             "",
         )
-        self._style_widget(self.x_cookies_path_output, text_size=12)
+        style_widget(self.x_cookies_path_output, text_size=12)
 
         button_y = path_y + ROW_HEIGHT + 8
         refresh_button = self._create_button(
@@ -179,7 +180,7 @@ class AuthWindow:
         action: str,
     ):
         button = fltk.Fl_Button(x, y, width, ROW_HEIGHT, label)
-        self._style_widget(button, label_size=12)
+        style_widget(button, label_size=12)
         button.callback(lambda *_args, action=action: self._dispatch_action(action), None)
         self.action_buttons.append(button)
         return button
@@ -225,45 +226,32 @@ class AuthWindow:
         selection_color = to_fltk_color(fltk, theme.selection_bg)
         pressed_color = to_fltk_color(fltk, theme.control_pressed_bg)
 
-        self.window.color(window_color)
-
-        for header in (self.codex_header, self.x_header):
-            header.color(panel_color)
-            if hasattr(header, "labelcolor"):
-                header.labelcolor(text_color)
-
-        if hasattr(self.path_label, "labelcolor"):
-            self.path_label.labelcolor(text_color)
-        if hasattr(self.path_label, "color"):
-            self.path_label.color(window_color)
-
-        for widget in (
-            self.codex_status_output,
-            self.x_status_output,
-            self.x_cookies_path_output,
-        ):
-            if hasattr(widget, "color"):
-                widget.color(panel_bg2_color)
-            if hasattr(widget, "textcolor"):
-                widget.textcolor(text_color)
-            if hasattr(widget, "labelcolor"):
-                widget.labelcolor(text_color)
-
-        for button in self.action_buttons:
-            if hasattr(button, "color"):
-                button.color(panel_color)
-            if hasattr(button, "selection_color"):
-                button.selection_color(pressed_color)
-            if hasattr(button, "labelcolor"):
-                button.labelcolor(text_color)
+        apply_widget_theme((self.window,), color=window_color)
+        apply_widget_theme(
+            (self.codex_header, self.x_header),
+            color=panel_color,
+            label_color=text_color,
+        )
+        apply_widget_theme(
+            (self.path_label,),
+            color=window_color,
+            label_color=text_color,
+        )
+        apply_widget_theme(
+            (
+                self.codex_status_output,
+                self.x_status_output,
+                self.x_cookies_path_output,
+            ),
+            color=panel_bg2_color,
+            text_color=text_color,
+            label_color=text_color,
+        )
+        apply_widget_theme(
+            self.action_buttons,
+            color=panel_color,
+            selection_color=pressed_color,
+            label_color=text_color,
+        )
 
         self.window.redraw()
-
-    @staticmethod
-    def _style_widget(widget, *, label_size: int | None = None, text_size: int | None = None, bold: bool = False) -> None:  # noqa: ANN001
-        if label_size is not None:
-            widget.labelsize(label_size)
-        if text_size is not None and hasattr(widget, "textsize"):
-            widget.textsize(text_size)
-        if bold and hasattr(widget, "labelfont"):
-            widget.labelfont(fltk.FL_HELVETICA_BOLD)

@@ -18,6 +18,16 @@ class DigestIssueRow:
     tweet_count: int
     latest_created_at: datetime | None
 
+    def render_label(self) -> str:
+        density = f"{self.thread_count}T/{self.tweet_count}P"
+        title = _truncate_text(self.title, limit=34)
+        return (
+            f"{self.rank:02d}\t"
+            f"{self.priority_label}\t"
+            f"{density}\t"
+            f"{title}"
+        )
+
 
 @dataclass(slots=True)
 class DigestIssueThreadCard:
@@ -43,6 +53,13 @@ class DigestIssuePreview:
     threads: list[DigestIssueThreadCard]
     lead_open_url: str
 
+    def summary_meta(self) -> str:
+        return (
+            f"#{self.priority_rank:02d} {self.priority_label} | "
+            f"{self.thread_count} threads | "
+            f"{self.tweet_count} posts"
+        )
+
 
 class DigestBrowserState:
     def __init__(self, preview: SavedDigestPreview) -> None:
@@ -61,7 +78,11 @@ class DigestBrowserState:
 
     @property
     def digest_title(self) -> str:
-        return self.preview.digest_title
+        if self.preview.digest_title:
+            return self.preview.digest_title
+        if self.preview.issues:
+            return self.preview.issues[0].title
+        return "No issue digest produced"
 
     @property
     def run_summary(self) -> str:
@@ -189,3 +210,9 @@ def _priority_label(*, thread_count: int, tweet_count: int) -> str:
     if thread_count >= 2 or tweet_count >= 2:
         return "Track"
     return "Brief"
+
+
+def _truncate_text(value: str, *, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: max(0, limit - 3)].rstrip()}..."

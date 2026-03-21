@@ -203,8 +203,6 @@ def test_apply_selected_artifact_name_schedules_preview_render(
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_artifact_name = None
-    browser.rendered_viewer_artifact_name = None
     browser.pending_viewer_request_id = 0
     scheduled_artifacts: list[str] = []
 
@@ -227,8 +225,6 @@ def test_apply_selected_artifact_name_schedules_preview_render(
     assert browser.selected_artifact_name == "run.json"
     assert browser.sections_browser.selection == 2
     assert browser.raw_files_browser.selection == 2
-    assert browser.pending_viewer_artifact_name == "run.json"
-    assert browser.rendered_viewer_artifact_name is None
     assert browser.viewer.html == "<loading>run.json</loading>"
     assert browser.viewer.top == 0
     assert browser.viewer.left == 0
@@ -265,8 +261,6 @@ def test_apply_selected_artifact_name_routes_digest_html_to_native_viewer() -> N
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_artifact_name = None
-    browser.rendered_viewer_artifact_name = None
     browser.pending_viewer_request_id = 0
     browser.viewer_render_future = None
     browser._schedule_artifact_preview_render = lambda artifact: (_ for _ in ()).throw(
@@ -280,7 +274,6 @@ def test_apply_selected_artifact_name_routes_digest_html_to_native_viewer() -> N
     assert browser.digest_viewer.visible is True
     assert browser.viewer.visible is False
     assert browser.navigation_group.visible is False
-    assert browser.pending_viewer_artifact_name is None
     assert browser.status_output.text == "Viewing digest overview."
 
 
@@ -307,8 +300,6 @@ def test_apply_selected_artifact_name_keeps_navigation_when_preference_enabled()
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_artifact_name = None
-    browser.rendered_viewer_artifact_name = None
     browser.pending_viewer_request_id = 0
     browser.viewer_render_future = None
 
@@ -343,8 +334,6 @@ def test_apply_selected_artifact_name_falls_back_when_digest_viewer_cannot_load(
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_artifact_name = None
-    browser.rendered_viewer_artifact_name = None
     browser.pending_viewer_request_id = 0
     browser.viewer_render_future = None
     scheduled_artifacts: list[str] = []
@@ -377,8 +366,6 @@ def test_drain_pending_viewer_render_uses_latest_completed_result() -> None:
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = "run.json"
-    browser.pending_viewer_artifact_name = "run.json"
-    browser.rendered_viewer_artifact_name = None
     browser.pending_viewer_request_id = 2
     browser.viewer_render_results.put(
         app.ViewerRenderResult(
@@ -399,8 +386,6 @@ def test_drain_pending_viewer_render_uses_latest_completed_result() -> None:
 
     app.ArtifactBrowserWindow._drain_pending_viewer_render(browser)
 
-    assert browser.pending_viewer_artifact_name is None
-    assert browser.rendered_viewer_artifact_name == "run.json"
     assert browser.status_output.text == "Viewing run.json."
     assert browser.viewer.html == "<html>run.json</html>"
 

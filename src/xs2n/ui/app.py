@@ -137,12 +137,29 @@ class CommandResult:
     show_transcript: bool = True
     refresh_runs: bool = True
     on_completed: Callable[[CommandResult], None] | None = None
+    running_command: RunningCommandState | None = None
 
 
 @dataclass(slots=True)
 class CommandProgress:
     label: str
     event: RunEvent
+
+
+@dataclass(slots=True)
+class RunningCommandState:
+    label: str
+    command: list[str]
+    worker_thread: threading.Thread | None = None
+    process: subprocess.Popen[str] | None = None
+    cancel_requested: bool = False
+
+    def is_running(self) -> bool:
+        process = self.process
+        if process is not None and process.poll() is None:
+            return True
+        worker_thread = self.worker_thread
+        return worker_thread is not None and worker_thread.is_alive()
 
 
 @dataclass(slots=True)
@@ -206,12 +223,11 @@ class ArtifactBrowserWindow:
         self.focus_mode_enabled = False
         self.standard_pane_widths = (LEFT_PANE_WIDTH, MIDDLE_PANE_WIDTH)
         self.artifact_selection_pinned = False
-        self.running_label: str | None = None
-        self.running_thread: threading.Thread | None = None
+        self.running_command: RunningCommandState | None = None
+        self.running_run_id: str | None = initial_run_id
+        self.runs_refresh_pending = False
         self.selected_run_id: str | None = initial_run_id
         self.selected_artifact_name: str | None = None
-        self.pending_viewer_artifact_name: str | None = None
-        self.rendered_viewer_artifact_name: str | None = None
         self.runs: list[RunRecord] = []
         self.artifacts: list[ArtifactRecord] = []
         self.sections: list[ArtifactSectionRecord] = []
@@ -478,6 +494,7 @@ class ArtifactBrowserWindow:
         self._sync_focus_mode_button()
 
     def refresh_runs(self) -> None:
+        self.runs_refresh_pending = False
         self.runs = scan_runs(self.data_dir)
         self.artifact_cache = {}
         self._refresh_run_list_rows()
@@ -824,6 +841,10 @@ class ArtifactBrowserWindow:
             for index, run in enumerate(self.runs):
                 if run.run_id == self.selected_run_id:
                     return index
+        if self.running_run_id is not None:
+            for index, run in enumerate(self.runs):
+                if run.run_id == self.running_run_id:
+                    return index
         return 0
 
     def _selected_run_indexes(self) -> list[int]:
@@ -958,8 +979,6 @@ class ArtifactBrowserWindow:
             self.status_output.value("Viewing digest overview.")
             return
 
-        self.pending_viewer_artifact_name = artifact.name
-        self.rendered_viewer_artifact_name = None
         try:
             loading_html = render_loading_artifact_html(
                 artifact,
@@ -977,8 +996,6 @@ class ArtifactBrowserWindow:
             "pending_viewer_request_id",
             0,
         ) + 1
-        self.pending_viewer_artifact_name = None
-        self.rendered_viewer_artifact_name = None
         future = getattr(self, "viewer_render_future", None)
         if future is not None and not future.done():
             future.cancel()
@@ -1000,9 +1017,7 @@ class ArtifactBrowserWindow:
         if latest_result is None:
             return
 
-        self.pending_viewer_artifact_name = None
         self._set_viewer_html(latest_result.html)
-        self.rendered_viewer_artifact_name = latest_result.artifact_name
         if self.selected_artifact_name == latest_result.artifact_name:
             self.status_output.value(latest_result.status_text)
 
@@ -1096,14 +1111,15 @@ class ArtifactBrowserWindow:
         starting_status: str | None = None,
         stream_jsonl_events: bool = False,
     ) -> None:
-        if self.running_thread is not None and self.running_thread.is_alive():
+        if self._has_running_command():
             fltk.fl_alert(
-                f"`{self.running_label}` is still running. Wait for it to finish first."
+                f"`{self._running_command_label()}` is still running. Wait for it to finish first."
             )
             return
 
         command = [self.cli_executable, *args]
-        self.running_label = label
+        running_command = RunningCommandState(label=label, command=command)
+        self.running_command = running_command
         self._clear_artifact_viewer_state()
         if starting_status is not None:
             self.status_output.value(starting_status)
@@ -1121,6 +1137,8 @@ class ArtifactBrowserWindow:
             )
 
         def worker() -> None:
+            if running_command.cancel_requested:
+                return
             try:
                 process = subprocess.Popen(
                     command,
@@ -1150,10 +1168,17 @@ class ArtifactBrowserWindow:
                         show_transcript=show_transcript,
                         refresh_runs=refresh_runs,
                         on_completed=on_completed,
+                        running_command=running_command,
                     )
                 )
                 self._wake_ui()
                 return
+            running_command.process = process
+            if running_command.cancel_requested and process.poll() is None:
+                try:
+                    process.terminate()
+                except OSError:
+                    return
 
             stdout_lines: list[str] = []
             stderr_lines: list[str] = []
@@ -1212,12 +1237,13 @@ class ArtifactBrowserWindow:
                     show_transcript=show_transcript,
                     refresh_runs=refresh_runs,
                     on_completed=on_completed,
+                    running_command=running_command,
                 )
             )
             self._wake_ui()
 
-        self.running_thread = threading.Thread(target=worker, daemon=True)
-        self.running_thread.start()
+        running_command.worker_thread = threading.Thread(target=worker, daemon=True)
+        running_command.worker_thread.start()
 
     def _start_run_command(self, command: RunCommand) -> None:
         self._start_command(
@@ -1229,12 +1255,18 @@ class ArtifactBrowserWindow:
     def _handle_command_progress(self, progress: CommandProgress) -> None:
         event = progress.event
         if event.run_id is not None:
-            self.selected_run_id = event.run_id
+            should_follow_running_run = (
+                self.selected_run_id is None
+                or self.selected_run_id == self.running_run_id
+            )
+            self.running_run_id = event.run_id
+            if should_follow_running_run:
+                self.selected_run_id = event.run_id
 
         self.status_output.value(event.message)
 
         if event.event in {"artifact_written", "run_completed", "run_failed"}:
-            self.refresh_runs()
+            self.runs_refresh_pending = True
 
     def _drain_idle_work(self, _data=None) -> None:  # noqa: ANN001
         while True:
@@ -1251,8 +1283,9 @@ class ArtifactBrowserWindow:
             except Empty:
                 break
 
-            self.running_label = None
-            self.running_thread = None
+            if self.running_command is result.running_command:
+                self.running_command = None
+                self.running_run_id = None
 
             if result.show_transcript:
                 self._clear_artifact_viewer_state()
@@ -1277,7 +1310,10 @@ class ArtifactBrowserWindow:
                 result.on_completed(result)
 
             if result.refresh_runs:
-                self.refresh_runs()
+                self.runs_refresh_pending = True
+
+        if self.runs_refresh_pending:
+            self.refresh_runs()
 
         self._drain_pending_viewer_render()
         self._sync_run_list_layout()
@@ -1482,19 +1518,35 @@ class ArtifactBrowserWindow:
         )
 
     def _has_running_command(self) -> bool:
-        return (
-            getattr(self, "running_thread", None) is not None
-            and self.running_thread.is_alive()
-        )
+        running_command = getattr(self, "running_command", None)
+        return running_command is not None and running_command.is_running()
+
+    def _running_command_label(self) -> str:
+        running_command = getattr(self, "running_command", None)
+        if running_command is None:
+            return "background command"
+        return running_command.label
+
+    def _terminate_running_command(self) -> None:
+        running_command = getattr(self, "running_command", None)
+        if running_command is None:
+            return
+        running_command.cancel_requested = True
+        process = running_command.process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            process.terminate()
+        except OSError:
+            return
 
     def _confirm_close_browser(self) -> bool:
         if not self._has_running_command():
             return True
 
-        running_label = self.running_label or "background command"
         choice = fltk.fl_choice(
             (
-                f"`{running_label}` is still running.\n"
+                f"`{self._running_command_label()}` is still running.\n"
                 "Quit the UI anyway? The run may be interrupted."
             ),
             "Stay Open",
@@ -1505,9 +1557,8 @@ class ArtifactBrowserWindow:
 
     def _on_delete_selected_runs_requested(self) -> None:
         if self._has_running_command():
-            running_label = self.running_label or "background command"
             fltk.fl_alert(
-                f"`{running_label}` is still running. Wait for it to finish first."
+                f"`{self._running_command_label()}` is still running. Wait for it to finish first."
             )
             return
 
@@ -1547,6 +1598,7 @@ class ArtifactBrowserWindow:
         if not self._confirm_close_browser():
             return
 
+        self._terminate_running_command()
         executor = getattr(self, "viewer_render_executor", None)
         if executor is not None:
             executor.shutdown(wait=False, cancel_futures=True)

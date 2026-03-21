@@ -253,8 +253,8 @@ def test_drain_idle_work_applies_streamed_run_events() -> None:
     browser.command_progress_updates = Queue()
     browser.command_results = Queue()
     browser.viewer_render_results = Queue()
-    browser.running_label = None
-    browser.running_thread = None
+    browser.running_command = None
+    browser.running_run_id = None
     browser.selected_run_id = None
     browser.status_output = FakeStatusOutput()
     browser.refresh_runs = lambda: refresh_calls.append("refresh")
@@ -287,16 +287,74 @@ def test_drain_idle_work_applies_streamed_run_events() -> None:
     app.ArtifactBrowserWindow._drain_idle_work(browser)
 
     assert browser.selected_run_id == "20260319T101500Z"
+    assert browser.running_run_id == "20260319T101500Z"
     assert refresh_calls == ["refresh"]
     assert browser.status_output.messages[-1] == "Wrote filtered threads artifact."
+
+
+def test_drain_idle_work_keeps_user_selection_while_tracking_running_run_id(
+) -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    refresh_calls: list[str] = []
+
+    browser.command_progress_updates = Queue()
+    browser.command_results = Queue()
+    browser.viewer_render_results = Queue()
+    browser.running_command = None
+    browser.running_run_id = "20260319T101000Z"
+    browser.selected_run_id = "20260318T083000Z"
+    browser.status_output = FakeStatusOutput()
+    browser.refresh_runs = lambda: refresh_calls.append("refresh")
+    browser._drain_pending_viewer_render = lambda: None
+    browser._sync_run_list_layout = lambda force=False: None
+
+    browser.command_progress_updates.put(
+        app.CommandProgress(
+            label="report latest",
+            event=RunEvent(
+                event="artifact_written",
+                message="Wrote issues artifact.",
+                run_id="20260319T101500Z",
+                artifact_path="data/report_runs/20260319T101500Z/issues.json",
+            ),
+        )
+    )
+    browser.command_progress_updates.put(
+        app.CommandProgress(
+            label="report latest",
+            event=RunEvent(
+                event="run_completed",
+                message="Issue run completed.",
+                run_id="20260319T101500Z",
+            ),
+        )
+    )
+
+    app.ArtifactBrowserWindow._drain_idle_work(browser)
+
+    assert browser.selected_run_id == "20260318T083000Z"
+    assert browser.running_run_id == "20260319T101500Z"
+    assert refresh_calls == ["refresh"]
+    assert browser.status_output.messages[-1] == "Issue run completed."
+
+
+def test_has_running_command_tracks_live_process_after_worker_thread_exits() -> None:
+    browser = object.__new__(app.ArtifactBrowserWindow)
+    browser.running_command = app.RunningCommandState(
+        label="report latest",
+        command=["xs2n", "report", "latest"],
+        worker_thread=SimpleNamespace(is_alive=lambda: False),
+        process=SimpleNamespace(poll=lambda: None),
+    )
+
+    assert app.ArtifactBrowserWindow._has_running_command(browser) is True
 
 
 def test_start_command_streams_jsonl_events_with_popen(monkeypatch) -> None:
     browser = object.__new__(app.ArtifactBrowserWindow)
     viewer_html: list[str] = []
 
-    browser.running_label = None
-    browser.running_thread = None
+    browser.running_command = None
     browser.repo_root = app.Path("/tmp/xs2n")
     browser.cli_executable = "xs2n"
     browser.command_progress_updates = Queue()
@@ -350,6 +408,8 @@ def test_start_command_streams_jsonl_events_with_popen(monkeypatch) -> None:
     progress = browser.command_progress_updates.get_nowait()
     result = browser.command_results.get_nowait()
 
+    assert browser.running_command is not None
+    assert browser.running_command.process is not None
     assert progress.event.event == "run_started"
     assert result.returncode == 0
     assert "artifact_written" in result.stdout
@@ -431,8 +491,6 @@ def test_apply_selected_artifact_name_syncs_sections_and_raw_files(
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = None
-    browser.pending_viewer_artifact_name = None
-    browser.rendered_viewer_artifact_name = None
     browser.pending_viewer_request_id = 0
     scheduled_artifacts: list[str] = []
 
@@ -458,8 +516,6 @@ def test_apply_selected_artifact_name_syncs_sections_and_raw_files(
     assert browser.selected_artifact_name == "run.json"
     assert browser.sections_browser.selection == 2
     assert browser.raw_files_browser.selection == 2
-    assert browser.pending_viewer_artifact_name == "run.json"
-    assert browser.rendered_viewer_artifact_name is None
     assert browser.viewer.html == "<loading>run.json</loading>"
     assert browser.viewer.top == 0
     assert browser.viewer.left == 0
@@ -473,7 +529,6 @@ def test_apply_selected_artifact_name_syncs_sections_and_raw_files(
 
     assert browser.sections_browser.selection == 0
     assert browser.raw_files_browser.selection == 3
-    assert browser.pending_viewer_artifact_name == "llm_calls/001_trace.json"
     assert scheduled_artifacts == ["run.json", "llm_calls/001_trace.json"]
 
 
@@ -506,8 +561,6 @@ def test_drain_pending_viewer_render_uses_latest_completed_result(
     browser.status_output = FakeStatus()
     browser.viewer_render_results = Queue()
     browser.selected_artifact_name = "run.json"
-    browser.pending_viewer_artifact_name = "run.json"
-    browser.rendered_viewer_artifact_name = None
     browser.pending_viewer_request_id = 2
     browser.viewer_render_results.put(
         app.ViewerRenderResult(
@@ -528,8 +581,6 @@ def test_drain_pending_viewer_render_uses_latest_completed_result(
 
     app.ArtifactBrowserWindow._drain_pending_viewer_render(browser)
 
-    assert browser.pending_viewer_artifact_name is None
-    assert browser.rendered_viewer_artifact_name == "run.json"
     assert browser.status_output.text == "Viewing run.json."
     assert browser.viewer.html == "<html>run.json</html>"
 
@@ -740,8 +791,7 @@ def test_delete_selected_runs_confirms_refreshes_and_sets_fallback_run(
     prompts: list[str] = []
     refresh_calls: list[str] = []
 
-    browser.running_label = None
-    browser.running_thread = None
+    browser.running_command = None
     browser.selected_artifact_name = "digest.md"
     browser.runs = [
         RunRecord(
@@ -797,8 +847,7 @@ def test_delete_selected_runs_respects_cancel(monkeypatch) -> None:
     browser = object.__new__(app.ArtifactBrowserWindow)
     refresh_calls: list[str] = []
 
-    browser.running_label = None
-    browser.running_thread = None
+    browser.running_command = None
     browser.selected_artifact_name = "digest.md"
     browser.runs = [
         RunRecord(
@@ -842,8 +891,7 @@ def test_delete_selected_runs_alerts_when_nothing_is_selected(monkeypatch) -> No
     browser = object.__new__(app.ArtifactBrowserWindow)
     alerts: list[str] = []
 
-    browser.running_label = None
-    browser.running_thread = None
+    browser.running_command = None
     browser.runs = [
         RunRecord(
             root_name="report_runs",
@@ -1026,8 +1074,12 @@ def test_close_browser_warns_if_run_is_still_active_and_user_stays(
     browser = object.__new__(app.ArtifactBrowserWindow)
     hide_calls: list[str] = []
     prompts: list[str] = []
-    browser.running_label = "report digest"
-    browser.running_thread = SimpleNamespace(is_alive=lambda: True)
+    browser.running_command = app.RunningCommandState(
+        label="report latest",
+        command=["xs2n", "report", "latest"],
+        worker_thread=SimpleNamespace(is_alive=lambda: True),
+        process=SimpleNamespace(poll=lambda: None),
+    )
     browser.preferences_window = SimpleNamespace(
         hide=lambda: hide_calls.append("preferences")
     )
@@ -1048,7 +1100,7 @@ def test_close_browser_warns_if_run_is_still_active_and_user_stays(
 
     assert hide_calls == []
     assert prompts == [
-        "`report digest` is still running.\nQuit the UI anyway? The run may be interrupted."
+        "`report latest` is still running.\nQuit the UI anyway? The run may be interrupted."
     ]
 
 
@@ -1057,8 +1109,16 @@ def test_close_browser_quits_after_confirmation_when_run_is_active(
 ) -> None:
     browser = object.__new__(app.ArtifactBrowserWindow)
     hide_calls: list[str] = []
-    browser.running_label = "report digest"
-    browser.running_thread = SimpleNamespace(is_alive=lambda: True)
+    terminate_calls: list[str] = []
+    browser.running_command = app.RunningCommandState(
+        label="report latest",
+        command=["xs2n", "report", "latest"],
+        worker_thread=SimpleNamespace(is_alive=lambda: True),
+        process=SimpleNamespace(
+            poll=lambda: None,
+            terminate=lambda: terminate_calls.append("terminate"),
+        ),
+    )
     browser.preferences_window = SimpleNamespace(
         hide=lambda: hide_calls.append("preferences")
     )
@@ -1077,6 +1137,7 @@ def test_close_browser_quits_after_confirmation_when_run_is_active(
 
     app.ArtifactBrowserWindow.close_browser(browser)
 
+    assert terminate_calls == ["terminate"]
     assert hide_calls == ["preferences", "window", "all_windows"]
 
 

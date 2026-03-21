@@ -22,12 +22,26 @@ class FakeValueWidget:
         return self._value
 
 
+def make_applied_state(**overrides):  # noqa: ANN001
+    state = {
+        "digest_arguments": IssuesRunArguments(),
+        "latest_arguments": LatestRunArguments(),
+        "run_list_column_keys": DEFAULT_RUN_LIST_COLUMN_KEYS,
+        "appearance_mode": "system",
+        "digest_navigation_visible": False,
+    }
+    state.update(overrides)
+    return SimpleNamespace(**state)
+
+
 def test_current_digest_command_uses_last_applied_values() -> None:
     window = object.__new__(RunPreferencesWindow)
-    window.applied_digest_arguments = IssuesRunArguments.from_form(
-        timeline_file="tmp/timeline.json",
-        output_dir="tmp/report_runs",
-        model="gpt-5.5",
+    window.applied_state = make_applied_state(
+        digest_arguments=IssuesRunArguments.from_form(
+            timeline_file="tmp/timeline.json",
+            output_dir="tmp/report_runs",
+            model="gpt-5.5",
+        )
     )
 
     command = RunPreferencesWindow.current_digest_command(window)
@@ -51,16 +65,18 @@ def test_current_digest_command_uses_last_applied_values() -> None:
 
 def test_current_latest_command_uses_last_applied_values() -> None:
     window = object.__new__(RunPreferencesWindow)
-    window.applied_latest_arguments = LatestRunArguments.from_form(
-        since="2026-03-15T20:31:38Z",
-        lookback_hours="12",
-        cookies_file="tmp/cookies.json",
-        limit="150",
-        timeline_file="tmp/timeline.json",
-        sources_file="tmp/sources.json",
-        home_latest=True,
-        output_dir="tmp/report_runs",
-        model="gpt-5.5-mini",
+    window.applied_state = make_applied_state(
+        latest_arguments=LatestRunArguments.from_form(
+            since="2026-03-15T20:31:38Z",
+            lookback_hours="12",
+            cookies_file="tmp/cookies.json",
+            limit="150",
+            timeline_file="tmp/timeline.json",
+            sources_file="tmp/sources.json",
+            home_latest=True,
+            output_dir="tmp/report_runs",
+            model="gpt-5.5-mini",
+        )
     )
 
     command = RunPreferencesWindow.current_latest_command(window)
@@ -107,7 +123,9 @@ def test_show_latest_tab_selects_tab_and_shows_window() -> None:
 
 def test_current_run_list_column_keys_returns_last_applied_columns() -> None:
     window = object.__new__(RunPreferencesWindow)
-    window.applied_run_list_column_keys = ("started_at", "digest_title", "status")
+    window.applied_state = make_applied_state(
+        run_list_column_keys=("started_at", "digest_title", "status")
+    )
 
     assert RunPreferencesWindow.current_run_list_column_keys(window) == (
         "started_at",
@@ -118,14 +136,14 @@ def test_current_run_list_column_keys_returns_last_applied_columns() -> None:
 
 def test_current_appearance_mode_returns_last_applied_value() -> None:
     window = object.__new__(RunPreferencesWindow)
-    window.applied_appearance_mode = "classic_dark"
+    window.applied_state = make_applied_state(appearance_mode="classic_dark")
 
     assert RunPreferencesWindow.current_appearance_mode(window) == "classic_dark"
 
 
 def test_current_digest_navigation_visible_returns_last_applied_value() -> None:
     window = object.__new__(RunPreferencesWindow)
-    window.applied_digest_navigation_visible = True
+    window.applied_state = make_applied_state(digest_navigation_visible=True)
 
     assert RunPreferencesWindow.current_digest_navigation_visible(window) is True
 
@@ -142,11 +160,7 @@ def test_apply_click_commits_draft_values_without_live_updates() -> None:
     window.on_digest_navigation_preference_changed = (
         lambda visible: digest_navigation_changes.append(visible)
     )
-    window.applied_digest_arguments = IssuesRunArguments()
-    window.applied_latest_arguments = LatestRunArguments()
-    window.applied_run_list_column_keys = DEFAULT_RUN_LIST_COLUMN_KEYS
-    window.applied_appearance_mode = "system"
-    window.applied_digest_navigation_visible = False
+    window.applied_state = make_applied_state()
     window.digest_timeline_input = FakeValueWidget("tmp/timeline.json")
     window.digest_output_dir_input = FakeValueWidget("tmp/report_runs")
     window.digest_model_input = FakeValueWidget("gpt-5.5")
@@ -223,15 +237,17 @@ def test_cancel_discards_unsaved_draft_values() -> None:
     window = object.__new__(RunPreferencesWindow)
     hide_calls: list[str] = []
     window.window = SimpleNamespace(hide=lambda: hide_calls.append("hide"))
-    window.applied_digest_arguments = IssuesRunArguments.from_form(
-        timeline_file="data/timeline.json",
-        output_dir="data/report_runs",
-        model="gpt-5.4-mini",
+    window.applied_state = make_applied_state(
+        digest_arguments=IssuesRunArguments.from_form(
+            timeline_file="data/timeline.json",
+            output_dir="data/report_runs",
+            model="gpt-5.4-mini",
+        ),
+        latest_arguments=LatestRunArguments(),
+        run_list_column_keys=("started_at", "status"),
+        appearance_mode="classic_light",
+        digest_navigation_visible=False,
     )
-    window.applied_latest_arguments = LatestRunArguments()
-    window.applied_run_list_column_keys = ("started_at", "status")
-    window.applied_appearance_mode = "classic_light"
-    window.applied_digest_navigation_visible = False
     window.digest_timeline_input = FakeValueWidget("tmp/timeline.json")
     window.digest_output_dir_input = FakeValueWidget("tmp/report_runs")
     window.digest_model_input = FakeValueWidget("gpt-5.5")

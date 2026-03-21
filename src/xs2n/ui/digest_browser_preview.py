@@ -20,11 +20,7 @@ def build_issue_summary_panel(preview) -> IssueSummaryPanel:  # noqa: ANN001
 
     return IssueSummaryPanel(
         title=preview.issue_title,
-        meta=(
-            f"#{preview.priority_rank:02d} {preview.priority_label} | "
-            f"{preview.thread_count} threads | "
-            f"{preview.tweet_count} posts"
-        ),
+        meta=preview.summary_meta(),
         blurb=preview.issue_summary,
     )
 

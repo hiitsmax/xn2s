@@ -11,7 +11,7 @@ from xs2n.schemas.digest import Issue, IssueThread
 @dataclass(slots=True)
 class SavedDigestPreview:
     run_id: str
-    digest_title: str
+    digest_title: str | None
     issues: list[Issue]
     issue_threads: list[IssueThread]
 
@@ -29,10 +29,9 @@ def load_saved_digest_preview(*, run_dir: Path) -> SavedDigestPreview | None:
 
     run_doc = _load_json_dict(run_dir / "run.json") or {}
     run_id = str(run_doc.get("run_id") or run_dir.name)
-    digest_title = str(
-        run_doc.get("digest_title")
-        or (issues[0].title if issues else "No issue digest produced")
-    )
+    digest_title = run_doc.get("digest_title")
+    if digest_title is not None:
+        digest_title = str(digest_title)
     return SavedDigestPreview(
         run_id=run_id,
         digest_title=digest_title,

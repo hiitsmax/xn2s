@@ -207,11 +207,14 @@ def test_digest_browser_state_defaults_to_ranked_issue_preview() -> None:
     assert issue_rows[0].rank == 1
     assert issue_rows[0].thread_count == 2
     assert issue_rows[0].tweet_count == 3
+    assert issue_rows[0].render_label() == "01\tTrack\t2T/3P\tChip Race"
     assert state.selected_issue().title == "Chip Race"
+    assert state.digest_title == "Context Management for Agentic Systems"
     assert preview is not None
     assert preview.priority_rank == 1
     assert preview.thread_count == 2
     assert preview.tweet_count == 3
+    assert preview.summary_meta() == "#01 Track | 2 threads | 3 posts"
     assert len(preview.threads) == 2
     assert preview.threads[0].thread_id == "2032245601216389324"
     assert preview.threads[1].thread_id == "2032245601216389399"
@@ -267,3 +270,12 @@ def test_build_issue_summary_panel_keeps_secondary_column_compact() -> None:
     assert panel.title == "Chip Race"
     assert panel.meta == "#01 Track | 2 threads | 3 posts"
     assert panel.blurb == "Supply constraints keep shaping AI infra."
+
+
+def test_digest_browser_state_uses_issue_title_when_run_title_is_missing() -> None:
+    preview = _preview()
+    preview.digest_title = None
+
+    state = DigestBrowserState(preview)
+
+    assert state.digest_title == "Chip Race"
