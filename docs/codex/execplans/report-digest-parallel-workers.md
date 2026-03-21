@@ -1,5 +1,7 @@
 # Report Digest Parallel Workers
 
+> Historical context: this ExecPlan documents an earlier digest-first milestone. The current active report surface is `report issues`, `report html`, `report latest`, and `report schedule`.
+
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 This repository does not contain a checked-in `PLANS.md`; this document follows the global guidance in `~/.agents/PLANS.md`.

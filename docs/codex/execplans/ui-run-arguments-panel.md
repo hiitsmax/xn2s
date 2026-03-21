@@ -1,16 +1,18 @@
 # UI Run Arguments Panel
 
+> Historical context: this ExecPlan captures the earlier UI work for digest/latest run arguments. The current active report surface is `report issues`, `report html`, `report latest`, and `report schedule`.
+
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 This repository does not contain a checked-in `PLANS.md`; this document follows the global guidance in `~/.agents/PLANS.md`.
 
 ## Purpose / Big Picture
 
-After this change, a user can open `uv run xs2n ui`, edit the arguments used for `xs2n report digest` and `xs2n report latest`, and launch those commands from the desktop UI without being locked into the current hardcoded defaults. The visible proof is that the UI shows a dedicated run-arguments panel, the launch buttons use the values shown in that panel, and invalid values are rejected before the subprocess starts.
+After this change, a user can open `uv run xs2n ui`, edit the arguments used for the report runs, and launch those commands from the desktop UI without being locked into the current hardcoded defaults. The visible proof is that the UI shows a dedicated run-arguments panel, the launch buttons use the values shown in that panel, and invalid values are rejected before the subprocess starts.
 
 ## Progress
 
-- [x] (2026-03-15 23:52Z) Audited the current `report digest`, `report latest`, and desktop UI code paths to map the real argument surface and find the smallest safe integration point.
+- [x] (2026-03-15 23:52Z) Audited the current report and desktop UI code paths to map the real argument surface and find the smallest safe integration point.
 - [x] (2026-03-15 23:52Z) Pulled fresh FLTK documentation through Context7 to confirm the widget APIs needed for text inputs, check buttons, grouped panels, and tabbed layout.
 - [x] (2026-03-15 23:54Z) Added `src/xs2n/ui/run_arguments.py` with deterministic digest/latest defaults, form normalization, validation, and CLI argument rendering helpers.
 - [x] (2026-03-15 23:56Z) Added a dedicated `Preferences` window for digest/latest arguments, wired it into `File -> Preferences`, and routed both run buttons through that window instead of embedding the forms in the main inspector pane.
@@ -58,7 +60,7 @@ The feature is implemented and working. `xs2n ui` now exposes editable digest an
 
 The top-level desktop command is `xs2n ui`, implemented in `src/xs2n/cli/ui.py`. That command lazily imports `run_artifact_browser(...)` from `src/xs2n/ui/app.py`. The FLTK window in `app.py` already has a menu bar, a compact command strip, a list of run folders, a list of artifacts, a read-only details panel, and a viewer that renders the selected artifact.
 
-Today, the launch actions inside `app.py` do not read any UI state. They shell out to the CLI with hardcoded argument lists. The actual CLI contract lives in `src/xs2n/cli/report.py`. `report digest` accepts `timeline_file`, `output_dir`, `taxonomy_file`, `model`, and `parallel_workers`. `report latest` accepts timeline-ingestion options such as `since`, `lookback_hours`, `cookies_file`, `limit`, `sources_file`, and `home_latest`, then reuses the digest options for the second half of the flow.
+Today, the launch actions inside `app.py` do not read any UI state. They shell out to the CLI with hardcoded argument lists. The actual CLI contract lives in `src/xs2n/cli/report.py`. `report issues` accepts `timeline_file`, `output_dir`, `taxonomy_file`, `model`, and `parallel_workers`. `report latest` accepts timeline-ingestion options such as `since`, `lookback_hours`, `cookies_file`, `limit`, `sources_file`, and `home_latest`, then reuses the issue-building options for the second half of the flow.
 
 The new feature needs two layers. First, a deterministic layer must convert UI values into validated CLI argument lists. Second, the UI must expose those values in a small native preferences window that matches the existing 90s utility-app style.
 
@@ -66,7 +68,7 @@ The new feature needs two layers. First, a deterministic layer must convert UI v
 
 Create `src/xs2n/ui/run_arguments.py` with small data classes for the two run modes. That module should import the real defaults from the CLI-related packages, normalize empty text fields back to those defaults where appropriate, validate integer fields that must stay positive, and expose helper methods that return the exact CLI argument lists used by `subprocess.run(...)`.
 
-Then add a dedicated preferences window module that owns the FLTK digest/latest forms. The digest form should expose the five real `report digest` options. The latest form should expose the meaningful `report latest` options, including the `home_latest` toggle. Update `src/xs2n/ui/app.py` so `File -> Preferences` opens that window, the run buttons pull commands from it, validation failures re-open the relevant preferences tab, and the main inspector returns to showing run metadata.
+Then add a dedicated preferences window module that owns the FLTK report forms. The issues form should expose the five real `report issues` options. The latest form should expose the meaningful `report latest` options, including the `home_latest` toggle. Update `src/xs2n/ui/app.py` so `File -> Preferences` opens that window, the run buttons pull commands from it, validation failures re-open the relevant preferences tab, and the main inspector returns to showing run metadata.
 
 Add focused tests in `tests/test_ui_run_arguments.py` for default rendering, optional-argument omission, and validation failures. Add light UI-callback tests in `tests/test_ui_app.py` so the run buttons are proven to route through the new command builders without needing a live FLTK window. Update `docs/codex/autolearning.md` with the implementation and testing notes once the work is complete.
 
@@ -137,8 +139,8 @@ Key implementation files for this feature are expected to be:
 
 At the end of this work, the UI layer should expose deterministic helpers with interfaces shaped like:
 
-    DigestRunArguments.from_form(...)
-    DigestRunArguments.to_cli_args() -> list[str]
+    IssuesRunArguments.from_form(...)
+    IssuesRunArguments.to_cli_args() -> list[str]
     LatestRunArguments.from_form(...)
     LatestRunArguments.to_cli_args() -> list[str]
 

@@ -18,7 +18,7 @@ In scope today:
 - Persist deduplicated timeline entries for downstream processing (`data/timeline.json`), including engagement metrics used for virality.
 - Build issue artifacts from timeline data (`xs2n report issues`).
 - Render a simple HTML digest from a saved run (`xs2n report html`, with `xs2n report render` kept as a compatibility alias).
-- Define portable schedule definitions for the latest issue flow (`xs2n report schedule ...`).
+- Define portable schedule definitions for the active issue flow (`xs2n report schedule ...`).
 
 Out of scope for now:
 - Final production ranking/tuning.
@@ -28,6 +28,12 @@ Out of scope for now:
 ## Current Status (WIP)
 
 Milestone: **CLI-first issue digest on top of hardened ingestion**.
+
+The active report surface today is:
+- `xs2n report issues`
+- `xs2n report html`
+- `xs2n report latest`
+- `xs2n report schedule`
 
 Working now:
 - `xs2n onboard --paste`
@@ -39,7 +45,7 @@ Working now:
 - `xs2n auth doctor` (machine-readable auth health for Codex + X/Twitter)
 - `xs2n auth x login` / `xs2n auth x reset` (explicit X/Twitter session management)
 - `xs2n report issues` (loose filter + sequential issue-building with per-step artifacts)
-- `xs2n report html` (deterministic HTML render from saved issue artifacts, with `report render` kept as an alias)
+- `xs2n report html` (deterministic HTML render from saved issue artifacts, with `report render` kept as a compatibility alias)
 - `xs2n report latest` (one command: ingest latest from onboarded sources, build issues, then render HTML)
 - `xs2n report schedule` (portable schedule definitions, overlap-safe runner, and export-only OS job output)
 - `xs2n ui` (optional native desktop artifact browser for digest runs)
@@ -235,7 +241,7 @@ uv run xs2n report latest --home-latest --lookback-hours 24
 
 `xs2n report latest` first runs timeline ingestion (from `data/sources.json` by default, or Home -> Following when `--home-latest` is enabled), then snapshots only the requested time window into the run folder, builds issues from that snapshot, and renders `digest.html`.
 
-Define and export named schedules for the latest issue flow:
+Define and export named schedules for the active issue flow:
 
 ```bash
 uv run xs2n report schedule create morning --at 08:30 --weekdays mon,wed,fri --lookback-hours 24

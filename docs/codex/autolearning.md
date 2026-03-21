@@ -4,6 +4,12 @@
 
 Continuously improve this codebase by capturing implementation choices, fragility points, and hardening opportunities after each milestone.
 
+## Current Report Surface
+
+The active report contract is `xs2n report issues`, `xs2n report html`, `xs2n report latest`, and `xs2n report schedule`.
+
+The notes below are chronological history. Older references to `report digest` are intentionally preserved where they describe the pre-simplification surface or earlier milestones.
+
 ## Loop
 
 1. Build a narrow milestone with observable output.
@@ -151,7 +157,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 - Added `xs2n report schedule` with portable v1 commands: `create`, `list`, `show`, `run`, `export`, and `delete`.
 - Kept the operating system as the real scheduler. The new CLI stores named definitions in `data/report_schedules.json`, acquires overlap locks in `data/report_schedule_locks/`, records `last_run`, and only prints install-ready `cron` / `launchd` / `systemd` output instead of mutating the OS directly.
 - Added a reusable `report_runtime.py` helper for the current issue-based `report latest` flow, so the schedule runner reuses the same timeline-ingestion, windowing, issue-build, and HTML-render path as the CLI.
-- Mid-implementation, the active branch reality turned out to be `report issues` / `report render` / `report latest`, not the older digest-only report surface. The schedule work was deliberately integrated with that newer truth instead of trying to keep both report contracts alive.
+- Mid-implementation, the active branch reality turned out to be `report issues` / `report html` / `report latest`, not the older digest-only report surface. The schedule work was deliberately integrated with that newer truth instead of trying to keep both report contracts alive.
 - Verified the milestone with:
   - `uv run pytest tests/test_report_digest.py tests/test_report_runtime.py tests/test_report_schedule.py tests/test_report_schedule_storage.py tests/test_report_cli.py tests/test_ui_run_arguments.py tests/test_ui_run_preferences.py`
   - `uv run xs2n report schedule --help`
@@ -177,7 +183,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
   - `xs2n auth x reset`
 - Kept Codex login on the existing `xs2n report auth` path instead of adding a wrapper command with duplicated semantics.
 - Added a dedicated desktop auth window with separate `Codex` and `X / Twitter` sections, plus a direct `File -> Authentication` menu entry.
-- The UI now refreshes auth state on explicit demand from `File -> Authentication` and as a preflight before `report digest` / `report latest`, using the CLI as the source of truth instead of inferring state from viewer transcripts.
+- The UI now refreshes auth state on explicit demand from `File -> Authentication` and as a preflight before the active report runs, using the CLI as the source of truth instead of inferring state from viewer transcripts.
 - The auth window does not duplicate the cookies-path setting: it displays the currently applied `Latest` cookies path from Preferences and passes that exact path into doctor/login/reset commands.
 - Updated Playwright X bootstrap so browser login can wait for `auth_token` and `ct0` automatically instead of depending on a terminal `Press Enter` checkpoint.
 - Verified the feature with:
@@ -594,7 +600,7 @@ Continuously improve this codebase by capturing implementation choices, fragilit
 
 - Replaced the old taxonomy-heavy `report digest` pipeline with a smaller CLI-first split:
   - `xs2n report issues` for loose filtering plus sequential issue building,
-  - `xs2n report render` for deterministic HTML rendering from saved artifacts,
+  - `xs2n report html` for deterministic HTML rendering from saved artifacts,
   - `xs2n report latest` for ingestion + latest-only snapshot + issue build + HTML render.
 - Removed taxonomy and parallel-worker knobs from the primary report surface so the active product flow matches the simpler design instead of keeping legacy scaffolding visible.
 - Extended timeline ingestion/storage with lightweight remote media metadata, which is now captured per tweet and reused only from the primary source-authored post when the issue-builder makes multimodal model calls.
