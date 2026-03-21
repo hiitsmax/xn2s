@@ -5,11 +5,16 @@ from typing import Callable
 
 import fltk
 
+from xs2n.ui.digest_browser_cards import (
+    CARD_LIST_GAP,
+    CARD_LIST_PADDING,
+    build_digest_empty_state,
+    build_digest_thread_card,
+    hide_digest_thread_card,
+    update_digest_thread_card,
+)
 from xs2n.ui.digest_browser_preview import (
     build_issue_summary_panel,
-    render_issue_canvas_styles,
-    render_issue_canvas_text,
-    render_issue_placeholder_text,
 )
 from xs2n.ui.digest_browser_state import DigestBrowserState
 from xs2n.ui.saved_digest import load_saved_digest_preview
@@ -57,14 +62,11 @@ class DigestBrowser:
         self.issue_meta = fltk.Fl_Box(x, y, width, SUMMARY_META_HEIGHT, "")
         self.issue_blurb = fltk.Fl_Box(x, y, width, SUMMARY_HEIGHT - SUMMARY_TITLE_HEIGHT - SUMMARY_META_HEIGHT, "")
         self.open_button = fltk.Fl_Button(x, y, 132, TOOLBAR_HEIGHT, "Open lead thread")
-        self.issue_canvas = fltk.Fl_Text_Display(x, y, width, height)
-        self.issue_canvas_buffer = fltk.Fl_Text_Buffer()
-        self.issue_canvas_style_buffer = fltk.Fl_Text_Buffer()
-        self._issue_canvas_style_entries = []
-        self._issue_canvas_style_callback = lambda *args: None
-        self.issue_canvas.buffer(self.issue_canvas_buffer)
+        self.issue_thread_scroll = fltk.Fl_Scroll(x, y, width, height)
+        self._issue_thread_cards = []
+        self._issue_thread_empty_state = None
         self.group.end()
-        self.group.resizable(self.issue_canvas)
+        self.group.resizable(self.issue_thread_scroll)
         self.group.hide()
 
         for box in (
@@ -77,15 +79,6 @@ class DigestBrowser:
             box.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE | fltk.FL_ALIGN_WRAP)
         self.issue_title_header.align(fltk.FL_ALIGN_LEFT | fltk.FL_ALIGN_INSIDE)
         self.issue_thread_count_header.align(fltk.FL_ALIGN_CENTER | fltk.FL_ALIGN_INSIDE)
-        if hasattr(self.issue_canvas, "highlight_data"):
-            self.issue_canvas.highlight_data(
-                self.issue_canvas_style_buffer,
-                self._issue_canvas_style_entries,
-                0,
-                "A",
-                self._issue_canvas_style_callback,
-                None,
-            )
         self.issue_list.callback(self._on_issue_selected, None)
         self.issue_title_header.callback(self._on_title_sort_clicked, None)
         self.issue_thread_count_header.callback(self._on_thread_count_sort_clicked, None)
@@ -96,15 +89,6 @@ class DigestBrowser:
             self.open_button.tooltip(
                 "Open the lead thread for the selected issue on X."
             )
-        if hasattr(self.issue_canvas, "wrap_mode"):
-            self.issue_canvas.wrap_mode(
-                fltk.Fl_Text_Display.WRAP_AT_BOUNDS,
-                0,
-            )
-        if hasattr(self.issue_canvas, "linenumber_width"):
-            self.issue_canvas.linenumber_width(0)
-        if hasattr(self.issue_canvas, "hide_cursor"):
-            self.issue_canvas.hide_cursor()
         self._layout()
         self.apply_theme(self._theme)
         self._render_issue_sort_headers()
@@ -148,15 +132,10 @@ class DigestBrowser:
         self.issue_meta.color(to_fltk_color(fltk, theme.viewer_plain_bg))
         self.issue_blurb.box(fltk.FL_FLAT_BOX)
         self.issue_blurb.color(to_fltk_color(fltk, theme.viewer_plain_bg))
-        self.issue_canvas.box(fltk.FL_DOWN_BOX)
-        self.issue_canvas.color(to_fltk_color(fltk, theme.viewer_plain_bg))
-        if hasattr(self.issue_canvas, "textcolor"):
-            self.issue_canvas.textcolor(text_color)
-        if hasattr(self.issue_canvas, "textsize"):
-            self.issue_canvas.textsize(15)
-        if hasattr(self.issue_canvas, "textfont"):
-            self.issue_canvas.textfont(fltk.FL_HELVETICA)
-        self._apply_issue_canvas_style_theme(theme)
+        self.issue_thread_scroll.box(fltk.FL_DOWN_BOX)
+        self.issue_thread_scroll.color(to_fltk_color(fltk, theme.viewer_bg))
+        if hasattr(self.issue_thread_scroll, "scrollbar_size"):
+            self.issue_thread_scroll.scrollbar_size(14)
         for widget in (
             self.header,
             self.subtitle,
@@ -194,73 +173,20 @@ class DigestBrowser:
         self.open_button.labelcolor(text_color)
         if hasattr(self.open_button, "labelsize"):
             self.open_button.labelsize(12)
+        if (
+            self._state is not None
+            or self._issue_thread_cards
+            or self._issue_thread_empty_state is not None
+        ):
+            self._render_thread_cards()
         self.group.redraw()
-
-    def _apply_issue_canvas_style_theme(self, theme: UiTheme) -> None:
-        foreground_color = _issue_canvas_foreground_color(theme)
-        muted_color = _issue_canvas_muted_color(theme)
-        self._issue_canvas_style_entries = [
-            _style_entry(
-                color=foreground_color,
-                font=fltk.FL_HELVETICA,
-                size=14,
-            ),
-            _style_entry(
-                color=foreground_color,
-                font=fltk.FL_TIMES_BOLD,
-                size=21,
-            ),
-            _style_entry(
-                color=foreground_color,
-                font=fltk.FL_HELVETICA,
-                size=15,
-            ),
-            _style_entry(
-                color=muted_color,
-                font=fltk.FL_HELVETICA_ITALIC,
-                size=13,
-            ),
-            _style_entry(
-                color=muted_color,
-                font=fltk.FL_HELVETICA_BOLD,
-                size=11,
-            ),
-            _style_entry(
-                color=foreground_color,
-                font=fltk.FL_HELVETICA,
-                size=14,
-            ),
-        ]
-        if hasattr(self.issue_canvas, "highlight_data"):
-            self.issue_canvas.highlight_data(
-                self.issue_canvas_style_buffer,
-                self._issue_canvas_style_entries,
-                len(self._issue_canvas_style_entries),
-                "A",
-                self._issue_canvas_style_callback,
-                None,
-            )
-
-    def _set_issue_canvas_content(
-        self,
-        *,
-        text: str,
-        styles: str | None,
-    ) -> None:
-        self.issue_canvas_buffer.text(text)
-        if styles is None or len(styles) != len(text):
-            styles = "A" * len(text)
-        self.issue_canvas_style_buffer.text(styles)
-        self.issue_canvas.insert_position(0)
-        self.issue_canvas.show_insert_position()
 
     def load_run(self, run_dir: Path) -> bool:
         preview = load_saved_digest_preview(run_dir=run_dir)
         if preview is None:
             self._state = None
             self.issue_list.clear()
-            self.issue_canvas_buffer.text("")
-            self.issue_canvas_style_buffer.text("")
+            self._clear_thread_cards()
             return False
         self._state = DigestBrowserState(preview)
         self._render()
@@ -329,8 +255,14 @@ class DigestBrowser:
             blurb_height,
         )
         self.open_button.resize(summary_inner_x, button_y, 132, TOOLBAR_HEIGHT)
-        self.issue_canvas.resize(right_x, canvas_y, right_width, canvas_height)
+        self.issue_thread_scroll.resize(right_x, canvas_y, right_width, canvas_height)
         self._configure_issue_list_columns()
+        if (
+            self._state is not None
+            or self._issue_thread_cards
+            or self._issue_thread_empty_state is not None
+        ):
+            self._render_thread_cards()
 
     def _render(self) -> None:
         if self._state is None:
@@ -361,27 +293,88 @@ class DigestBrowser:
             self.issue_title.label(panel.title)
             self.issue_meta.label("")
             self.issue_blurb.label(panel.blurb)
-            self._set_issue_canvas_content(
-                text=render_issue_placeholder_text(
-                    issue_title="Selected issue",
-                ),
-                styles=None,
-            )
+            self._render_thread_cards()
             self.open_button.deactivate()
         else:
             panel = build_issue_summary_panel(issue_preview)
             self.issue_title.label(panel.title)
             self.issue_meta.label(panel.meta)
             self.issue_blurb.label(panel.blurb)
-            self._set_issue_canvas_content(
-                text=render_issue_canvas_text(issue_preview),
-                styles=render_issue_canvas_styles(issue_preview),
-            )
+            self._render_thread_cards()
             if issue_preview.lead_open_url:
                 self.open_button.activate()
             else:
                 self.open_button.deactivate()
         self.group.redraw()
+
+    def _render_thread_cards(self) -> None:
+        issue_preview = (
+            None if self._state is None else self._state.selected_issue_preview()
+        )
+        scroll_x = self.issue_thread_scroll.x()
+        scroll_y = self.issue_thread_scroll.y()
+        scroll_width = self.issue_thread_scroll.w()
+        card_x = scroll_x + CARD_LIST_PADDING
+        card_y = scroll_y + CARD_LIST_PADDING
+        card_width = max(1, scroll_width - (CARD_LIST_PADDING * 2) - 16)
+
+        if issue_preview is None or not issue_preview.threads:
+            self._hide_all_thread_cards()
+            if self._issue_thread_empty_state is None:
+                self._issue_thread_empty_state = build_digest_empty_state(
+                    parent=self.issue_thread_scroll,
+                    x=card_x,
+                    y=card_y,
+                    width=card_width,
+                    message="Issue overview will appear here as soon as the selected issue has thread data.",
+                    theme=self._theme,
+                )
+            else:
+                self._issue_thread_empty_state.resize(card_x, card_y, card_width, 72)
+                self._issue_thread_empty_state.show()
+            self.issue_thread_scroll.init_sizes()
+            return
+
+        if self._issue_thread_empty_state is not None:
+            self._issue_thread_empty_state.hide()
+
+        for thread_index, thread_card in enumerate(issue_preview.threads, start=1):
+            if thread_index > len(self._issue_thread_cards):
+                self._issue_thread_cards.append(
+                    build_digest_thread_card(
+                        parent=self.issue_thread_scroll,
+                        x=card_x,
+                        y=card_y,
+                        width=card_width,
+                        thread_index=thread_index,
+                        thread_card=thread_card,
+                        theme=self._theme,
+                    )
+                )
+            else:
+                update_digest_thread_card(
+                    widgets=self._issue_thread_cards[thread_index - 1],
+                    x=card_x,
+                    y=card_y,
+                    width=card_width,
+                    thread_index=thread_index,
+                    thread_card=thread_card,
+                    theme=self._theme,
+                )
+            card_y += self._issue_thread_cards[thread_index - 1].group.h() + CARD_LIST_GAP
+        for widgets in self._issue_thread_cards[len(issue_preview.threads):]:
+            hide_digest_thread_card(widgets)
+        self.issue_thread_scroll.init_sizes()
+        self.issue_thread_scroll.scroll_to(0, 0)
+
+    def _clear_thread_cards(self) -> None:
+        self._hide_all_thread_cards()
+        if self._issue_thread_empty_state is not None:
+            self._issue_thread_empty_state.hide()
+
+    def _hide_all_thread_cards(self) -> None:
+        for widgets in self._issue_thread_cards:
+            hide_digest_thread_card(widgets)
 
     def _configure_issue_list_columns(self) -> None:
         if not hasattr(self.issue_list, "column_widths"):
@@ -469,24 +462,3 @@ def _format_sort_header_label(
         return label
     arrow = "^" if ascending else "v"
     return f"{label} {arrow}"
-
-
-def _style_entry(*, color: int, font: int, size: int):
-    entry = fltk.Style_Table_Entry()
-    entry.color = color
-    entry.font = font
-    entry.size = size
-    entry.attr = 0
-    return entry
-
-
-def _issue_canvas_foreground_color(theme: UiTheme) -> int:
-    if theme.name == "classic_dark":
-        return fltk.FL_WHITE
-    return fltk.FL_BLACK
-
-
-def _issue_canvas_muted_color(theme: UiTheme) -> int:
-    if theme.name == "classic_dark":
-        return fltk.FL_LIGHT2
-    return fltk.FL_DARK3

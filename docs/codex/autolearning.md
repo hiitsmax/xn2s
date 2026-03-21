@@ -90,6 +90,10 @@ The notes below are chronological history. Older references to `report digest` o
   - thread cards now present the source tweet before the editorial rationale, because users understand ambiguous summaries faster when they can see the underlying post immediately,
   - the rationale line is explicitly introduced as `Why here:` so the digest’s own interpretation no longer blends into the source material,
   - source metadata is explicitly introduced as `Source post NN.` so the lower canvas reads like a curated note with evidence, not a single undifferentiated text block.
+- Follow-up native-card pass after another human review:
+  - when a human asks for actual per-thread borders and padding, treat that as a surface-change request, not as a spacing tweak inside one long text widget,
+  - `Fl_Text_Display` is still useful for quick readable text, but the moment the UI needs local visual containers, switch to a scrollable stack of native thread cards,
+  - the card pattern that worked here was: bold title, regular summary, compact source label + source text, then a muted italic `Why here` label with the editorial rationale beneath it.
 - The reusable lesson here is twofold:
   - this UI does not need more stored ranking metadata to feel prioritized,
   - once `Fl_Help_View` starts parsing richer, repeated structures, the correct fix is often to stop feeding it HTML and move that surface to native FLTK widgets.

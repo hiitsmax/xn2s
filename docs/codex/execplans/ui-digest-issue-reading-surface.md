@@ -22,6 +22,9 @@ The observable result is: run `uv run xs2n ui`, select a run with `digest.html`,
 - [x] (2026-03-19 23:40Z) Wrote a failing probe test that launches the real digest viewer module, saves a screenshot, and times out if the native canvas still freezes.
 - [x] (2026-03-19 23:46Z) Replaced the issue canvas with `Fl_Text_Display` + `Fl_Text_Buffer` and added a reusable probe module that captures timings and PNG screenshots.
 - [x] (2026-03-19 23:48Z) Re-ran focused and app-rendering regressions plus the live screenshot probe.
+- [x] (2026-03-21 17:20Z) Wrote failing UI tests for real bordered thread cards with local typography, after user feedback made it clear that spacing-only refinements were not enough.
+- [x] (2026-03-21 17:55Z) Replaced the lower issue `Fl_Text_Display` reading surface with native scrollable thread cards, keeping the compact issue summary above but moving per-thread hierarchy into real bordered widgets.
+- [x] (2026-03-21 18:20Z) Re-ran focused regressions and the live screenshot probe to confirm the card stack stays responsive and renders the real `Context Management for Agentic Systems` issue legibly.
 
 ## Surprises & Discoveries
 
@@ -48,6 +51,9 @@ The observable result is: run `uv run xs2n ui`, select a run with `digest.html`,
 - Decision: replace the issue canvas with `Fl_Text_Display` instead of trying to optimize `Fl_Help_View` markup further.
   Rationale: fresh measurement proved the freeze is inside `Fl_Help_View.value(...)`, not in the Python-side render path, so continuing to tune HTML would keep us on the wrong surface.
   Date/Author: 2026-03-19 / Codex
+- Decision: stop iterating on a single flowing text widget for the lower reading surface and move to one bordered native card per thread.
+  Rationale: `Fl_Text_Display` can style text roles, but it cannot express per-thread borders, local padding, and truly separate editorial/source blocks as clearly as the user requested. The user feedback showed that more whitespace inside one text stream was still the wrong surface.
+  Date/Author: 2026-03-21 / Codex
 - Decision: add a probe module that can be launched directly and from pytest, rather than keeping this as an ad hoc terminal snippet.
   Rationale: the user explicitly wants automation and screenshots, and the repo benefits from one stable, rerunnable command for live UI timing and PNG capture.
   Date/Author: 2026-03-19 / Codex
@@ -57,6 +63,8 @@ The observable result is: run `uv run xs2n ui`, select a run with `digest.html`,
 The native digest viewer now behaves more like a ranked editorial browser than a raw artifact explorer. The issue navigator tells the user what matters first, and selecting an issue opens the full stack of supporting thread cards and posts immediately.
 
 This change stayed intentionally local. It did not add new report artifacts or change digest-generation semantics. The main lesson is that hierarchy can often be recovered from existing saved data if the UI stops mirroring raw storage structure one-to-one, and that `Fl_Help_View` should no longer be trusted for richer repeated issue-content layouts in this app.
+
+The later follow-up lesson is sharper: once the user asks for real per-thread cards with visible borders, padding, bold titles, and clearly separated editorial notes, the correct move is no longer “style the text better”. The correct move is to change the lower pane into actual native card widgets and let typography happen inside those widgets instead of inside one long text buffer.
 
 ## Context and Orientation
 

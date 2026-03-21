@@ -45,5 +45,6 @@ def test_digest_browser_probe_renders_and_saves_screenshot(
 
     assert payload["load_run_ms"] < 3000
     assert len(payload["issue_timings_ms"]) == 2
+    assert payload["thread_card_count"] >= 1
     assert screenshot_path.exists()
     assert payload["screenshot_path"] == str(screenshot_path)

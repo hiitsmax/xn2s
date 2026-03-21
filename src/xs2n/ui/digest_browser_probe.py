@@ -18,7 +18,7 @@ class DigestBrowserProbeResult:
     issue_count: int
     issue_timings_ms: list[float]
     selected_issue_titles: list[str]
-    canvas_chars: int
+    thread_card_count: int
     screenshot_path: str | None
 
 
@@ -67,7 +67,7 @@ def probe_digest_browser(
                 f"fl_write_png failed with exit code {write_result}."
             )
 
-    canvas_chars = len(browser.issue_canvas_buffer.text() or "")
+    thread_card_count = len(browser._issue_thread_cards)
     window.hide()
     fltk.Fl.check()
     return DigestBrowserProbeResult(
@@ -76,7 +76,7 @@ def probe_digest_browser(
         issue_count=len(browser._issue_rows),
         issue_timings_ms=issue_timings_ms,
         selected_issue_titles=selected_issue_titles,
-        canvas_chars=canvas_chars,
+        thread_card_count=thread_card_count,
         screenshot_path=str(screenshot_path) if screenshot_path is not None else None,
     )
 
