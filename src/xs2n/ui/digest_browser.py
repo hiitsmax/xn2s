@@ -25,7 +25,9 @@ SUBTITLE_HEIGHT = 24
 ISSUE_HEADER_HEIGHT = 24
 SUMMARY_HEIGHT = 154
 TOOLBAR_HEIGHT = 30
-ISSUE_LIST_WIDTH = 320
+ISSUE_LIST_WIDTH_RATIO = 0.27
+ISSUE_LIST_WIDTH_MIN = 240
+ISSUE_LIST_WIDTH_MAX = 420
 ISSUE_THREAD_COUNT_WIDTH = 68
 PADDING = 8
 SUMMARY_SURFACE_PADDING_X = 14
@@ -54,9 +56,10 @@ class DigestBrowser:
         self.group.begin()
         self.header = fltk.Fl_Box(x, y, width, HEADER_HEIGHT, "")
         self.subtitle = fltk.Fl_Box(x, y + HEADER_HEIGHT, width, SUBTITLE_HEIGHT, "")
-        self.issue_title_header = fltk.Fl_Button(x, y, ISSUE_LIST_WIDTH, ISSUE_HEADER_HEIGHT, "")
+        issue_list_width = _issue_list_width(width)
+        self.issue_title_header = fltk.Fl_Button(x, y, issue_list_width, ISSUE_HEADER_HEIGHT, "")
         self.issue_thread_count_header = fltk.Fl_Button(x, y, ISSUE_THREAD_COUNT_WIDTH, ISSUE_HEADER_HEIGHT, "")
-        self.issue_list = fltk.Fl_Hold_Browser(x, y, ISSUE_LIST_WIDTH, height)
+        self.issue_list = fltk.Fl_Hold_Browser(x, y, issue_list_width, height)
         self.issue_summary_surface = fltk.Fl_Box(x, y, width, SUMMARY_HEIGHT, "")
         self.issue_title = fltk.Fl_Box(x, y, width, SUMMARY_TITLE_HEIGHT, "")
         self.issue_meta = fltk.Fl_Box(x, y, width, SUMMARY_META_HEIGHT, "")
@@ -197,8 +200,9 @@ class DigestBrowser:
         y = self.group.y()
         width = self.group.w()
         height = self.group.h()
-        right_x = x + ISSUE_LIST_WIDTH + PADDING + RIGHT_COLUMN_INSET
-        right_width = max(1, width - ISSUE_LIST_WIDTH - (PADDING * 2) - RIGHT_COLUMN_INSET)
+        issue_list_width = _issue_list_width(width)
+        right_x = x + issue_list_width + PADDING + RIGHT_COLUMN_INSET
+        right_width = max(1, width - issue_list_width - (PADDING * 2) - RIGHT_COLUMN_INSET)
         issue_header_y = y + HEADER_HEIGHT + SUBTITLE_HEIGHT
         summary_y = issue_header_y
         button_y = summary_y + SUMMARY_HEIGHT + PADDING
@@ -216,7 +220,9 @@ class DigestBrowser:
 
         self.header.resize(x, y, width, HEADER_HEIGHT)
         self.subtitle.resize(x, y + HEADER_HEIGHT, width, SUBTITLE_HEIGHT)
-        title_header_width, thread_count_header_width = self._issue_header_widths()
+        title_header_width, thread_count_header_width = self._issue_header_widths(
+            issue_list_width
+        )
         self.issue_title_header.resize(
             x,
             issue_header_y,
@@ -232,7 +238,7 @@ class DigestBrowser:
         self.issue_list.resize(
             x,
             issue_header_y + ISSUE_HEADER_HEIGHT,
-            ISSUE_LIST_WIDTH,
+            issue_list_width,
             height - HEADER_HEIGHT - SUBTITLE_HEIGHT - ISSUE_HEADER_HEIGHT,
         )
         self.issue_summary_surface.resize(right_x, summary_y, right_width, SUMMARY_HEIGHT)
@@ -391,9 +397,14 @@ class DigestBrowser:
             )
         )
 
-    def _issue_header_widths(self) -> tuple[int, int]:
+    def _issue_header_widths(
+        self,
+        issue_list_width: int | None = None,
+    ) -> tuple[int, int]:
+        if issue_list_width is None:
+            issue_list_width = self.issue_list.w()
         thread_count_width = ISSUE_THREAD_COUNT_WIDTH
-        title_width = max(1, ISSUE_LIST_WIDTH - thread_count_width)
+        title_width = max(1, issue_list_width - thread_count_width)
         return title_width, thread_count_width
 
     def _render_issue_sort_headers(self) -> None:
@@ -462,3 +473,11 @@ def _format_sort_header_label(
         return label
     arrow = "^" if ascending else "v"
     return f"{label} {arrow}"
+
+
+def _issue_list_width(total_width: int) -> int:
+    proportional_width = int(total_width * ISSUE_LIST_WIDTH_RATIO)
+    return max(
+        ISSUE_LIST_WIDTH_MIN,
+        min(ISSUE_LIST_WIDTH_MAX, proportional_width),
+    )

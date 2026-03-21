@@ -94,6 +94,10 @@ The notes below are chronological history. Older references to `report digest` o
   - when a human asks for actual per-thread borders and padding, treat that as a surface-change request, not as a spacing tweak inside one long text widget,
   - `Fl_Text_Display` is still useful for quick readable text, but the moment the UI needs local visual containers, switch to a scrollable stack of native thread cards,
   - the card pattern that worked here was: bold title, regular summary, compact source label + source text, then a muted italic `Why here` label with the editorial rationale beneath it.
+- Follow-up responsive pass after another human review:
+  - once the lower pane becomes a real card stack, the left issue navigator width can no longer stay hard-coded if the overall viewer is expected to resize gracefully,
+  - a proportional width with clamp bounds worked better than a fixed `320px`: it keeps the navigator usable on narrow windows without starving the reader surface, and it does not let the navigator become comically wide on large windows,
+  - geometry regressions here are worth locking with widget-level tests, not just screenshots, because the bug showed up as an unhealthy ratio between navigator and reader rather than as a logic failure.
 - The reusable lesson here is twofold:
   - this UI does not need more stored ranking metadata to feel prioritized,
   - once `Fl_Help_View` starts parsing richer, repeated structures, the correct fix is often to stop feeding it HTML and move that surface to native FLTK widgets.

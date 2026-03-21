@@ -328,7 +328,7 @@ def _layout_digest_thread_card(
 
     widgets.why_label_box.label(why_label_text)
     widgets.why_label_box.resize(inner_x, current_y, inner_width, why_label_height)
-    current_y += why_label_height + 2
+    current_y += why_label_height + 8
     widgets.why_text_box.label(why_text)
     widgets.why_text_box.resize(inner_x, current_y, inner_width, why_text_height)
 

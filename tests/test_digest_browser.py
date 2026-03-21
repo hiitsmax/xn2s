@@ -45,6 +45,32 @@ def test_digest_browser_layout_places_sort_headers_above_issue_list() -> None:
     assert browser.issue_list.y() > browser.issue_title_header.y()
 
 
+def test_digest_browser_resize_rebalances_issue_list_and_reader_widths() -> None:
+    browser = DigestBrowser(
+        x=0,
+        y=0,
+        width=1320,
+        height=920,
+        on_open_url=lambda _url: None,
+    )
+
+    initial_list_width = browser.issue_list.w()
+    initial_reader_width = browser.issue_thread_scroll.w()
+
+    browser.resize(0, 0, 900, 720)
+    narrow_list_width = browser.issue_list.w()
+    narrow_reader_width = browser.issue_thread_scroll.w()
+
+    browser.resize(0, 0, 1600, 900)
+    wide_list_width = browser.issue_list.w()
+    wide_reader_width = browser.issue_thread_scroll.w()
+
+    assert narrow_list_width < initial_list_width
+    assert wide_list_width > initial_list_width
+    assert narrow_reader_width > narrow_list_width
+    assert wide_reader_width > wide_list_width
+
+
 def test_digest_browser_renders_native_thread_cards_for_selected_issue() -> None:
     browser = DigestBrowser(
         x=0,
@@ -66,3 +92,6 @@ def test_digest_browser_renders_native_thread_cards_for_selected_issue() -> None
     assert first_card.title_box.x() > first_card.surface.x()
     assert first_card.summary_box.y() > first_card.title_box.y()
     assert first_card.why_text_box.y() > first_card.source_posts[0].text_box.y()
+    assert first_card.why_text_box.y() >= (
+        first_card.why_label_box.y() + first_card.why_label_box.h() + 4
+    )
