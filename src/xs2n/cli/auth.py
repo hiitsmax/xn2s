@@ -18,7 +18,12 @@ from xs2n.profile.browser_cookies import (
     write_cookie_candidate,
 )
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
-from xs2n.schemas.auth import AuthDoctorResult, ProviderStatus, RunReadiness
+from xs2n.schemas.auth import (
+    AuthDoctorResult,
+    ProviderStatus,
+    RunReadiness,
+    extract_valid_x_session_cookies,
+)
 
 auth_app = typer.Typer(
     help="Authentication helpers for digest and X session setup.",
@@ -30,7 +35,6 @@ x_app = typer.Typer(
 )
 auth_app.add_typer(x_app, name="x")
 
-_REQUIRED_X_COOKIES = {"auth_token", "ct0"}
 _DEFAULT_CODEX_HOME = Path("~/.codex").expanduser()
 _DEFAULT_CODEX_AUTH_PATH = Path("auth.json")
 
@@ -44,12 +48,7 @@ def _load_cookie_document(cookies_file: Path) -> dict[str, str] | None:
         return None
     if not isinstance(payload, dict):
         return None
-
-    cookies: dict[str, str] = {}
-    for name, value in payload.items():
-        if isinstance(name, str) and isinstance(value, str):
-            cookies[name] = value
-    return cookies
+    return extract_valid_x_session_cookies(payload)
 
 
 def _resolve_codex_home() -> Path:
@@ -164,7 +163,7 @@ def _build_codex_status(codex_bin: str) -> ProviderStatus:
 def _build_x_status(cookies_file: Path) -> ProviderStatus:
     resolved_path = cookies_file.expanduser().resolve()
     cookies = _load_cookie_document(resolved_path)
-    if cookies is None or not _REQUIRED_X_COOKIES.issubset(cookies.keys()):
+    if cookies is None:
         return ProviderStatus(
             status="missing",
             summary="X cookies file is missing required session cookies.",
@@ -180,7 +179,7 @@ def _build_x_status(cookies_file: Path) -> ProviderStatus:
         )
 
     return ProviderStatus(
-        status="expired",
+        status="unverified",
         summary="X session cookies are present but could not be verified.",
         detail=str(resolved_path),
     )

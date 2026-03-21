@@ -9,8 +9,11 @@ from typing import Callable
 
 from twikit import Client
 
+from xs2n.schemas.auth import (
+    extract_valid_x_session_cookies,
+    require_valid_x_session_cookies,
+)
 
-_REQUIRED_X_COOKIES = {"auth_token", "ct0"}
 _CANDIDATE_DOMAINS = ("x.com", "twitter.com")
 _CANDIDATE_BROWSERS = (
     "chrome",
@@ -89,12 +92,14 @@ def discover_x_cookie_candidates(resolve_profiles: bool = True) -> list[BrowserC
     for browser_name, loader in _iter_cookie_loaders():
         for domain in _CANDIDATE_DOMAINS:
             try:
-                cookies = _extract_cookie_values(loader(domain_name=domain))
+                cookies = extract_valid_x_session_cookies(
+                    _extract_cookie_values(loader(domain_name=domain))
+                )
             except Exception as error:  # pragma: no cover - environment-dependent
                 errors.append(f"{browser_name}/{domain}: {error}")
                 continue
 
-            if not _REQUIRED_X_COOKIES.issubset(cookies.keys()):
+            if cookies is None:
                 continue
 
             session_key = (cookies["auth_token"], cookies["ct0"])
@@ -131,7 +136,11 @@ def describe_cookie_candidate(candidate: BrowserCookieCandidate) -> str:
 def write_cookie_candidate(candidate: BrowserCookieCandidate, cookies_file: Path) -> Path:
     cookies_path = cookies_file.expanduser().resolve()
     cookies_path.parent.mkdir(parents=True, exist_ok=True)
-    cookies_path.write_text(json.dumps(candidate.cookies, indent=2), encoding="utf-8")
+    cookies = require_valid_x_session_cookies(
+        candidate.cookies,
+        error_message="Cannot write cookies file without required X session cookies.",
+    )
+    cookies_path.write_text(json.dumps(cookies, indent=2), encoding="utf-8")
     return cookies_path
 
 

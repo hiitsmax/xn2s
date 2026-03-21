@@ -7,7 +7,7 @@ from types import ModuleType
 
 import pytest
 
-from xs2n.cli.auth import doctor, x_login, x_reset
+from xs2n.cli.auth import build_auth_doctor_result, doctor, x_login, x_reset
 from xs2n.profile.playwright import bootstrap_cookies_via_browser
 from xs2n.schemas.auth import AuthDoctorResult, ProviderStatus, RunReadiness
 
@@ -51,6 +51,44 @@ def test_auth_doctor_emits_json_snapshot(
         "digest_ready": True,
         "latest_ready": False,
     }
+
+
+def test_build_auth_doctor_result_marks_unverified_x_session_when_profile_lookup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cookies_file = tmp_path / "cookies.json"
+    cookies_file.write_text(
+        json.dumps(
+            {
+                "auth_token": "token-value",
+                "ct0": "csrf-value",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.auth._build_codex_status",
+        lambda codex_bin: ProviderStatus(
+            status="ready",
+            summary="Codex credentials available.",
+            detail="Source: codex_auth_file",
+        ),
+    )
+    monkeypatch.setattr(
+        "xs2n.cli.auth.resolve_screen_name_from_cookies",
+        lambda cookies: None,
+    )
+
+    snapshot = build_auth_doctor_result(
+        cookies_file=cookies_file,
+        codex_bin="codex",
+    )
+
+    assert snapshot.x.status == "unverified"
+    assert snapshot.x.summary == "X session cookies are present but could not be verified."
+    assert snapshot.run_readiness.digest_ready is True
+    assert snapshot.run_readiness.latest_ready is False
 
 
 def test_x_login_reports_saved_cookie_path(

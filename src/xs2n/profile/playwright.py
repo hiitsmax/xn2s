@@ -9,7 +9,10 @@ from typing import Any
 
 import typer
 
-_REQUIRED_X_COOKIES = {"auth_token", "ct0"}
+from xs2n.schemas.auth import (
+    extract_valid_x_session_cookies,
+    require_valid_x_session_cookies,
+)
 
 
 def is_missing_playwright_browser_error(error: Exception) -> bool:
@@ -57,14 +60,18 @@ def _wait_for_x_session_cookies(
     page: Any,
     timeout_seconds: int = 300,
     poll_interval_ms: int = 1000,
-) -> dict[str, str]:
+) -> dict[str, str] | None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        cookies = _extract_cookies(context.cookies("https://x.com"))
-        if _REQUIRED_X_COOKIES.issubset(cookies.keys()):
+        cookies = extract_valid_x_session_cookies(
+            _extract_cookies(context.cookies("https://x.com"))
+        )
+        if cookies is not None:
             return cookies
         page.wait_for_timeout(poll_interval_ms)
-    return _extract_cookies(context.cookies("https://x.com"))
+    return extract_valid_x_session_cookies(
+        _extract_cookies(context.cookies("https://x.com"))
+    )
 
 
 def bootstrap_cookies_via_browser(cookies_file: Path) -> Path:
@@ -85,7 +92,7 @@ def bootstrap_cookies_via_browser(cookies_file: Path) -> Path:
         "Cookies will be saved automatically once the session is ready."
     )
 
-    cookies: dict[str, str] = {}
+    cookies: dict[str, str] | None = None
     for attempt in range(2):
         browser: Any = None
         try:
@@ -113,11 +120,13 @@ def bootstrap_cookies_via_browser(cookies_file: Path) -> Path:
             if browser is not None:
                 browser.close()
 
-    if not _REQUIRED_X_COOKIES.issubset(cookies.keys()):
-        raise RuntimeError(
+    cookies = require_valid_x_session_cookies(
+        cookies,
+        error_message=(
             "Login appears incomplete: required X session cookies were not found. "
             "Confirm the browser completed login and retry."
-        )
+        ),
+    )
 
     cookies_path.write_text(json.dumps(cookies, indent=2), encoding="utf-8")
     return cookies_path

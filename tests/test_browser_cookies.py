@@ -10,6 +10,7 @@ from xs2n.profile.browser_cookies import (
     discover_x_cookie_candidates,
     load_x_cookies_from_installed_browser,
     maybe_warn_keychain_prompt,
+    write_cookie_candidate,
 )
 
 
@@ -107,6 +108,22 @@ def test_bootstrap_cookies_from_local_browser_writes_file(
 
     assert saved == path.resolve()
     assert '"auth_token": "token-value"' in path.read_text(encoding="utf-8")
+
+
+def test_write_cookie_candidate_rejects_missing_required_session_cookies(
+    tmp_path: Path,
+) -> None:
+    candidate = BrowserCookieCandidate(
+        browser_name="chrome",
+        domain="x.com",
+        cookies={"auth_token": "token-value"},
+        screen_name=None,
+    )
+
+    with pytest.raises(RuntimeError) as error:
+        write_cookie_candidate(candidate, tmp_path / "cookies.json")
+
+    assert "required X session cookies" in str(error.value)
 
 
 def test_maybe_warn_keychain_prompt_emits_only_once(

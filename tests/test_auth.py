@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from xs2n.profile.auth import ensure_authenticated_client, prompt_login
+from xs2n.schemas.auth import extract_valid_x_session_cookies
 
 
 def test_prompt_login_prefills_username_from_screen_name(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,3 +72,26 @@ def test_ensure_authenticated_client_passes_inferred_username() -> None:
     assert prompt_args == (cookies_file, "vineyardsunset_")
     assert client.login_payload is not None
     assert client.login_payload["auth_info_2"] == "vineyardsunset_"
+
+
+def test_extract_valid_x_session_cookies_requires_required_cookie_names() -> None:
+    cookies = extract_valid_x_session_cookies(
+        {
+            "auth_token": "token-value",
+            "ct0": "csrf-value",
+            "lang": "en",
+            "bad": 3,
+        }
+    )
+
+    assert cookies == {
+        "auth_token": "token-value",
+        "ct0": "csrf-value",
+        "lang": "en",
+    }
+
+
+def test_extract_valid_x_session_cookies_returns_none_when_required_values_are_missing() -> None:
+    cookies = extract_valid_x_session_cookies({"auth_token": "token-value"})
+
+    assert cookies is None
