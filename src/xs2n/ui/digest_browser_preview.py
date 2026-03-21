@@ -86,19 +86,12 @@ def build_issue_canvas_document(preview) -> IssueCanvasDocument:  # noqa: ANN001
                 thread_card.summary,
                 CANVAS_STYLE_THREAD_SUMMARY,
             )
-            if thread_card.why_it_matters:
-                _append_segment(segments, "\n", CANVAS_STYLE_BODY)
-                _append_segment(
-                    segments,
-                    thread_card.why_it_matters,
-                    CANVAS_STYLE_THREAD_CONTEXT,
-                )
             _append_segment(segments, "\n\n", CANVAS_STYLE_BODY)
             for tweet_index, tweet in enumerate(thread_card.tweets, start=1):
                 _append_segment(
                     segments,
                     (
-                        f"  {tweet_index:02d}. @{tweet.author_handle} | "
+                        f"Source post {tweet_index:02d}. @{tweet.author_handle} | "
                         f"{tweet.kind} | {_format_timestamp(tweet.created_at)}"
                     ),
                     CANVAS_STYLE_TWEET_META,
@@ -108,6 +101,18 @@ def build_issue_canvas_document(preview) -> IssueCanvasDocument:  # noqa: ANN001
                     segments,
                     f"      {tweet.text}",
                     CANVAS_STYLE_TWEET_TEXT,
+                )
+                _append_segment(segments, "\n\n", CANVAS_STYLE_BODY)
+            if thread_card.why_it_matters:
+                _append_segment(
+                    segments,
+                    "Why here: ",
+                    CANVAS_STYLE_TWEET_META,
+                )
+                _append_segment(
+                    segments,
+                    thread_card.why_it_matters,
+                    CANVAS_STYLE_THREAD_CONTEXT,
                 )
                 _append_segment(segments, "\n\n", CANVAS_STYLE_BODY)
 

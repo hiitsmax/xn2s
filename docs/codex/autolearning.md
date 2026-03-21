@@ -59,6 +59,10 @@ The notes below are chronological history. Older references to `report digest` o
   - the issue summary area now renders as one inset surface with internal padding instead of stacking title/meta/blurb directly against the right-pane edge,
   - the lower issue canvas no longer repeats the issue blurb before the thread list, which reduces the feeling of duplicated copy at the top of the reading surface,
   - thread rendering now carries a dedicated FLTK style buffer so thread titles, thread summaries, editorial context, tweet metadata, and tweet text can read as different text roles rather than one flat block.
+- Follow-up comprehension pass after another human review:
+  - thread cards now present the source tweet before the editorial rationale, because users understand ambiguous summaries faster when they can see the underlying post immediately,
+  - the rationale line is explicitly introduced as `Why here:` so the digest’s own interpretation no longer blends into the source material,
+  - source metadata is explicitly introduced as `Source post NN.` so the lower canvas reads like a curated note with evidence, not a single undifferentiated text block.
 - The reusable lesson here is twofold:
   - this UI does not need more stored ranking metadata to feel prioritized,
   - once `Fl_Help_View` starts parsing richer, repeated structures, the correct fix is often to stop feeding it HTML and move that surface to native FLTK widgets.

@@ -205,10 +205,12 @@ def test_digest_browser_state_defaults_to_ranked_issue_preview() -> None:
     preview = state.selected_issue_preview()
 
     assert [row.slug for row in issue_rows] == ["chip_race", "context_systems"]
+    assert state.issue_sort().key == "thread_count"
+    assert state.issue_sort().ascending is False
     assert issue_rows[0].rank == 1
     assert issue_rows[0].thread_count == 2
     assert issue_rows[0].tweet_count == 3
-    assert issue_rows[0].render_label() == "01\tTrack\t2T/3P\tChip Race"
+    assert issue_rows[0].render_label() == "Chip Race\t2"
     assert state.selected_issue().title == "Chip Race"
     assert state.digest_title == "Context Management for Agentic Systems"
     assert preview is not None
@@ -238,6 +240,45 @@ def test_digest_browser_state_switches_issue_preview() -> None:
     assert preview.threads[0].tweet_count == 1
 
 
+def test_digest_browser_state_toggles_issue_sort_and_row_order() -> None:
+    state = DigestBrowserState(_preview())
+
+    state.toggle_issue_sort("title")
+
+    assert state.issue_sort().key == "title"
+    assert state.issue_sort().ascending is True
+    assert [row.slug for row in state.issue_rows()] == ["chip_race", "context_systems"]
+
+    state.toggle_issue_sort("title")
+
+    assert state.issue_sort().key == "title"
+    assert state.issue_sort().ascending is False
+    assert [row.slug for row in state.issue_rows()] == ["context_systems", "chip_race"]
+
+    state.toggle_issue_sort("thread_count")
+
+    assert state.issue_sort().key == "thread_count"
+    assert state.issue_sort().ascending is False
+    assert [row.slug for row in state.issue_rows()] == ["chip_race", "context_systems"]
+
+    state.toggle_issue_sort("thread_count")
+
+    assert state.issue_sort().key == "thread_count"
+    assert state.issue_sort().ascending is True
+    assert [row.slug for row in state.issue_rows()] == ["context_systems", "chip_race"]
+
+
+def test_digest_browser_state_keeps_selected_issue_when_sort_changes() -> None:
+    state = DigestBrowserState(_preview())
+    state.select_issue("context_systems")
+
+    state.toggle_issue_sort("title")
+    state.toggle_issue_sort("title")
+    state.toggle_issue_sort("thread_count")
+
+    assert state.selected_issue().slug == "context_systems"
+
+
 def test_render_issue_canvas_text_shows_all_threads_for_selected_issue() -> None:
     state = DigestBrowserState(_preview())
 
@@ -253,13 +294,20 @@ def test_render_issue_canvas_text_shows_all_threads_for_selected_issue() -> None
     assert "@realmcore_" in rendered
     assert "It adds concrete evidence to the chip-capacity issue." in rendered
     assert "Supply constraints keep shaping AI infra." not in rendered
+    assert "Why this matters:" not in rendered
+    assert "Source post 01." in rendered
+    assert "Why here:" in rendered
     assert (
         "01. Foundry capacity is still the gating factor\n\n"
-        "A short report on why foundry capacity still drives the roadmap."
+        "A short report on why foundry capacity still drives the roadmap.\n\n"
+        "Source post 01. @realmcore_ | retweet | 2026-03-13 00:01 UTC"
     ) in rendered
+    source_position = rendered.index("Source post 01. @realmcore_ | retweet | 2026-03-13 00:01 UTC")
+    why_position = rendered.index("Why here: It adds concrete evidence to the chip-capacity issue.")
+    assert source_position < why_position
 
 
-def test_render_issue_canvas_styles_give_titles_and_metadata_distinct_treatment() -> None:
+def test_render_issue_canvas_styles_give_titles_labels_and_metadata_distinct_treatment() -> None:
     state = DigestBrowserState(_preview())
     rendered = render_issue_canvas_text(state.selected_issue_preview())
     styles = render_issue_canvas_styles(state.selected_issue_preview())
@@ -268,20 +316,24 @@ def test_render_issue_canvas_styles_give_titles_and_metadata_distinct_treatment(
     summary_index = rendered.index(
         "A short report on why foundry capacity still drives the roadmap."
     )
-    why_index = rendered.index(
-        "It adds concrete evidence to the chip-capacity issue."
+    source_label_index = rendered.index(
+        "Source post 01. @realmcore_ | retweet | 2026-03-13 00:01 UTC"
     )
-    tweet_meta_index = rendered.index("  01. @realmcore_ | retweet | 2026-03-13 00:01 UTC")
     tweet_text_index = rendered.index(
         "      Foundry capacity is still the gating factor for every major roadmap shift."
+    )
+    why_label_index = rendered.index("Why here: ")
+    why_text_index = rendered.index(
+        "It adds concrete evidence to the chip-capacity issue."
     )
 
     assert len(styles) == len(rendered)
     assert styles[title_index] == "B"
     assert styles[summary_index] == "C"
-    assert styles[why_index] == "D"
-    assert styles[tweet_meta_index] == "E"
+    assert styles[source_label_index] == "E"
     assert styles[tweet_text_index] == "F"
+    assert styles[why_label_index] == "E"
+    assert styles[why_text_index] == "D"
 
 
 def test_render_issue_placeholder_text_guides_the_user() -> None:
