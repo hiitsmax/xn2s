@@ -1,8 +1,8 @@
 import json
-import re
 from typing import Any, TypeVar, cast
 
-from openai import BadRequestError, OpenAI
+from agents import Agent, OpenAIResponsesModel, RunConfig, Runner
+from openai import AsyncOpenAI, BadRequestError
 from pydantic import BaseModel
 
 from .credentials import resolve_model_credentials
@@ -11,35 +11,18 @@ from .credentials import resolve_model_credentials
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
-def _schema_format_name(schema: type[BaseModel]) -> str:
-    snake = re.sub(r"(?<!^)(?=[A-Z])", "_", schema.__name__).lower()
-    normalized = re.sub(r"[^a-z0-9_]+", "_", snake).strip("_")
-    return normalized or "response_schema"
-
-
-def _strict_json_schema(fragment: Any) -> Any:
-    if isinstance(fragment, list):
-        return [_strict_json_schema(item) for item in fragment]
-    if not isinstance(fragment, dict):
-        return fragment
-
-    normalized = {key: _strict_json_schema(value) for key, value in fragment.items()}
-    if normalized.get("type") == "object":
-        normalized.setdefault("additionalProperties", False)
-        properties = normalized.get("properties")
-        if isinstance(properties, dict):
-            normalized["required"] = list(properties.keys())
-    return normalized
-
-
-class DigestLLM:
+class LLM:
     def __init__(self, *, model: str, api_key: str | None = None) -> None:
         credentials = resolve_model_credentials(api_key)
         self._model = model
         self._source = credentials.source
-        self._client = OpenAI(
+        self._client = AsyncOpenAI(
             api_key=credentials.token,
             base_url=credentials.base_url,
+        )
+        self._agent_model = OpenAIResponsesModel(
+            model=self._model,
+            openai_client=self._client,
         )
 
     @property
@@ -54,27 +37,17 @@ class DigestLLM:
         schema: type[SchemaT],
     ) -> SchemaT:
         payload_json = json.dumps(payload, ensure_ascii=False, indent=2)
+        agent = Agent(
+            name="digest_llm",
+            instructions=prompt,
+            model=self._agent_model,
+            output_type=schema,
+        )
         try:
-            response = self._client.responses.create(
-                model=self._model,
-                input=[
-                    {
-                        "role": "system",
-                        "content": prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Input JSON:\n{payload_json}",
-                    },
-                ],
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": _schema_format_name(schema),
-                        "schema": _strict_json_schema(schema.model_json_schema()),
-                        "strict": True,
-                    }
-                },
+            result = Runner.run_sync(
+                agent,
+                input=f"Input JSON:\n{payload_json}",
+                run_config=RunConfig(tracing_disabled=True),
             )
         except BadRequestError as error:
             message = str(error)
@@ -91,14 +64,16 @@ class DigestLLM:
         except Exception as error:
             raise RuntimeError(f"Digest model request failed: {error}") from error
 
-        output_text = getattr(response, "output_text", None)
-        if not isinstance(output_text, str) or not output_text.strip():
-            raise RuntimeError("Digest model returned no structured output text.")
+        output = getattr(result, "final_output", None)
+        if output is None:
+            raise RuntimeError("Digest model returned no structured output.")
 
         try:
-            return cast(SchemaT, schema.model_validate_json(output_text))
+            if isinstance(output, schema):
+                return cast(SchemaT, output)
+            return cast(SchemaT, schema.model_validate(output))
         except Exception as error:
             raise RuntimeError(
                 "Digest model returned invalid structured output: "
-                f"{error}. Raw output: {output_text}"
+                f"{error}. Raw output: {output}"
             ) from error

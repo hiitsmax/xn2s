@@ -1,7 +1,7 @@
 import json
 from collections import OrderedDict
 from datetime import datetime, timezone
-from xs2n.llm import DigestLLM
+from xs2n.llm import LLM
 from xs2n.schemas import (
     DigestIssue,
     DigestOutput,
@@ -39,6 +39,12 @@ def _slugify_issue(value, *, fallback):
     return collapsed or fallback
 
 
+def _validate_threads_have_posts(threads):
+    for thread in threads:
+        if not thread.posts:
+            raise ValueError(f"Thread `{thread.thread_id}` has no posts.")
+
+
 def run_digest_pipeline(
     *,
     input_file,
@@ -50,7 +56,8 @@ def run_digest_pipeline(
     # Load and validate threads from the input JSON
     payload = json.loads(input_file.read_text(encoding="utf-8"))
     threads = PipelineInput.model_validate(payload).threads
-    digest_llm = llm or DigestLLM(model=model, api_key=api_key)
+    _validate_threads_have_posts(threads)
+    digest_llm = llm or LLM(model=model, api_key=api_key)
     # Step 1 — filter: drop low-signal threads, keep the rest
     filtered_threads = []
     for thread in threads:
@@ -110,10 +117,7 @@ def run_digest_pipeline(
             },
             schema=IssueWriteResult,
         )
-        issue_slug = _slugify_issue(
-            issue_write.issue_slug,
-            fallback=selection.issue_slug or thread.thread_id,
-        )
+        issue_slug = selection.issue_slug or thread.thread_id
         digest_thread = DigestThread(
             thread_id=thread.thread_id,
             account_handle=thread.account_handle,

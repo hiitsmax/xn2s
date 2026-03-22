@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from xs2n.pipeline import run_digest_pipeline
 from xs2n.schemas import (
     DigestOutput,
@@ -97,3 +99,127 @@ def test_run_digest_pipeline_writes_only_final_digest_json(tmp_path: Path) -> No
     assert len(digest.issues[0].threads) == 1
     assert digest.issues[0].threads[0].thread_id == "thread-1"
     assert sorted(path.name for path in tmp_path.iterdir()) == ["digest.json", "threads.json"]
+
+
+def test_run_digest_pipeline_keeps_selection_issue_slug_when_write_step_disagrees(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "threads.json"
+    output_path = tmp_path / "digest.json"
+    input_path.write_text(
+        json.dumps(
+            {
+                "threads": [
+                    {
+                        "thread_id": "thread-1",
+                        "account_handle": "alice",
+                        "posts": [
+                            {
+                                "post_id": "post-1",
+                                "author_handle": "alice",
+                                "created_at": "2026-03-21T10:00:00Z",
+                                "text": "Inference costs keep falling.",
+                                "url": "https://x.com/alice/status/post-1",
+                            }
+                        ],
+                    },
+                    {
+                        "thread_id": "thread-2",
+                        "account_handle": "bob",
+                        "posts": [
+                            {
+                                "post_id": "post-2",
+                                "author_handle": "bob",
+                                "created_at": "2026-03-21T11:00:00Z",
+                                "text": "Serving costs are compressing again.",
+                                "url": "https://x.com/bob/status/post-2",
+                            }
+                        ],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeLLM:
+        def run(self, *, prompt, payload, schema):  # noqa: ANN001, ANN204
+            thread_id = payload.get("thread", {}).get("thread_id")
+            if schema is ThreadFilterResult:
+                return ThreadFilterResult(
+                    keep=True,
+                    filter_reason="Real signal.",
+                )
+            if schema is IssueSelectionResult:
+                if thread_id == "thread-1":
+                    return IssueSelectionResult(
+                        action="create_new_issue",
+                        issue_slug="ai_costs",
+                        reasoning="Start the issue.",
+                    )
+                return IssueSelectionResult(
+                    action="update_existing_issue",
+                    issue_slug="ai_costs",
+                    reasoning="Same running story.",
+                )
+            if schema is IssueWriteResult:
+                if thread_id == "thread-1":
+                    return IssueWriteResult(
+                        issue_slug="ai_costs",
+                        issue_title="AI Costs Keep Sliding",
+                        issue_summary="The issue tracks falling AI serving costs.",
+                        thread_title="Costs fall again",
+                        thread_summary="The thread says costs keep moving down.",
+                        why_this_thread_belongs="It starts the story.",
+                    )
+                return IssueWriteResult(
+                    issue_slug="rogue_issue_slug",
+                    issue_title="AI Costs Keep Sliding",
+                    issue_summary="The issue tracks falling AI serving costs.",
+                    thread_title="Costs compress again",
+                    thread_summary="The thread adds more evidence.",
+                    why_this_thread_belongs="It updates the same story.",
+                )
+            raise AssertionError(f"Unexpected schema: {schema}")
+
+    digest = run_digest_pipeline(
+        input_file=input_path,
+        output_file=output_path,
+        model="gpt-5.4-mini",
+        llm=FakeLLM(),
+    )
+
+    assert digest.issue_count == 1
+    assert len(digest.issues) == 1
+    assert digest.issues[0].slug == "ai_costs"
+    assert [thread.thread_id for thread in digest.issues[0].threads] == [
+        "thread-1",
+        "thread-2",
+    ]
+
+
+def test_run_digest_pipeline_fails_early_for_thread_without_posts(tmp_path: Path) -> None:
+    input_path = tmp_path / "threads.json"
+    output_path = tmp_path / "digest.json"
+    input_path.write_text(
+        json.dumps(
+            {
+                "threads": [
+                    {
+                        "thread_id": "thread-1",
+                        "account_handle": "alice",
+                        "posts": [],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="has no posts"):
+        run_digest_pipeline(
+            input_file=input_path,
+            output_file=output_path,
+            model="gpt-5.4-mini",
+            llm=object(),
+        )
