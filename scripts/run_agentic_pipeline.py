@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
 
@@ -10,17 +11,15 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 from xs2n.agents.pipeline import DEFAULT_MODEL, run_digest_pipeline
+from xs2n.twitter import get_twitter_threads
+
+
+DEFAULT_HANDLES_PATH = PROJECT_ROOT / "data" / "handles.json"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the minimal agentic digest pipeline.",
-    )
-    parser.add_argument(
-        "--input-file",
-        required=True,
-        type=Path,
-        help="Path to a JSON file containing preassembled threads.",
+        description="Fetch recent tweets and run the digest pipeline.",
     )
     parser.add_argument(
         "--output-file",
@@ -33,6 +32,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MODEL,
         help="OpenAI model name used for the pipeline.",
     )
+    parser.add_argument(
+        "--hours",
+        type=int,
+        default=24,
+        help="How many recent hours of tweets to fetch before running the digest.",
+    )
     return parser
 
 
@@ -41,8 +46,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        since_date = datetime.now(UTC) - timedelta(hours=args.hours)
+        threads = get_twitter_threads(
+            handles_path=DEFAULT_HANDLES_PATH,
+            since_date=since_date,
+        )
         digest = run_digest_pipeline(
-            input_file=args.input_file,
+            threads=threads,
             output_file=args.output_file,
             model=args.model,
         )

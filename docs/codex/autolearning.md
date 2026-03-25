@@ -28,3 +28,10 @@ This branch intentionally reduced the repository to a minimal two-script surface
 
 - The digest runtime sits under `src/xs2n/agents`, but shared infrastructure such as `credentials.py` stays at the package root when it is not specific to one agentic workflow.
 - A flat `agents/` package is easier to scan than an extra `digest/` nesting for a repository that currently ships only one digest pipeline.
+
+## Branch Note (2026-03-26)
+
+- If `Thread` is the application's real domain model, it should be named `Thread` at the boundary where data enters the system, not `ThreadInput` deeper in the pipeline.
+- `twitter.py` should return domain `Thread` objects directly; the digest pipeline should consume those objects instead of owning a private input-shaping layer.
+- The public CLI feels simpler when it owns the fetch-first orchestration and the pipeline stays focused on digest semantics.
+- `ntscraper`'s `since` filter expects a `YYYY-MM-DD` string, so passing a raw `datetime` through the fetch layer is the wrong contract.

@@ -1,6 +1,6 @@
-import json
 from collections import OrderedDict
 from datetime import datetime, timezone
+from pathlib import Path
 
 from xs2n.agents.llm import LLM
 from xs2n.agents.schemas import (
@@ -10,7 +10,7 @@ from xs2n.agents.schemas import (
     FilteredThread,
     IssueSelectionResult,
     IssueWriteResult,
-    PipelineInput,
+    Thread,
     ThreadFilterResult,
 )
 
@@ -50,14 +50,12 @@ def _validate_threads_have_posts(threads):
 
 def run_digest_pipeline(
     *,
-    input_file,
-    output_file,
-    model=DEFAULT_MODEL,
-    api_key=None,
+    threads: list[Thread],
+    output_file: Path,
+    model: str = DEFAULT_MODEL,
+    api_key: str | None = None,
     llm=None,
 ):
-    payload = json.loads(input_file.read_text(encoding="utf-8"))
-    threads = PipelineInput.model_validate(payload).threads
     _validate_threads_have_posts(threads)
     digest_llm = llm or LLM(model=model, api_key=api_key)
 

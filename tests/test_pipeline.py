@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -10,48 +9,44 @@ from xs2n.agents.schemas import (
     DigestOutput,
     IssueSelectionResult,
     IssueWriteResult,
+    Post,
+    Thread,
     ThreadFilterResult,
 )
 
 
-def test_run_digest_pipeline_writes_only_final_digest_json(tmp_path: Path) -> None:
-    input_path = tmp_path / "threads.json"
-    output_path = tmp_path / "digest.json"
-    input_path.write_text(
-        json.dumps(
-            {
-                "threads": [
-                    {
-                        "thread_id": "thread-1",
-                        "account_handle": "alice",
-                        "posts": [
-                            {
-                                "post_id": "post-1",
-                                "author_handle": "alice",
-                                "created_at": "2026-03-21T10:00:00Z",
-                                "text": "AI inference costs are dropping fast.",
-                                "url": "https://x.com/alice/status/post-1",
-                            }
-                        ],
-                    },
-                    {
-                        "thread_id": "thread-2",
-                        "account_handle": "bob",
-                        "posts": [
-                            {
-                                "post_id": "post-2",
-                                "author_handle": "bob",
-                                "created_at": "2026-03-21T11:00:00Z",
-                                "text": "gm",
-                                "url": "https://x.com/bob/status/post-2",
-                            }
-                        ],
-                    },
-                ]
-            }
-        ),
-        encoding="utf-8",
+def build_thread(*, thread_id: str, account_handle: str, text: str, created_at: str) -> Thread:
+    return Thread(
+        thread_id=thread_id,
+        account_handle=account_handle,
+        posts=[
+            Post(
+                post_id=f"{thread_id}-post",
+                author_handle=account_handle,
+                created_at=created_at,
+                text=text,
+                url=f"https://x.com/{account_handle}/status/{thread_id}",
+            )
+        ],
     )
+
+
+def test_run_digest_pipeline_writes_only_final_digest_json(tmp_path: Path) -> None:
+    output_path = tmp_path / "digest.json"
+    threads = [
+        build_thread(
+            thread_id="thread-1",
+            account_handle="alice",
+            text="AI inference costs are dropping fast.",
+            created_at="2026-03-21T10:00:00Z",
+        ),
+        build_thread(
+            thread_id="thread-2",
+            account_handle="bob",
+            text="gm",
+            created_at="2026-03-21T11:00:00Z",
+        ),
+    ]
 
     class FakeLLM:
         def run(self, *, prompt, payload, schema):  # noqa: ANN001, ANN204
@@ -84,7 +79,7 @@ def test_run_digest_pipeline_writes_only_final_digest_json(tmp_path: Path) -> No
             raise AssertionError(f"Unexpected schema: {schema}")
 
     digest = run_digest_pipeline(
-        input_file=input_path,
+        threads=threads,
         output_file=output_path,
         model="gpt-5.4-mini",
         llm=FakeLLM(),
@@ -98,49 +93,27 @@ def test_run_digest_pipeline_writes_only_final_digest_json(tmp_path: Path) -> No
     assert digest.issues[0].slug == "ai_costs"
     assert len(digest.issues[0].threads) == 1
     assert digest.issues[0].threads[0].thread_id == "thread-1"
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["digest.json", "threads.json"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["digest.json"]
 
 
 def test_run_digest_pipeline_keeps_selection_issue_slug_when_write_step_disagrees(
     tmp_path: Path,
 ) -> None:
-    input_path = tmp_path / "threads.json"
     output_path = tmp_path / "digest.json"
-    input_path.write_text(
-        json.dumps(
-            {
-                "threads": [
-                    {
-                        "thread_id": "thread-1",
-                        "account_handle": "alice",
-                        "posts": [
-                            {
-                                "post_id": "post-1",
-                                "author_handle": "alice",
-                                "created_at": "2026-03-21T10:00:00Z",
-                                "text": "Inference costs keep falling.",
-                                "url": "https://x.com/alice/status/post-1",
-                            }
-                        ],
-                    },
-                    {
-                        "thread_id": "thread-2",
-                        "account_handle": "bob",
-                        "posts": [
-                            {
-                                "post_id": "post-2",
-                                "author_handle": "bob",
-                                "created_at": "2026-03-21T11:00:00Z",
-                                "text": "Serving costs are compressing again.",
-                                "url": "https://x.com/bob/status/post-2",
-                            }
-                        ],
-                    },
-                ]
-            }
+    threads = [
+        build_thread(
+            thread_id="thread-1",
+            account_handle="alice",
+            text="Inference costs keep falling.",
+            created_at="2026-03-21T10:00:00Z",
         ),
-        encoding="utf-8",
-    )
+        build_thread(
+            thread_id="thread-2",
+            account_handle="bob",
+            text="Serving costs are compressing again.",
+            created_at="2026-03-21T11:00:00Z",
+        ),
+    ]
 
     class FakeLLM:
         def run(self, *, prompt, payload, schema):  # noqa: ANN001, ANN204
@@ -183,7 +156,7 @@ def test_run_digest_pipeline_keeps_selection_issue_slug_when_write_step_disagree
             raise AssertionError(f"Unexpected schema: {schema}")
 
     digest = run_digest_pipeline(
-        input_file=input_path,
+        threads=threads,
         output_file=output_path,
         model="gpt-5.4-mini",
         llm=FakeLLM(),
@@ -199,26 +172,17 @@ def test_run_digest_pipeline_keeps_selection_issue_slug_when_write_step_disagree
 
 
 def test_run_digest_pipeline_fails_early_for_thread_without_posts(tmp_path: Path) -> None:
-    input_path = tmp_path / "threads.json"
     output_path = tmp_path / "digest.json"
-    input_path.write_text(
-        json.dumps(
-            {
-                "threads": [
-                    {
-                        "thread_id": "thread-1",
-                        "account_handle": "alice",
-                        "posts": [],
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
 
     with pytest.raises(ValueError, match="has no posts"):
         run_digest_pipeline(
-            input_file=input_path,
+            threads=[
+                Thread(
+                    thread_id="thread-1",
+                    account_handle="alice",
+                    posts=[],
+                )
+            ],
             output_file=output_path,
             model="gpt-5.4-mini",
             llm=object(),

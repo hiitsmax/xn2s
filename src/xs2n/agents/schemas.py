@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class PostInput(BaseModel):
+class Post(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     post_id: str
@@ -14,15 +14,15 @@ class PostInput(BaseModel):
     url: str
 
 
-class ThreadInput(BaseModel):
+class Thread(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     thread_id: str
     account_handle: str
-    posts: list[PostInput] = Field(default_factory=list)
+    posts: list[Post] = Field(default_factory=list)
 
     @property
-    def primary_post(self) -> PostInput:
+    def primary_post(self) -> Post:
         if not self.posts:
             raise ValueError(f"Thread `{self.thread_id}` has no posts.")
         return self.posts[0]
@@ -30,10 +30,6 @@ class ThreadInput(BaseModel):
     @property
     def source_urls(self) -> list[str]:
         return [post.url for post in self.posts if post.url][:3]
-
-
-class PipelineInput(BaseModel):
-    threads: list[ThreadInput] = Field(default_factory=list)
 
 
 class ThreadFilterResult(BaseModel):
@@ -44,13 +40,13 @@ class ThreadFilterResult(BaseModel):
 class FilteredThread(BaseModel):
     thread_id: str
     account_handle: str
-    posts: list[PostInput] = Field(default_factory=list)
+    posts: list[Post] = Field(default_factory=list)
     keep: bool
     filter_reason: str
 
     @property
-    def primary_post(self) -> PostInput:
-        return ThreadInput(
+    def primary_post(self) -> Post:
+        return Thread(
             thread_id=self.thread_id,
             account_handle=self.account_handle,
             posts=self.posts,
@@ -58,7 +54,7 @@ class FilteredThread(BaseModel):
 
     @property
     def source_urls(self) -> list[str]:
-        return ThreadInput(
+        return Thread(
             thread_id=self.thread_id,
             account_handle=self.account_handle,
             posts=self.posts,
