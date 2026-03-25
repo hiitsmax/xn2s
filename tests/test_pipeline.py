@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from xs2n.pipeline import run_digest_pipeline
-from xs2n.schemas import (
+from xs2n.agents.pipeline import run_digest_pipeline
+from xs2n.agents.schemas import (
     DigestOutput,
     IssueSelectionResult,
     IssueWriteResult,

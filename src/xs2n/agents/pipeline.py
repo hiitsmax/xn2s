@@ -1,8 +1,9 @@
 import json
 from collections import OrderedDict
 from datetime import datetime, timezone
-from xs2n.llm import LLM
-from xs2n.schemas import (
+
+from xs2n.agents.llm import LLM
+from xs2n.agents.schemas import (
     DigestIssue,
     DigestOutput,
     DigestThread,
@@ -12,6 +13,8 @@ from xs2n.schemas import (
     PipelineInput,
     ThreadFilterResult,
 )
+
+
 DEFAULT_MODEL = "gpt-5.4-mini"
 FILTER_THREADS_PROMPT = (
     "You review one X/Twitter thread for a low-noise issue digest. "
@@ -53,12 +56,11 @@ def run_digest_pipeline(
     api_key=None,
     llm=None,
 ):
-    # Load and validate threads from the input JSON
     payload = json.loads(input_file.read_text(encoding="utf-8"))
     threads = PipelineInput.model_validate(payload).threads
     _validate_threads_have_posts(threads)
     digest_llm = llm or LLM(model=model, api_key=api_key)
-    # Step 1 — filter: drop low-signal threads, keep the rest
+
     filtered_threads = []
     for thread in threads:
         result = digest_llm.run(
@@ -75,27 +77,27 @@ def run_digest_pipeline(
                 filter_reason=result.filter_reason,
             )
         )
-    # Step 2 — group: assign each kept thread to an issue, creating or updating as needed
-    kept_threads = [t for t in filtered_threads if t.keep]
+
+    kept_threads = [thread for thread in filtered_threads if thread.keep]
     grouped_threads = OrderedDict()
     issue_titles = {}
     issue_summaries = {}
     current_issues = []
     for thread in kept_threads:
         compact_issues = [
-            {"slug": i.slug, "title": i.title, "summary": i.summary}
-            for i in current_issues
+            {"slug": issue.slug, "title": issue.title, "summary": issue.summary}
+            for issue in current_issues
         ]
         selection = digest_llm.run(
             prompt=SELECT_ISSUE_PROMPT,
             payload={"thread": thread.model_dump(mode="json"), "issues": compact_issues},
             schema=IssueSelectionResult,
         )
-        # Guard: if the LLM picks a non-existent issue, fall back to creating a new one
         resolved_slug = _slugify_issue(
-            selection.issue_slug or thread.thread_id, fallback=thread.thread_id
+            selection.issue_slug or thread.thread_id,
+            fallback=thread.thread_id,
         )
-        current_slugs = {i.slug for i in current_issues}
+        current_slugs = {issue.slug for issue in current_issues}
         if selection.action == "update_existing_issue" and resolved_slug not in current_slugs:
             selection = IssueSelectionResult(
                 action="create_new_issue",
@@ -145,7 +147,7 @@ def run_digest_pipeline(
             )
             for slug in grouped_threads
         ]
-    # Step 3 — write: assemble and persist the final digest
+
     generated_at = (
         max(post.created_at for thread in threads for post in thread.posts)
         if threads

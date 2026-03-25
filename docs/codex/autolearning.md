@@ -23,3 +23,8 @@ This branch intentionally reduced the repository to a minimal two-script surface
 - The existing credential resolver still matters after the SDK migration because it provides the custom token and `base_url` needed for Codex-authenticated runs.
 - Disabling tracing per run keeps the SDK focused on model execution and avoids leaking this minimal CLI into tracing-specific configuration work too early.
 - Issue grouping became more reliable once the selection step owned the canonical issue slug and the write step stopped being able to silently fork the story.
+
+## Branch Note (2026-03-25)
+
+- The digest runtime sits under `src/xs2n/agents`, but shared infrastructure such as `credentials.py` stays at the package root when it is not specific to one agentic workflow.
+- A flat `agents/` package is easier to scan than an extra `digest/` nesting for a repository that currently ships only one digest pipeline.

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 from pydantic import BaseModel
 
-from xs2n.llm import LLM
-import xs2n.llm as llm_module
+from xs2n.agents.llm import LLM
+import xs2n.agents.llm as llm_module
 
 
 class ExampleResult(BaseModel):

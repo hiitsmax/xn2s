@@ -5,7 +5,7 @@ from agents import Agent, OpenAIResponsesModel, RunConfig, Runner
 from openai import AsyncOpenAI, BadRequestError
 from pydantic import BaseModel
 
-from .credentials import resolve_model_credentials
+from xs2n.credentials import resolve_model_credentials
 
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
