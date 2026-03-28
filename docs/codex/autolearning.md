@@ -35,3 +35,18 @@ This branch intentionally reduced the repository to a minimal two-script surface
 - `twitter.py` should return domain `Thread` objects directly; the digest pipeline should consume those objects instead of owning a private input-shaping layer.
 - The public CLI feels simpler when it owns the fetch-first orchestration and the pipeline stays focused on digest semantics.
 - `ntscraper`'s `since` filter expects a `YYYY-MM-DD` string, so passing a raw `datetime` through the fetch layer is the wrong contract.
+
+## Branch Note (2026-03-28)
+
+- A Codex OAuth facade for LangChain works best as an explicit additive package instead of mutating the existing digest-only LLM wrapper.
+- The local `langchain-openai` version in this repo still routes `ChatOpenAI` through `chat.completions`, so a Codex-compatible facade has to replace the transport path, not just pass a different `base_url`.
+- The Codex backend currently expects a stricter Responses contract than generic wrappers send by default: top-level `instructions`, list-based `input`, `store=False`, and `stream=True`.
+- Injecting a small default instruction when no `SystemMessage` is present closes a real compatibility gap for `with_structured_output(...)` callers that otherwise send no top-level instructions at all.
+
+## Branch Note (2026-03-28, later)
+
+- For the first cluster-builder prototype, a tweet list should behave like a todo queue with explicit status transitions instead of as a passive batch input.
+- Allowing `deferred` tweets inside the same run is a better fit for the clustering task than forcing immediate assignment or waiting for a future scheduled run.
+- LangFuse should be integrated through the standard LangChain callback handler first; manual custom tracing would add complexity before the queue and cluster contracts are proven.
+- The domain boundary should stay tool-first: the agent can reason freely, but queue state and cluster state should only change through explicit structured tools.
+- DeepAgents bring automatic built-in tools, so the first safe strategy is to constrain domain work through prompt and tests rather than prematurely rewriting the runtime to remove those tools.
