@@ -43,12 +43,12 @@ The facade keeps the public LangChain calling shape familiar and moves those Cod
 
 ## Install
 
-The base repository stays minimal. Install the LangChain facade only when you need it:
+The facade is part of the live cluster-builder runtime, so the normal repository install is enough:
 
 ```bash
-uv sync --extra langchain
+uv sync
 ```
 
 ## Design Boundary
 
-This package is intentionally additive. It does not replace the digest CLI wrapper in `src/xs2n/agents/llm.py`, and it does not try to become a full provider framework. The goal is a thin, honest package whose name matches what it really does today.
+This package is intentionally narrow. It exists to support the cluster-builder runtime and other LangChain-compatible callers that need Codex OAuth. It does not try to become a full provider framework. The goal is a thin, honest package whose name matches what it really does today.

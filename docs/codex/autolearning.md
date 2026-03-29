@@ -2,43 +2,15 @@
 
 ## Current Surface
 
-This branch intentionally reduced the repository to a minimal two-script surface:
+This branch currently exposes two automation surfaces plus the auth helper they depend on:
 
 - `scripts/codex_auth.py`
+- `scripts/run_cluster_builder.py`
 - `scripts/run_agentic_pipeline.py`
-
-## Branch Note (2026-03-21)
-
-- The extraction branch is deliberately not backward-compatible with the old wider CLI/UI product surface.
-- Keeping only one final artifact on disk made the runtime contract much easier to reason about.
-- The useful reusable code from the older repo was smaller than the full product shell:
-  - Codex credential resolution
-  - one thin structured-output model wrapper
-  - two semantic pipeline steps
-- When a branch is explicitly meant to become a minimal base, it is cheaper to prune aggressively than to keep "temporary compatibility" layers that nobody wants.
-
-## Branch Note (2026-03-22)
-
-- The minimal migration path to the OpenAI Agents SDK is to swap the `LLM` transport layer first and leave the digest pipeline orchestration readable and linear.
-- The existing credential resolver still matters after the SDK migration because it provides the custom token and `base_url` needed for Codex-authenticated runs.
-- Disabling tracing per run keeps the SDK focused on model execution and avoids leaking this minimal CLI into tracing-specific configuration work too early.
-- Issue grouping became more reliable once the selection step owned the canonical issue slug and the write step stopped being able to silently fork the story.
-
-## Branch Note (2026-03-25)
-
-- The digest runtime sits under `src/xs2n/agents`, but shared infrastructure such as `credentials.py` stays at the package root when it is not specific to one agentic workflow.
-- A flat `agents/` package is easier to scan than an extra `digest/` nesting for a repository that currently ships only one digest pipeline.
-
-## Branch Note (2026-03-26)
-
-- If `Thread` is the application's real domain model, it should be named `Thread` at the boundary where data enters the system, not `ThreadInput` deeper in the pipeline.
-- `twitter.py` should return domain `Thread` objects directly; the digest pipeline should consume those objects instead of owning a private input-shaping layer.
-- The public CLI feels simpler when it owns the fetch-first orchestration and the pipeline stays focused on digest semantics.
-- `ntscraper`'s `since` filter expects a `YYYY-MM-DD` string, so passing a raw `datetime` through the fetch layer is the wrong contract.
 
 ## Branch Note (2026-03-28)
 
-- A Codex OAuth facade for LangChain works best as an explicit additive package instead of mutating the existing digest-only LLM wrapper.
+- A Codex OAuth facade for LangChain works best as an explicit additive package instead of smearing Codex transport rules into the cluster builder runner.
 - The local `langchain-openai` version in this repo still routes `ChatOpenAI` through `chat.completions`, so a Codex-compatible facade has to replace the transport path, not just pass a different `base_url`.
 - The Codex backend currently expects a stricter Responses contract than generic wrappers send by default: top-level `instructions`, list-based `input`, `store=False`, and `stream=True`.
 - Injecting a small default instruction when no `SystemMessage` is present closes a real compatibility gap for `with_structured_output(...)` callers that otherwise send no top-level instructions at all.
@@ -50,3 +22,22 @@ This branch intentionally reduced the repository to a minimal two-script surface
 - LangFuse should be integrated through the standard LangChain callback handler first; manual custom tracing would add complexity before the queue and cluster contracts are proven.
 - The domain boundary should stay tool-first: the agent can reason freely, but queue state and cluster state should only change through explicit structured tools.
 - DeepAgents bring automatic built-in tools, so the first safe strategy is to constrain domain work through prompt and tests rather than prematurely rewriting the runtime to remove those tools.
+- Iterator-style queue access is the wrong contract for this task; paginated queue inspection with `limit` and `offset` gives the model enough local context without burning tokens on repeated "next item" calls.
+- For this clustering workflow, one well-scoped cluster builder agent is preferable to a second triage subagent when the subagent does not unlock a truly separate capability.
+- DeepAgents tool binding is stricter than plain Python helpers: callable tools need descriptions or docstrings, otherwise the runtime fails before the first real step.
+- For `create_cluster`, requiring the model to invent a new `cluster_id` is the wrong boundary; the store should generate the id deterministically when the mutation omits it.
+- Deferred queue items need an explicit exit rule. Letting a deferred tweet be deferred again creates an easy infinite loop; treating the second defer as `done` without cluster closes the state machine safely for the first prototype.
+- If queue completion and cluster membership updates are separate concerns at the prompt level, the model can close the queue while forgetting to add `tweet_ids`; binding that consistency into the completion tool keeps the final state coherent.
+
+## Branch Note (2026-03-29)
+
+- The product boundary matters more than branch history. Once `cluster_builder` became the main product, keeping the digest runtime around turned the repository into two overlapping systems instead of one clear tool.
+- Removing whole dead paths is cheaper than carrying "maybe useful later" code, tests, and docs that force every reader to ask which runtime is real.
+- With setuptools package discovery configured as `where = ["src"]`, removing old packages does not require switching to an explicit package list; the discovery rule still tracks the surviving packages cleanly.
+
+## Branch Note (2026-03-29, later)
+
+- The automatic digest fetch path is still a real runtime, not dead code. Pruning it just because `cluster_builder` is the main product boundary removes a workflow the user still depends on.
+- When two automations share infrastructure but have different jobs, the simpler boundary is to keep both runners and make the README truthful, not to delete one and force the other to pretend to cover both use cases.
+- For very large authenticated Twitter/X fetch runs, a small fixed handle window plus per-handle timeout and retry limits is a better first move than adding a queue or persistence layer.
+- Persistent handle failures in a one-shot terminal run should become an explicit operator decision (`retry`, `go on`, or `stop`) after the current window finishes, not an automatic all-or-nothing abort.

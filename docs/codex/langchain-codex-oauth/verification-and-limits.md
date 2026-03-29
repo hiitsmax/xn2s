@@ -22,7 +22,7 @@ That file covers:
 The following commands were run after the facade implementation existed:
 
 ```bash
-uv run --extra langchain pytest tests/test_langchain_codex_oauth.py tests/test_codex_auth.py tests/test_llm.py -q
+uv run pytest tests/test_langchain_codex_oauth.py tests/test_codex_auth.py -q
 ```
 
 Observed result:

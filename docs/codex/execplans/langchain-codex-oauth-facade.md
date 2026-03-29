@@ -34,7 +34,7 @@ After this change, a developer using this repository can instantiate a `ChatOpen
   Rationale: The user wants to swap the object directly into LangGraph, so the public surface must match `ChatOpenAI` as closely as possible.
   Date/Author: 2026-03-28 / Codex
 - Decision: Keep the new implementation in an explicit package under `src/xs2n/` instead of modifying `src/xs2n/agents/llm.py`.
-  Rationale: The digest CLI should stay narrow and honest about its job, while the LangChain-compatible provider belongs in its own focused folder with separate docs and tests.
+  Rationale: The cluster builder runner should stay narrow and honest about its job, while the LangChain-compatible provider belongs in its own focused folder with separate docs and tests.
   Date/Author: 2026-03-28 / Codex
 - Decision: The facade must first try existing Codex OAuth credentials and only suggest login when no usable credentials are present.
   Rationale: This matches the requested UX and keeps the runtime predictable for automation and cron-style use.
@@ -54,7 +54,7 @@ The remaining limitation is intentional scope: the refresh implementation update
 
 ## Context and Orientation
 
-The current repository is a minimal Python package rooted at `src/xs2n`. The existing model credential logic lives in `src/xs2n/credentials.py`; it already knows how to locate a Codex OAuth access token from `CODEX_HOME/auth.json` or the macOS keychain. The current digest-only LLM wrapper lives in `src/xs2n/agents/llm.py`; it uses OpenAI Agents SDK types and is not compatible with LangChain or LangGraph. The focused tests that demonstrate repository style live in `tests/test_codex_auth.py` and `tests/test_llm.py`.
+The current repository is a minimal Python package rooted at `src/xs2n`. The existing model credential logic lives in `src/xs2n/credentials.py`; it already knows how to locate a Codex OAuth access token from `CODEX_HOME/auth.json` or the macOS keychain. The cluster builder runtime lives in `src/xs2n/cluster_builder/` and needs a LangChain-compatible model surface for the deep-agent runtime. The focused tests that demonstrate repository style live in `tests/test_codex_auth.py` and `tests/test_langchain_codex_oauth.py`.
 
 For this plan, “facade” means a class that looks like `langchain_openai.ChatOpenAI` to the rest of the application, even though its request transport is specialized for the Codex backend. “Codex OAuth” means the ChatGPT/Codex sign-in flow that yields an access token and Codex-specific base URL, not an `OPENAI_API_KEY`.
 
@@ -84,11 +84,11 @@ Work from `/Users/mx/Documents/Progetti/mine/active/xs2n`.
 
     Expected after implementation: all tests in that file pass.
 
-3. Run the existing focused tests that cover the shared credential surface and current thin LLM wrapper.
+3. Run the existing focused tests that cover the shared credential surface.
 
-    `uv run pytest tests/test_codex_auth.py tests/test_llm.py -q`
+    `uv run pytest tests/test_codex_auth.py tests/test_langchain_codex_oauth.py -q`
 
-    Expected: all tests pass, proving the additive package did not break the existing minimal CLI.
+    Expected: all tests pass, proving the additive package did not break the existing auth support.
 
 4. Run a narrow smoke script that instantiates the new facade and prints the translated request payload without making a live network request.
 
@@ -109,8 +109,8 @@ Actual verification performed during implementation:
     uv run --extra langchain pytest tests/test_langchain_codex_oauth.py -q
     # 8 passed in 0.42s
 
-    uv run pytest tests/test_codex_auth.py tests/test_llm.py -q
-    # 3 passed in 0.73s
+    uv run pytest tests/test_codex_auth.py tests/test_langchain_codex_oauth.py -q
+    # 10 passed in 1.15s
 
     uv run --extra langchain python - <<'PY'
     from langchain_core.messages import HumanMessage, SystemMessage

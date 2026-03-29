@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-uv sync --extra langchain
+uv sync
 ```
 
 ## Basic Construction
@@ -47,11 +47,11 @@ What happens internally:
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
-class DigestResult(BaseModel):
+class ClusterBuilderResult(BaseModel):
     status: str
 
 structured = llm.with_structured_output(
-    DigestResult,
+    ClusterBuilderResult,
     method="json_schema",
 )
 

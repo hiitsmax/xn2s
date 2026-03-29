@@ -6,17 +6,20 @@ This repository does not contain a checked-in `PLANS.md`; this document follows 
 
 ## Purpose / Big Picture
 
-After this change, the repository will be able to run one non-interactive deep agent that takes a list of tweets as input, processes them sequentially like a todo queue, and builds a structured cluster list through domain tools instead of free-form text output. A developer will be able to launch one command, inspect the resulting cluster JSON, and inspect the full run in LangFuse to see which tweets were read, deferred, or completed and how clusters were created or updated.
+After this change, the repository will be able to run one non-interactive deep-agent workflow that takes a list of tweets as input, processes them sequentially like a todo queue, and builds a structured cluster list through domain tools instead of free-form text output. A developer will be able to launch one command, inspect the resulting cluster JSON, and inspect the full run in LangFuse to see which tweets were read, deferred, or completed and how clusters were created or updated.
 
-The smallest useful outcome is not a full autonomous production system. The smallest useful outcome is a constrained prototype that proves four behaviors in one run: the agent can read the next available tweet, decide whether to cluster it now or defer it, mutate clusters only through structured tools, and mark the tweet as processed in queue state.
+The smallest useful outcome is not a full autonomous production system. The smallest useful outcome is a constrained prototype that proves four behaviors in one run: the cluster builder agent can page through the queue efficiently, evaluate tweets itself, mutate clusters only through structured tools, and mark each tweet as processed in queue state.
 
 ## Progress
 
 - [x] (2026-03-28 18:39Z) Confirmed the target interaction model with the user: one non-interactive deep agent, input is only a tweet list, sequential queue processing, deferred tweets allowed within the same run, and LangFuse is the primary observability surface.
 - [x] (2026-03-28 18:44Z) Verified fresh documentation for GPT-5.4 prompt guidance, LangGraph/DeepAgents examples, and LangFuse callback-handler integration to keep the design aligned with the current external contracts.
 - [x] (2026-03-28 18:51Z) Wrote this initial ExecPlan for the minimal prototype.
-- [ ] Implement the minimal queue store, cluster store, domain tools, runner script, and focused tests.
-- [ ] Verify the prototype with pytest and one local dry run that exercises sequential processing and emits LangFuse traces through the callback handler.
+- [x] (2026-03-28 19:06Z) Updated the design after user feedback: replace iterator-style queue access with paginated queue access.
+- [x] (2026-03-28 19:20Z) Implemented the minimal queue store, cluster store, domain tools, multi-agent wiring, runner script, and focused tests.
+- [x] (2026-03-28 19:24Z) Verified the prototype with the focused pytest suite, the full pytest suite, and the runner help entrypoint.
+- [x] (2026-03-28 19:43Z) Ran a real end-to-end cluster-builder job on a two-tweet sample queue, fixed two live runtime issues, and re-verified the full suite.
+- [x] (2026-03-29 20:28Z) Pruned the older digest and tweet-fetch runtime so the repository now matches the cluster builder as the primary product surface.
 
 ## Surprises & Discoveries
 
@@ -32,10 +35,22 @@ The smallest useful outcome is not a full autonomous production system. The smal
 - Observation: DeepAgents include a default set of built-in tools such as file editing, shell execution, todo writing, and subagent delegation.
   Evidence: the DeepAgents quickstart documentation states that every deep agent includes built-in tools like `write_todos`, `read_file`, `write_file`, `execute`, and `task`.
 
+- Observation: lazy imports in the agent and runner modules make the new feature testable without forcing every test path to import optional runtime dependencies eagerly.
+  Evidence: the focused tests validate the agent builder and runner wiring by monkeypatching `_create_deep_agent`, `Langfuse`, and `CallbackHandler` without executing a live model run.
+
+- Observation: callable tools need docstrings for DeepAgents/LangChain conversion, otherwise the runtime fails before the first useful step.
+  Evidence: the first live run failed with `ValueError: Function must have a docstring if description not provided.` from `langchain_core.tools.structured.StructuredTool.from_function`.
+
+- Observation: the first live run also showed that letting the model create a cluster without a provided id is a real behavior, not just a hypothetical edge case.
+  Evidence: the runtime failed in `apply_cluster_mutation(...)` with `ValueError: \`cluster_id\` is required for create_cluster.` until store-side id generation was added.
+
+- Observation: deferred tweets need an explicit terminal rule or the orchestrator can spin in circles revisiting them forever.
+  Evidence: the live sample queue reached a state where both tweets were `deferred` and `cluster_list.json` stayed empty until the state machine was changed so a second defer becomes `done` without cluster.
+
 ## Decision Log
 
-- Decision: use one deep agent instead of multiple agents or subagents for the first milestone.
-  Rationale: the first risk to retire is not delegation quality; it is whether one constrained agent can respect the queue contract and structured mutations.
+- Decision: use a single cluster builder agent instead of splitting tweet evaluation into a second subagent.
+  Rationale: the user clarified that “multi agente” referred to Codex doing the implementation, not to the runtime architecture. A second triage subagent added overhead without providing a truly separate capability.
   Date/Author: 2026-03-28 / Codex
 
 - Decision: treat the incoming tweet list as a todo queue with explicit item status instead of as an immutable batch.
@@ -58,9 +73,15 @@ The smallest useful outcome is not a full autonomous production system. The smal
   Rationale: the quickstart documentation indicates that built-in tools are automatic, so the first milestone should constrain them through prompt and test expectations instead of adding custom runtime surgery before the prototype exists.
   Date/Author: 2026-03-28 / Codex
 
+- Decision: remove the digest runner, fetch stack, and their tests once the user confirmed the cluster builder is the real product.
+  Rationale: keeping both systems in one repository was the main source of bloat and made the runtime boundary less trustworthy for future work.
+  Date/Author: 2026-03-29 / Codex
+
 ## Outcomes & Retrospective
 
-The design is now narrowed to a small, testable prototype instead of a full autonomous clustering system. The biggest improvement from the design discussion is that the queue contract is now explicit: tweets are not merely read as context, they are work items that the agent must advance through status changes. The main remaining work is implementation and verification.
+The result is a small, testable prototype instead of a vague agent sketch. The queue contract is explicit, iterator-style access has been replaced with paginated queue inspection, and the runtime now uses a single cluster builder agent with explicit queue and cluster tools. The implementation is verified locally through focused tests, the full suite, the CLI help path, and a real end-to-end clustering run on a two-tweet sample queue. LangFuse was present in the run but disabled because no `LANGFUSE_PUBLIC_KEY` was configured in the environment, which is acceptable for the local verification performed here.
+
+After the initial prototype landed, the repository was pruned again so the cluster builder became the only primary product surface. That follow-up prune removed the older digest runtime and fetch modules, which substantially reduced scope confusion without changing the cluster-builder contract itself.
 
 ## Context and Orientation
 
@@ -86,7 +107,7 @@ The runtime artifacts should stay equally small:
 - `data/cluster_builder/tweet_queue.json`
 - `data/cluster_builder/cluster_list.json`
 
-The queue file is the only input state the agent needs. Each queue item should include the tweet identity and the work-tracking fields the tools own. The smallest useful shape is:
+The queue file is the only input state the agents need. Each queue item should include the tweet identity and the work-tracking fields the tools own. The smallest useful shape is:
 
     {
       "tweet_id": "post-1",
@@ -110,24 +131,24 @@ The cluster file should hold only structured cluster state, not free-form reason
 
 ## Plan of Work
 
-Start by adding the new dependency surface to `pyproject.toml`. The prototype needs `deepagents` for the agent runtime, `langgraph` if required transitively by the chosen deep-agent APIs, and `langfuse` for tracing via the LangChain callback handler. Keep the existing repository style: minimal dependencies in the base project, with the smallest extra set that makes the feature run.
+Start by adding the new dependency surface to `pyproject.toml`. The prototype needs `deepagents` for the multi-agent runtime, `langgraph` if required transitively by the chosen deep-agent APIs, and `langfuse` for tracing via the LangChain callback handler. Keep the existing repository style: minimal dependencies in the base project, with the smallest extra set that makes the feature run.
 
 Then add `src/xs2n/cluster_builder/schemas.py`. This module should define only the shared contracts used across the queue store, cluster store, tools, and tests. It should include a queue item model, a cluster model, a mutation model for cluster updates, and any small typed result objects that tool calls return. The queue item model must support at least three statuses: `pending`, `deferred`, and `done`.
 
-After the shared schemas exist, add `src/xs2n/cluster_builder/store.py`. This module should own all file IO for reading and writing the queue and cluster JSON files. It should expose obvious functions such as `load_tweet_queue`, `save_tweet_queue`, `load_cluster_list`, and `apply_cluster_mutation`. Keep control flow readable and direct. Do not hide meaningful behavior behind unnecessary wrappers. The store is also where the second-pass logic can discover whether deferred tweets still remain.
+After the shared schemas exist, add `src/xs2n/cluster_builder/store.py`. This module should own all file IO for reading and writing the queue and cluster JSON files. It should expose obvious functions such as `load_tweet_queue`, `save_tweet_queue`, `load_cluster_list`, and `apply_cluster_mutation`. Add one paging helper for queue access that accepts `status`, `limit`, `offset`, and `overview` so the orchestrator can inspect queue state without pulling full tweet payloads unnecessarily. Keep control flow readable and direct. Do not hide meaningful behavior behind unnecessary wrappers.
 
-Then add `src/xs2n/cluster_builder/tools.py`. This file should expose the tool functions the agent can use. For the first milestone, the tool list should stay small and concrete: `count_remaining_tweets`, `get_next_tweet`, `read_tweet`, `defer_tweet`, `complete_tweet`, `list_clusters`, `read_cluster`, and `apply_cluster_mutation`. `count_remaining_tweets` should report counts by status rather than a single raw integer so the agent can tell whether it is still in the first pass or already revisiting deferred work. `get_next_tweet` should return the next `pending` item if any exist; if not, it should return the next `deferred` item. This gives the agent an obvious default path through the queue while still allowing a second pass without a separate scheduler.
+Then add `src/xs2n/cluster_builder/tools.py`. This file should expose the tool functions the cluster builder agent can use. For the first milestone, the tool list should stay small and concrete: `get_queue_items`, `read_tweet`, `defer_tweet`, `complete_tweet`, `list_clusters`, `read_cluster`, and `apply_cluster_mutation`. `get_queue_items` should accept `status`, `limit`, `offset`, and `overview`. When `overview=True`, it should return queue counts plus lightweight item previews. When `overview=False`, it may return full item payloads for the requested window. This replaces iterator-style queue access and gives the agent explicit pagination over both `pending` and `deferred` work.
 
-Next add `src/xs2n/cluster_builder/agent.py`. This module should construct the model and the deep agent. Reuse the existing Codex OAuth LangChain facade from `src/xs2n/langchain_codex_oauth/chat_openai.py` unless the deep-agent runtime requires a different but still LangChain-compatible object. The prompt should be explicit and operational, following the GPT-5.4 prompt guidance in spirit: define the job, define the allowed tools, define the work order, define the conditions for deferring, and define what "done" means. The agent must be told to read and mutate only through domain tools, to process the queue incrementally, and to revisit deferred tweets before exiting.
+Next add `src/xs2n/cluster_builder/agent.py`. This module should construct the model and the cluster builder deep agent. Reuse the existing Codex OAuth LangChain facade from `src/xs2n/langchain_codex_oauth/chat_openai.py` unless the deep-agent runtime requires a different but still LangChain-compatible object. The prompt should be explicit and operational, following the GPT-5.4 prompt guidance in spirit: define the job, define the allowed tools, define the work order, define the conditions for deferring, and define what "done" means. The agent must be told to page the queue incrementally and perform every domain mutation itself through the queue and cluster tools.
 
-The prompt should include these behavioral rules in plain language:
+The agent prompt should include these behavioral rules in plain language:
 
-- Always start by checking how many tweets remain.
-- Work one tweet at a time.
+- Always start by fetching a queue window with `get_queue_items`.
+- Work one tweet at a time even if the queue window contains multiple tweets.
 - Read the tweet before deciding anything.
 - If the cluster assignment is clear, create or update a cluster through the cluster mutation tool and then mark the tweet complete.
 - If the assignment is not clear yet, defer the tweet with a short reason and continue.
-- After there are no pending tweets left, revisit deferred tweets.
+- After there are no pending tweets left, revisit deferred tweets by calling `get_queue_items(status="deferred", ...)`.
 - Do not invent tweet ids, cluster ids, or tool results.
 - Do not write domain files directly.
 - Ignore the built-in deep-agent file, shell, and delegation tools for domain work unless a later milestone explicitly allows them.
@@ -135,7 +156,7 @@ The prompt should include these behavioral rules in plain language:
 
 After the agent module exists, add `scripts/run_cluster_builder.py`. This script should be the one visible entrypoint for the prototype. It should accept at least a queue path, a cluster output path, and a model name. It should initialize LangFuse through environment variables and create a `CallbackHandler()` that is passed to the agent invocation. The script should print a short summary on success, such as how many tweets ended `done`, how many remain `deferred`, and how many clusters exist in the final file.
 
-The final implementation step is tests. Add focused tests for store behavior, tool behavior, and the runner wiring. The store tests should prove that deferred and done transitions persist correctly. The tool tests should prove that cluster mutations and queue transitions happen only through the designed interfaces. The runner test should fake the deep-agent invocation and verify that LangFuse callbacks are passed in the LangChain config, because that is the chosen observability contract for the prototype. If the deep-agent runtime exposes invoked tool names in testable output, add one assertion that the happy-path prototype uses the domain tools for queue and cluster work.
+The final implementation step is tests. Add focused tests for store behavior, tool behavior, agent wiring, and the runner wiring. The store tests should prove that deferred and done transitions persist correctly and that queue paging honors `limit`, `offset`, `status`, and `overview`. The tool tests should prove that cluster mutations and queue transitions happen only through the designed interfaces. The agent test should prove that the build function creates one cluster builder agent with the expected domain tools. The runner test should fake the deep-agent invocation and verify that LangFuse callbacks are passed in the LangChain config, because that is the chosen observability contract for the prototype.
 
 ## Concrete Steps
 
@@ -144,7 +165,7 @@ Run all commands from `/Users/mx/Documents/Progetti/mine/active/xs2n`.
 First, add the dependency surface and run the focused tests:
 
     uv sync --extra dev
-    uv run pytest tests/test_cluster_builder_store.py tests/test_cluster_builder_tools.py tests/test_run_cluster_builder.py -q
+    uv run pytest tests/test_cluster_builder_store.py tests/test_cluster_builder_tools.py tests/test_cluster_builder_agent.py tests/test_run_cluster_builder.py -q
 
 Before implementation, the new tests should fail because the files and functions do not exist yet. After implementation, they should pass.
 
@@ -170,7 +191,7 @@ Acceptance is behavioral. A developer should be able to create a tiny queue JSON
 
 First, the queue file changes from all `pending` items to a mix of `done` and possibly `deferred`, with each processed item carrying a `cluster_id` or a short processing note. Second, the cluster file contains the accumulated cluster list with titles, descriptions, and tweet membership. Third, the run appears in LangFuse through the callback handler without any extra manual tracing code in the runner.
 
-The focused tests must also prove the local contract. `tests/test_cluster_builder_store.py` should prove the queue and cluster persistence logic. `tests/test_cluster_builder_tools.py` should prove the public tool semantics. `tests/test_run_cluster_builder.py` should prove that the runner creates the agent invocation with the expected callback configuration and summary behavior. If the runtime exposes tool-call traces in a deterministic way during tests, use that to prove the domain state changes came through the intended tools rather than accidental file editing.
+The focused tests must also prove the local contract. `tests/test_cluster_builder_store.py` should prove the queue and cluster persistence logic, including paging behavior. `tests/test_cluster_builder_tools.py` should prove the public tool semantics. `tests/test_cluster_builder_agent.py` should prove the single-agent wiring. `tests/test_run_cluster_builder.py` should prove that the runner creates the agent invocation with the expected callback configuration and summary behavior.
 
 ## Idempotence and Recovery
 
@@ -182,9 +203,10 @@ If a dependency or prompt change causes agent behavior to regress, the safe fall
 
 Important prompt shape for the prototype runner:
 
-    You are a cluster builder deep agent.
+    You are a cluster builder agent.
     Your input work is a queue of tweets.
-    Process tweets sequentially using tools.
+    Inspect the queue through paginated queue tools.
+    Read one tweet at a time.
     You may defer uncertain tweets and revisit them after all pending tweets are handled.
     You must create or update clusters only through structured cluster tools.
     You must mark each processed tweet through the queue tools.
@@ -218,11 +240,6 @@ In `src/xs2n/cluster_builder/schemas.py`, define:
         cluster_id: str | None = None
         processing_note: str = ""
 
-    class QueueCounts(BaseModel):
-        pending: int
-        deferred: int
-        done: int
-
     class Cluster(BaseModel):
         cluster_id: str
         title: str
@@ -240,8 +257,7 @@ In `src/xs2n/cluster_builder/store.py`, define obvious store functions for queue
 
 In `src/xs2n/cluster_builder/tools.py`, define:
 
-    def count_remaining_tweets(...) -> QueueCounts
-    def get_next_tweet(...) -> dict | None
+    def get_queue_items(...) -> dict
     def read_tweet(tweet_id: str, ...) -> dict
     def defer_tweet(tweet_id: str, reason: str, ...) -> dict
     def complete_tweet(tweet_id: str, cluster_id: str | None, reason: str, ...) -> dict
@@ -254,6 +270,14 @@ In `src/xs2n/cluster_builder/agent.py`, expose one construction function:
     def build_cluster_builder_agent(*, model: str):
         ...
 
-This function should create the Codex-authenticated LangChain model, build the deep agent with the domain tools, and return the runnable agent object.
+This function should create the Codex-authenticated LangChain model, build the cluster builder deep agent with the domain tools, and return the runnable agent object.
 
-Revision note (2026-03-28): Initial ExecPlan created after design approval. It captures the minimal one-agent, queue-first prototype and records the decision to use LangFuse through the callback handler instead of custom tracing code.
+Revision note (2026-03-28): Initial ExecPlan created after design approval. It captures the queue-first prototype and records the decision to use LangFuse through the callback handler instead of custom tracing code.
+
+Revision note (2026-03-28, later): Updated the plan after the user rejected iterator-style queue access. The queue contract is now paginated with `limit` and `offset`.
+
+Revision note (2026-03-28, final for this milestone): Marked implementation and local verification complete after adding the new modules, tests, CLI entrypoint, dependency declarations, and documentation updates.
+
+Revision note (2026-03-28, live-run fixes): Updated the plan after the first real execution uncovered three runtime issues: missing tool docstrings, missing auto-generated cluster ids, and a deferred-state loop without a terminal rule.
+
+Revision note (2026-03-28, architecture correction): Updated the document after the user clarified that the runtime should stay single-agent. The cluster builder now owns tweet evaluation and state mutation directly.
