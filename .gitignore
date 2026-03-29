@@ -7,8 +7,11 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.env.langfuse
+.env.langfuse.project
 
 cookies.json
+digest*.json
 accounts.db
 data/
 
