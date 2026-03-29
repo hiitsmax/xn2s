@@ -5,22 +5,25 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xs2n"
 version = "0.1.0"
-description = "Minimal Codex-authenticated digest pipeline base"
+description = "Codex-authenticated cluster builder and automatic digest base"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "browser-cookie3>=0.20.1",
+  "deepagents>=0.4.12",
+  "langchain-openai>=0.2.8,<0.4.0",
+  "langfuse>=3.3.4",
   "ntscraper>=0.4.0",
   "openai>=1.68.0",
   "openai-agents>=0.12.5",
+  "playwright>=1.58.0",
   "pydantic>=2.10.6",
+  "twscrape>=0.17.0",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3.0",
-]
-langchain = [
-  "langchain-openai>=0.2.8,<0.4.0",
 ]
 
 [tool.setuptools]
