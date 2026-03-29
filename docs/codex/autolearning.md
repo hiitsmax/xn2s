@@ -41,3 +41,14 @@ This branch currently exposes two automation surfaces plus the auth helper they 
 - When two automations share infrastructure but have different jobs, the simpler boundary is to keep both runners and make the README truthful, not to delete one and force the other to pretend to cover both use cases.
 - For very large authenticated Twitter/X fetch runs, a small fixed handle window plus per-handle timeout and retry limits is a better first move than adding a queue or persistence layer.
 - Persistent handle failures in a one-shot terminal run should become an explicit operator decision (`retry`, `go on`, or `stop`) after the current window finishes, not an automatic all-or-nothing abort.
+
+## Branch Note (2026-03-29, fetch-layer rewrite)
+
+- `ntscraper` + `twscrape` were removed entirely. Both relied on finding working Nitter instances for HTML scraping or managing an authenticated account pool via `twscrape`'s SQLite state; neither was reliable enough to run unattended.
+- Nitter public instances (including nitter.net) return `200 + empty body` for all HTML endpoints when called programmatically — even with a real browser User-Agent via Playwright. The RSS endpoint (`/{handle}/rss`) remains served without restriction because it is designed for automated clients.
+- The new primary fetch path is the X internal GraphQL API (`x.com/i/api/graphql/`) authenticated with the session cookies from the user's own Chrome browser. `browser-cookie3` reads `auth_token` and `ct0` from Chrome's SQLite store at runtime, so no separate credential management is needed.
+- The X REST v1.1 `statuses/user_timeline.json` endpoint has been removed from `api.x.com`. The correct internal path is the GraphQL `UserTweets` operation under `x.com/i/api/graphql/`.
+- GraphQL query IDs and the bearer token are embedded in X's deployed JS bundle and change with every frontend deploy. The fetch layer caches them in-process, falls back to known-good defaults, and automatically refreshes from the live bundle on 400/404 responses so the code stays current without manual maintenance.
+- Thread reconstruction is done locally: `UserTweets` returns `in_reply_to_status_id_str` on every tweet, so a single timeline fetch is enough to reconstruct all self-reply chains within the fetched window without additional per-thread requests.
+- Nitter RSS (`twitter_nitter_rss.py`) is kept as a fallback for environments where Chrome cookies are unavailable. It returns one Thread per tweet with no chain reconstruction; the digest pipeline handles single-post threads correctly.
+- The Playwright-based scraper (`twitter_nitter_playwright.py`) was removed because even headless Chromium receives empty pages from Nitter status endpoints, making it equivalent to a plain `requests` call with more overhead.
