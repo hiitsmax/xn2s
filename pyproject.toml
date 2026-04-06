@@ -5,21 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xs2n"
 version = "0.1.0"
-description = "Codex-authenticated cluster builder and automatic digest base"
+description = "Codex-authenticated tweet runner with an Agents SDK scaffold"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "browser-cookie3>=0.20.1",
-  "deepagents>=0.4.12",
+  "arize-phoenix>=8.0.0",
   "feedparser>=6.0.0",
-  "langchain-openai>=0.2.8,<0.4.0",
-  "langfuse>=3.3.4",
-  "ntscraper>=0.4.0",
   "openai>=1.68.0",
   "openai-agents>=0.12.5",
-  "playwright>=1.58.0",
+  "openinference-instrumentation-openai-agents>=0.1.14",
   "pydantic>=2.10.6",
-  "twscrape>=0.17.0",
+  "requests>=2.32.0",
 ]
 
 [project.optional-dependencies]
@@ -27,8 +23,15 @@ dev = [
   "pytest>=8.3.0",
 ]
 
+[project.scripts]
+xs2n = "xs2n.run:main"
+xs2n-auth = "xs2n.auth:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+"xs2n.prompts" = ["*.txt"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from xs2n.cluster_builder.schemas import ClusterMutation, TweetQueueItem
-from xs2n.cluster_builder.store import (
+from xs2n.schemas.clustering import ClusterMutation, TweetQueueItem
+from xs2n.tools.cluster_state import (
     apply_cluster_mutation,
     complete_queue_tweet,
     defer_queue_tweet,
@@ -52,7 +52,6 @@ def test_get_queue_items_page_returns_counts_and_preview_window(tmp_path: Path) 
         status="pending",
         limit=1,
         offset=1,
-        overview=True,
     )
 
     assert result["counts"] == {
@@ -64,18 +63,10 @@ def test_get_queue_items_page_returns_counts_and_preview_window(tmp_path: Path) 
     assert result["limit"] == 1
     assert result["offset"] == 1
     assert result["total_matching"] == 2
-    assert result["items"] == [
-        {
-            "tweet_id": "tweet-2",
-            "account_handle": "alice",
-            "created_at": "2026-03-28T16:00:00Z",
-            "text_preview": "Tweet text for tweet-2",
-            "status": "pending",
-        }
-    ]
+    assert result["items"] == [{"tweet_id": "tweet-2"}]
 
 
-def test_get_queue_items_page_returns_full_items_when_overview_is_false(tmp_path: Path) -> None:
+def test_get_queue_items_page_returns_requested_fields_only(tmp_path: Path) -> None:
     queue_path = tmp_path / "tweet_queue.json"
     save_tweet_queue(
         queue_path,
@@ -89,20 +80,16 @@ def test_get_queue_items_page_returns_full_items_when_overview_is_false(tmp_path
         status="deferred",
         limit=5,
         offset=0,
-        overview=False,
+        fields=["status", "created_at", "text_preview"],
     )
 
     assert result["total_matching"] == 1
     assert result["items"] == [
         {
             "tweet_id": "tweet-1",
-            "account_handle": "alice",
-            "text": "Tweet text for tweet-1",
-            "url": "https://x.com/alice/status/tweet-1",
-            "created_at": "2026-03-28T16:00:00Z",
             "status": "deferred",
-            "cluster_id": None,
-            "processing_note": "",
+            "created_at": "2026-03-28T16:00:00Z",
+            "text_preview": "Tweet text for tweet-1",
         }
     ]
 
@@ -177,16 +164,17 @@ def test_apply_cluster_mutation_creates_and_updates_cluster(tmp_path: Path) -> N
     cluster_path = tmp_path / "cluster_list.json"
     save_cluster_list(cluster_path, [])
 
-    created = apply_cluster_mutation(
+    created_message = apply_cluster_mutation(
         cluster_path,
         ClusterMutation(
             action="create_cluster",
             cluster_id="cluster_001",
             title="Inference cost compression",
             description="Tweets about declining inference costs.",
+            tweet_ids=["tweet-1"],
         ),
     )
-    updated = apply_cluster_mutation(
+    updated_message = apply_cluster_mutation(
         cluster_path,
         ClusterMutation(
             action="add_tweets",
@@ -197,8 +185,10 @@ def test_apply_cluster_mutation_creates_and_updates_cluster(tmp_path: Path) -> N
 
     clusters = load_cluster_list(cluster_path)
 
-    assert created["cluster_id"] == "cluster_001"
-    assert updated["tweet_ids"] == ["tweet-1", "tweet-2"]
+    assert "cluster_001" in created_message
+    assert "1 tweet" in created_message
+    assert "cluster_001" in updated_message
+    assert "1 tweet" in updated_message
     assert len(clusters) == 1
     assert clusters[0].cluster_id == "cluster_001"
     assert clusters[0].title == "Inference cost compression"
@@ -210,19 +200,22 @@ def test_apply_cluster_mutation_generates_cluster_id_when_missing(tmp_path: Path
     cluster_path = tmp_path / "cluster_list.json"
     save_cluster_list(cluster_path, [])
 
-    created = apply_cluster_mutation(
+    created_message = apply_cluster_mutation(
         cluster_path,
         ClusterMutation(
             action="create_cluster",
             title="Tool-first orchestration",
             description="Tweets about tool-first workflows.",
+            tweet_ids=["tweet-1", "tweet-2"],
         ),
     )
     clusters = load_cluster_list(cluster_path)
 
-    assert created["cluster_id"] == "cluster_001"
+    assert "cluster_001" in created_message
+    assert "2 tweet" in created_message
     assert len(clusters) == 1
     assert clusters[0].cluster_id == "cluster_001"
+    assert clusters[0].tweet_ids == ["tweet-1", "tweet-2"]
 
 
 def test_save_tweet_queue_writes_json_file(tmp_path: Path) -> None:
@@ -232,3 +225,17 @@ def test_save_tweet_queue_writes_json_file(tmp_path: Path) -> None:
     raw_queue = json.loads(queue_path.read_text(encoding="utf-8"))
 
     assert raw_queue[0]["tweet_id"] == "tweet-1"
+
+
+def test_load_cluster_list_returns_empty_for_blank_file(tmp_path: Path) -> None:
+    cluster_path = tmp_path / "cluster_list.json"
+    cluster_path.write_text("", encoding="utf-8")
+
+    assert load_cluster_list(cluster_path) == []
+
+
+def test_load_tweet_queue_returns_empty_for_blank_file(tmp_path: Path) -> None:
+    queue_path = tmp_path / "tweet_queue.json"
+    queue_path.write_text("", encoding="utf-8")
+
+    assert load_tweet_queue(queue_path) == []

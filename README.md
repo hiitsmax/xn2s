@@ -1,18 +1,31 @@
 # xs2n
 
-`xs2n` is now a minimal Python base for two things only:
+`xs2n` now exposes one main runner plus one auth helper.
 
-- Codex authentication bootstrap
-- one cluster builder CLI over a tweet queue
-- one automatic digest CLI over tracked X handles
+The active runtime is intentionally small:
 
-The repository currently keeps both automation surfaces because they solve different jobs on top of the same Codex-authenticated runtime.
+- `src/xs2n/run.py` is the single pipeline entrypoint.
+- `src/xs2n/agents/base_agent.py` is a minimal base agent that uses the repository's ChatGPT/Codex auth wiring.
+- `src/xs2n/utils/` keeps tweet fetching (Nitter RSS) and Codex/OpenAI auth helpers; `src/xs2n/tools/` keeps persisted queue and cluster state.
+
+## Layout
+
+The source tree is organized by honest ownership:
+
+- `src/xs2n/agents/` contains the base agent and future domain agents.
+- `src/xs2n/utils/` contains tweet fetching, Codex/OpenAI auth, and tracing helpers.
+- `src/xs2n/tools/` contains JSON state and agent-bound queue tools.
+- `src/xs2n/prompts/` contains prompt assets and `manager.py`.
+- `src/xs2n/schemas/` contains shared data contracts.
+- `src/xs2n/run.py` and `src/xs2n/auth.py` are package entrypoints.
 
 ## Install
 
 ```bash
 uv sync --extra dev
 ```
+
+The default environment includes Phoenix tracing support for the OpenAI Agents SDK runtime.
 
 If you need the Codex CLI for ChatGPT-backed auth:
 
@@ -22,115 +35,79 @@ npm install -g @openai/codex
 
 ## Auth
 
-Use the auth helper script to log into Codex, check status, or log out:
+Use the auth helper to log into Codex, check status, or log out:
 
 ```bash
-python scripts/codex_auth.py login
-python scripts/codex_auth.py login --device-auth
-python scripts/codex_auth.py status
-python scripts/codex_auth.py logout
+uv run xs2n-auth login
+uv run xs2n-auth login --device-auth
+uv run xs2n-auth status
+uv run xs2n-auth logout
 ```
 
-The script delegates to the official Codex CLI and leaves token storage in Codex's own location.
+The helper delegates to the official Codex CLI and leaves token storage in Codex's own location. The base agent consumes that existing auth state through `src/xs2n/utils/auth/openai_client.py`.
 
-## Cluster Builder CLI
+## Phoenix Tracing
 
-The cluster builder starts from a queue JSON file of tweets, processes the queue to completion through explicit queue and cluster tools, and writes the resulting cluster JSON file in place.
+The scaffold runtime boots Phoenix tracing automatically through the official Phoenix/OpenInference OpenAI Agents SDK integration.
 
-Run the cluster builder:
+Default local behavior:
 
 ```bash
-uv run python scripts/run_cluster_builder.py \
+PHOENIX_COLLECTOR_ENDPOINT=http://127.0.0.1:6006/v1/traces
+PHOENIX_PROJECT_NAME=xs2n
+```
+
+If those variables are unset, `xs2n` uses the defaults above so a local Phoenix instance can receive traces immediately.
+
+To disable tracing for one run:
+
+```bash
+XS2N_DISABLE_TRACING=1 uv run xs2n \
+  --tweet-list-file data/cluster_builder/tweet_queue.json
+```
+
+With tracing enabled, run the CLI and open `http://localhost:6006` to inspect the scaffold trace.
+
+## Main CLI
+
+`src/xs2n/run.py` owns the runtime order directly:
+
+1. If `--tweet-list-file` is provided, load that file and skip the fetch step.
+2. Otherwise fetch recent tracked-handle posts and build the queue.
+3. Write the working queue to `--queue-file`.
+4. Run the base Agents SDK scaffold against that prepared queue.
+
+Fetch fresh tweets and run the scaffold:
+
+```bash
+uv run xs2n \
+  --hours 24 \
+  --model gpt-5.4-mini
+```
+
+Reuse an existing tweet list and skip fetch:
+
+```bash
+uv run xs2n \
+  --tweet-list-file data/cluster_builder/tweet_queue.json \
   --queue-file data/cluster_builder/tweet_queue.json \
-  --cluster-file data/cluster_builder/cluster_list.json \
   --model gpt-5.4-mini
 ```
 
-The queue file is an array of tweet work items. The smallest useful item looks like this:
-
-```bash
-[
-  {
-    "tweet_id": "post-1",
-    "account_handle": "alice",
-    "text": "Example tweet text",
-    "url": "https://x.com/alice/status/post-1",
-    "created_at": "2026-03-28T16:00:00Z",
-    "status": "pending",
-    "cluster_id": null,
-    "processing_note": ""
-  }
-]
-```
-
-The cluster file can start as an empty array:
-
-```bash
-[]
-```
-
-The runner uses the Codex OAuth facade, so the main auth path is the local Codex login state managed by `scripts/codex_auth.py`.
-
-If `LANGFUSE_*` environment variables are configured, the run is also traced through LangFuse via the standard LangChain callback handler.
-
-## Digest CLI
-
-The automatic digest runner reads tracked handles from `data/handles.json`, fetches recent tweets into the application's `Thread` model, and writes one final `digest.json`.
-
-Run the digest job:
-
-```bash
-uv run python scripts/run_agentic_pipeline.py \
-  --output-file digest.json
-```
-
-Optional flags:
-
-```bash
-uv run python scripts/run_agentic_pipeline.py \
-  --output-file digest.json \
-  --hours 12 \
-  --model gpt-5.4-mini
-```
-
-The fetch layer prefers `ntscraper` / Nitter first. If Nitter cannot fetch its instance catalog or has no working instances, the runtime falls back to authenticated X / Twitter profile fetches using your local session cookies.
-
-Cookie discovery order:
-
-1. Google Chrome cookies on macOS, scanning all profiles with `Default` first
-2. `TWITTER_COOKIES`
-3. `TWITTER_COOKIES_FILE`
-4. one final Chrome retry before failing
-
-The authenticated fallback stores its `twscrape` session state outside the repository by default:
-
-```bash
-~/Library/Application Support/xs2n/twscrape/accounts.db
-```
-
-Override that location with:
-
-```bash
-export XS2N_TWSCRAPE_STATE_DIR="$HOME/.local/share/xs2n/twscrape"
-```
-
-For large handle lists, the authenticated fallback processes handles in small fixed batches, retries each failing handle with a small per-handle budget, and then asks in the terminal whether to retry the failed handles again, continue without them, or stop the run.
+The scaffold is intentionally not the final domain architecture. It proves the minimal Agents SDK loop, the queue handoff, and the ChatGPT/Codex auth path in one place so the next agentic redesign can start from a truthful baseline.
 
 ## Tests
 
 ```bash
 uv run pytest \
+  tests/test_openai_client.py \
+  tests/test_codex_auth.py \
+  tests/test_twitter.py \
+  tests/test_twitter_nitter_rss.py \
+  tests/test_cluster_builder_thread_queue.py \
   tests/test_cluster_builder_store.py \
   tests/test_cluster_builder_tools.py \
-  tests/test_cluster_builder_agent.py \
-  tests/test_run_cluster_builder.py \
-  tests/test_codex_auth.py \
-  tests/test_langchain_codex_oauth.py \
-  tests/test_llm.py \
-  tests/test_pipeline.py \
-  tests/test_twitter.py \
-  tests/test_run_agentic_pipeline.py \
-  tests/test_twitter_cookies.py \
-  tests/test_twitter_nitter_net.py \
-  tests/test_twitter_twscrape.py -q
+  tests/test_tracing.py \
+  tests/test_base_agent.py \
+  tests/test_run.py -q
 ```
