@@ -9,16 +9,15 @@ def load_prompt(agent_name: str) -> str:
     Load the UTF-8 prompt text for a named agent from the packaged prompts directory.
 
     Purpose: Centralize prompt file resolution so agents refer to a stable name instead of paths.
-    Pre-conditions: ``agent_name`` is non-empty and matches a ``{agent_name}.txt`` file under
+    Pre-conditions: ``agent_name`` is non-empty and a file ``{agent_name}_prompt.txt`` exists under
     ``xs2n.prompts`` (installed as package data).
     Post-conditions: Returns stripped prompt text on success; raises if the file is missing.
     Side effects: Reads from disk only.
 
-    :param agent_name: Basename of the prompt file without ``.txt`` (e.g. ``"base_agent"``).
+    :param agent_name: Logical agent id (e.g. ``"base_agent"`` → ``base_agent_prompt.txt``).
     :returns: File contents with leading/trailing whitespace stripped.
-    :raises FileNotFoundError: If no ``{agent_name}.txt`` exists next to this module.
+    :raises FileNotFoundError: If the matching ``*_prompt.txt`` file does not exist.
     :raises OSError: If the file cannot be read.
     """
-    # Resolve sibling to this module so it works when the package is installed from wheel
-    path = Path(__file__).resolve().parent / f"{agent_name}.txt"
+    path = Path(__file__).resolve().parent / f"{agent_name}_prompt.txt"
     return path.read_text(encoding="utf-8").strip()

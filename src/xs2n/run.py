@@ -92,7 +92,6 @@ def main(argv: list[str] | None = None) -> int:
         scaffold = build_base_agent(
             model=args.model,
             reasoning_effort=args.reasoning,
-            queue_path=args.queue_file,
         )
         scaffold_result = scaffold.invoke(DEFAULT_SCAFFOLD_PROMPT)
     except RuntimeError as error:

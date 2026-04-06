@@ -67,11 +67,10 @@ def test_main_fetches_threads_builds_queue_and_runs_agent_scaffold(
             "items": items,
         }
 
-    def fake_build_base_agent(*, model, reasoning_effort, queue_path):  # noqa: ANN001, ANN202
+    def fake_build_base_agent(*, model, reasoning_effort):  # noqa: ANN001, ANN202
         calls["build_scaffold"] = {
             "model": model,
             "reasoning_effort": reasoning_effort,
-            "queue_path": queue_path,
         }
         return FakeScaffold()
 
@@ -100,7 +99,6 @@ def test_main_fetches_threads_builds_queue_and_runs_agent_scaffold(
     assert calls["build_scaffold"] == {
         "model": module.DEFAULT_MODEL,
         "reasoning_effort": module.DEFAULT_REASONING_EFFORT,
-        "queue_path": module.DEFAULT_QUEUE_PATH,
     }
     assert calls["invoke"]["prompt"] == module.DEFAULT_SCAFFOLD_PROMPT
     assert stdout == [
@@ -149,11 +147,10 @@ def test_main_reuses_provided_tweet_list_file_and_skips_fetch(
             "items": items,
         }
 
-    def fake_build_base_agent(*, model, reasoning_effort, queue_path):  # noqa: ANN001, ANN202
+    def fake_build_base_agent(*, model, reasoning_effort):  # noqa: ANN001, ANN202
         calls["build_scaffold"] = {
             "model": model,
             "reasoning_effort": reasoning_effort,
-            "queue_path": queue_path,
         }
         return FakeScaffold()
 
@@ -185,7 +182,6 @@ def test_main_reuses_provided_tweet_list_file_and_skips_fetch(
     assert calls["build_scaffold"] == {
         "model": module.DEFAULT_MODEL,
         "reasoning_effort": module.DEFAULT_REASONING_EFFORT,
-        "queue_path": module.DEFAULT_QUEUE_PATH,
     }
     assert calls["invoke"]["prompt"] == module.DEFAULT_SCAFFOLD_PROMPT
     assert stdout == [
@@ -251,11 +247,10 @@ def test_main_passes_reasoning_effort_to_agent_scaffold(
         def invoke(self, prompt):  # noqa: ANN001, ANN201
             return {"status": "completed", "final_output": "done"}
 
-    def fake_build_base_agent(*, model, reasoning_effort, queue_path):  # noqa: ANN001, ANN202
+    def fake_build_base_agent(*, model, reasoning_effort):  # noqa: ANN001, ANN202
         calls["build_scaffold"] = {
             "model": model,
             "reasoning_effort": reasoning_effort,
-            "queue_path": queue_path,
         }
         return FakeScaffold()
 
