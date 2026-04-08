@@ -37,3 +37,24 @@ This branch currently exposes one runtime command plus the auth helper it depend
 - `src/xs2n/cli/run.py` is now the only active orchestration file. It owns the fetch-versus-reuse branch directly so the runtime order stays readable top-to-bottom.
 - `src/xs2n/agents/agents_sdk_scaffold.py` is intentionally a scaffold, not a finished domain runtime. It proves Agents SDK wiring, ChatGPT/Codex auth reuse, and one minimal queue-preview tool.
 - The old cluster-builder runtime was removed instead of being kept around as misleading architecture while the real agentic redesign is still pending.
+
+## Branch Note (2026-04-08, compact routing contracts)
+
+- If a model step only needs to classify pre-shaped items, keep the transport local and compact: use short local ids, one fixed row grammar, and a strict parser that validates completeness and uniqueness before any downstream step trusts the output.
+- When a new agent needs richer tweet context than the current queue carries, widen the persisted queue contract additively with neutral fields such as `quote_text`, `image_description`, and `url_hint` instead of hiding the missing data behind prompt magic.
+- Keep new agent paths observable from the CLI early, even if they are incremental. A thin `--route-text` mode that prints the strict grouped output is more truthful and testable than shipping only internal helper modules.
+
+## Branch Note (2026-04-08, honest prompt-specific entrypoints)
+
+- If a prompt-specific path only differs by fixed prompt text and fixed model settings, prefer one exported domain function that builds the shared model wrapper locally over adding a dedicated subclass plus builder.
+- Keep the public entrypoint named after the real job, such as `route_tweet_rows(...)`, so the call site shows the domain action directly instead of forcing readers through one-off agent types.
+
+## Branch Note (2026-04-09, feature-local helper ownership)
+
+- When helper code only exists to support one prompt-specific path, keep it inside that feature package instead of under a generic `utils/` module. The file path should tell the truth about ownership.
+- Split a feature into `main.py` plus one small `utils.py` before inventing more file layers. Move to finer-grained files only after the helper module stops being easy to scan.
+
+## Branch Note (2026-04-09, issue organizer output discipline)
+
+- When a model step groups already-filtered tweets into issues, keep the first iteration stateless and one-shot: filtered rows in, one validated JSON object out.
+- Put the grouping contract in a neutral schema module and make the parser enforce full tweet coverage, uniqueness, and known ids so prompt drift fails loudly instead of leaking bad state downstream.

@@ -6,6 +6,8 @@ The active runtime is intentionally small:
 
 - `src/xs2n/run.py` is the single pipeline entrypoint.
 - `src/xs2n/agents/base_agent.py` is a minimal base agent that uses the repository's ChatGPT/Codex auth wiring.
+- `src/xs2n/agents/text_router/` classifies queue items into plain, ambiguous, image-led, and external-led buckets.
+- `src/xs2n/agents/issue_organizer/` groups the non-ambiguous queue items into strict JSON issue records.
 - `src/xs2n/utils/` keeps tweet fetching (Nitter RSS) and Codex/OpenAI auth helpers; `src/xs2n/tools/` keeps persisted queue and cluster state.
 
 ## Layout
@@ -91,6 +93,30 @@ Reuse an existing tweet list and skip fetch:
 uv run xs2n \
   --tweet-list-file data/cluster_builder/tweet_queue.json \
   --queue-file data/cluster_builder/tweet_queue.json \
+  --model gpt-5.4-mini
+```
+
+Run the strict text router against the prepared queue and print the grouped ids:
+
+```bash
+uv run xs2n \
+  --tweet-list-file data/cluster_builder/tweet_queue.json \
+  --route-text \
+  --model gpt-5.4-mini
+```
+
+The router prints one compact line in this fixed order:
+
+```text
+plain_ids|ambiguous_ids|image_ids|external_ids
+```
+
+Run the issue organizer against the prepared queue. This first routes the queue, drops ambiguous tweets, and prints the validated issue JSON:
+
+```bash
+uv run xs2n \
+  --tweet-list-file data/cluster_builder/tweet_queue.json \
+  --build-issues \
   --model gpt-5.4-mini
 ```
 

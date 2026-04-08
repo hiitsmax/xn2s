@@ -8,6 +8,7 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 import warnings
 
 import feedparser
@@ -348,6 +349,9 @@ def build_tweet_queue_items(*, threads: list[Thread]) -> list[TweetQueueItem]:
                 tweet_id=thread.thread_id,
                 account_handle=thread.account_handle,
                 text=primary_post.text,
+                quote_text=primary_post.referenced_text or "",
+                image_description="",
+                url_hint=_build_url_hint(primary_post.referenced_url),
                 url=primary_post.url,
                 created_at=primary_post_payload["created_at"],
                 status="pending",
@@ -356,3 +360,13 @@ def build_tweet_queue_items(*, threads: list[Thread]) -> list[TweetQueueItem]:
             )
         )
     return queue_items
+
+
+def _build_url_hint(url: str | None) -> str:
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").strip().lower()
+    if hostname in {"", "x.com", "www.x.com"}:
+        return ""
+    return hostname

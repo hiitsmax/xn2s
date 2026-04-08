@@ -6,11 +6,21 @@ from pathlib import Path
 import sys
 
 from xs2n.agents import (
+    BASE_AGENT_NAME,
+    BaseAgent,
     DEFAULT_MODEL,
     DEFAULT_REASONING_EFFORT,
-    build_base_agent,
+    build_issue_map,
+    route_tweet_rows,
 )
+from xs2n.prompts.manager import load_prompt
 from xs2n.tools.cluster_state import load_tweet_queue, save_tweet_queue
+from xs2n.agents.issue_organizer.utils import select_non_ambiguous_issue_rows
+from xs2n.agents.text_router.utils import (
+    build_routing_rows_from_queue_items,
+    format_routing_result,
+)
+from xs2n.utils.tracing import configure_phoenix_tracing
 from xs2n.utils.twitter import build_tweet_queue_items, get_twitter_threads
 
 
@@ -59,6 +69,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Existing tweet-list JSON file to reuse instead of fetching fresh tweets.",
     )
+    parser.add_argument(
+        "--route-text",
+        action="store_true",
+        help="Run the strict text router on the prepared queue instead of the base scaffold.",
+    )
+    parser.add_argument(
+        "--build-issues",
+        action="store_true",
+        help="Route the prepared queue, drop ambiguous tweets, and print validated issue JSON.",
+    )
     return parser
 
 
@@ -88,12 +108,36 @@ def main(argv: list[str] | None = None) -> int:
 
         save_tweet_queue(args.queue_file, queue_items)
         report_progress(f"Wrote {len(queue_items)} queue item(s) to {args.queue_file}.")
+        configure_phoenix_tracing()
 
-        scaffold = build_base_agent(
-            model=args.model,
-            reasoning_effort=args.reasoning,
-        )
-        scaffold_result = scaffold.invoke(DEFAULT_SCAFFOLD_PROMPT)
+        if args.build_issues:
+            routing_rows = build_routing_rows_from_queue_items(queue_items)
+            routing_result = route_tweet_rows(
+                model=args.model,
+                rows=routing_rows,
+            )
+            issue_rows = select_non_ambiguous_issue_rows(
+                queue_items,
+                routing_result=routing_result,
+            )
+            issue_map = build_issue_map(
+                model=args.model,
+                rows=issue_rows,
+            )
+        elif args.route_text:
+            routing_rows = build_routing_rows_from_queue_items(queue_items)
+            routing_result = route_tweet_rows(
+                model=args.model,
+                rows=routing_rows,
+            )
+        else:
+            scaffold = BaseAgent(
+                name=BASE_AGENT_NAME,
+                model=args.model,
+                reasoning_effort=args.reasoning,
+                instructions=load_prompt(BASE_AGENT_NAME),
+            )
+            scaffold_result = scaffold.invoke(DEFAULT_SCAFFOLD_PROMPT)
     except RuntimeError as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -103,9 +147,19 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"Fetched {len(threads)} thread(s).", file=sys.stdout)
     print(f"Queue items ready: {len(queue_items)}", file=sys.stdout)
-    print("Agents SDK scaffold completed.", file=sys.stdout)
+    if args.build_issues:
+        print("Issue organizer completed.", file=sys.stdout)
+        print(f"Issue JSON: {issue_map.model_dump_json()}", file=sys.stdout)
+    elif args.route_text:
+        print("Text router completed.", file=sys.stdout)
+        print(
+            f"Routing output: {format_routing_result(routing_result)}",
+            file=sys.stdout,
+        )
+    else:
+        print("Agents SDK scaffold completed.", file=sys.stdout)
 
-    final_output = scaffold_result.get("final_output")
-    if isinstance(final_output, str) and final_output.strip():
-        print(f"Scaffold output: {final_output.strip()}", file=sys.stdout)
+        final_output = scaffold_result.get("final_output")
+        if isinstance(final_output, str) and final_output.strip():
+            print(f"Scaffold output: {final_output.strip()}", file=sys.stdout)
     return 0

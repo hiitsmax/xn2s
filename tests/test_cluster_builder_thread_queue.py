@@ -66,3 +66,30 @@ def test_build_tweet_queue_items_uses_primary_post_and_pending_defaults() -> Non
             processing_note="",
         ),
     ]
+
+
+def test_build_tweet_queue_items_carries_quote_text_for_router_inputs() -> None:
+    threads = [
+        Thread(
+            thread_id="thread-quote",
+            account_handle="alice",
+            posts=[
+                Post(
+                    post_id="post-quote",
+                    author_handle="alice",
+                    created_at="2026-03-30T12:00:00Z",
+                    text="Worth reading",
+                    url="https://x.com/alice/status/post-quote",
+                    entry_type="quote",
+                    referenced_text="Original thread details",
+                    referenced_url="https://x.com/bob/status/123",
+                )
+            ],
+        )
+    ]
+
+    queue_items = build_tweet_queue_items(threads=threads)
+
+    assert queue_items[0].quote_text == "Original thread details"
+    assert queue_items[0].image_description == ""
+    assert queue_items[0].url_hint == ""

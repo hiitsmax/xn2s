@@ -9,6 +9,9 @@ TweetQueueField = Literal[
     "account_handle",
     "text",
     "text_preview",
+    "quote_text",
+    "image_description",
+    "url_hint",
     "url",
     "created_at",
     "status",
@@ -28,6 +31,9 @@ class TweetQueueItem(BaseModel):
     tweet_id: str
     account_handle: str
     text: str
+    quote_text: str = ""
+    image_description: str = ""
+    url_hint: str = ""
     url: str
     created_at: str
     status: TweetQueueStatus = "pending"

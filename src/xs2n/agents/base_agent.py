@@ -6,12 +6,11 @@ from typing import Any, Literal
 
 from agents import Agent, ModelSettings, RunConfig, Runner
 
-from xs2n.prompts.manager import load_prompt
 from xs2n.utils.auth.openai_client import build_openai_responses_model
-from xs2n.utils.tracing import configure_phoenix_tracing
 
 
-ReasoningEffort = Literal["low", "medium", "high", "xhigh"]
+ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh"]
+Verbosity = Literal["low", "medium", "high"]
 
 DEFAULT_MODEL = "gpt-5.4-mini"
 DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium"
@@ -28,9 +27,11 @@ class BaseAgent:
     Purpose: Run a single streaming turn against the configured OpenAI Responses model.
     """
 
+    name: str
     model: str
     reasoning_effort: ReasoningEffort
     instructions: str
+    verbosity: Verbosity | None = None
 
     def invoke(self, prompt: str) -> dict[str, Any]:
         """
@@ -50,7 +51,7 @@ class BaseAgent:
         """
         result = Runner.run_streamed(
             Agent(
-                name=BASE_AGENT_NAME,
+                name=self.name,
                 instructions=self.instructions,
                 model=build_openai_responses_model(
                     model=self.model,
@@ -64,28 +65,10 @@ class BaseAgent:
                 model_settings=ModelSettings(
                     store=False,
                     reasoning={"effort": self.reasoning_effort},
+                    verbosity=self.verbosity,
                 ),
             ),
         )
         async for _event in result.stream_events():
             pass
         return result
-
-
-def build_base_agent(
-    *,
-    model: str,
-    reasoning_effort: ReasoningEffort,
-) -> BaseAgent:
-    """
-    AI-generated: This method was created with the assistance of an AI pair programmer.
-    Construct ``BaseAgent`` with instructions from ``{agent}_prompt.txt`` for ``base_agent``.
-
-    :returns: Configured agent after optional Phoenix tracing registration.
-    """
-    configure_phoenix_tracing()
-    return BaseAgent(
-        model=model,
-        reasoning_effort=reasoning_effort,
-        instructions=load_prompt(BASE_AGENT_NAME),
-    )

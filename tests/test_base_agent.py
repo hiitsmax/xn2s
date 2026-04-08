@@ -3,22 +3,6 @@ from __future__ import annotations
 import xs2n.agents.base_agent as module
 
 
-def test_build_base_agent_loads_instructions_from_prompt_file(
-    monkeypatch,
-) -> None:  # noqa: ANN001
-    monkeypatch.setattr(module, "configure_phoenix_tracing", lambda: True)
-
-    scaffold = module.build_base_agent(
-        model="gpt-5.4-mini",
-        reasoning_effort="medium",
-    )
-
-    assert isinstance(scaffold, module.BaseAgent)
-    assert scaffold.model == "gpt-5.4-mini"
-    assert scaffold.reasoning_effort == "medium"
-    assert "base agent" in scaffold.instructions.lower()
-
-
 def test_base_agent_invoke_runs_openai_agents_sdk_without_tools(
     monkeypatch,
 ) -> None:  # noqa: ANN001
@@ -76,21 +60,17 @@ def test_base_agent_invoke_runs_openai_agents_sdk_without_tools(
         "build_openai_responses_model",
         fake_build_openai_responses_model,
     )
-    monkeypatch.setattr(
-        module,
-        "configure_phoenix_tracing",
-        lambda: captured.setdefault("phoenix_tracing_configured", True),
-    )
 
-    scaffold = module.build_base_agent(
+    scaffold = module.BaseAgent(
+        name="base_agent",
         model="gpt-5.4-mini",
         reasoning_effort="xhigh",
+        instructions="You are the base agent.",
     )
 
     result = scaffold.invoke("Hello.")
 
     assert result == {"status": "completed", "final_output": "queue ready"}
-    assert captured["phoenix_tracing_configured"] is True
     assert captured["build_model"] == {
         "model": "gpt-5.4-mini",
         "api_key": None,
